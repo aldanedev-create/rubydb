@@ -43,7 +43,7 @@ module RubyDB
           parse_drop
         when Token::Type::ALTER
           parse_alter
-        when Token::Type::BEGIN
+        when Token::Type::BEGIN_TRANSACTION
           parse_begin
         when Token::Type::COMMIT
           parse_commit
@@ -664,7 +664,7 @@ module RubyDB
       end
 
       def parse_begin
-        expect(Token::Type::BEGIN)
+        expect(Token::Type::BEGIN_TRANSACTION)
         if current_token&.type == Token::Type::TRANSACTION
           advance
         end

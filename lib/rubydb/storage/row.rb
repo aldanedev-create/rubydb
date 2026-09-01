@@ -14,9 +14,17 @@ module RubyDB
         @record = nil
         @dirty = false
 
+        normalized_values = if values.is_a?(Array)
+          columns.each_with_index.each_with_object({}) do |(col, index), result|
+            result[col.name] = values[index]
+          end
+        else
+          values
+        end
+
         # Initialize values
         columns.each do |col|
-          @values[col.name] = values[col.name] || col.default
+          @values[col.name] = normalized_values[col.name] || col.default
         end
       end
 

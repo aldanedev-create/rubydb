@@ -18,7 +18,7 @@ module RubyDB
       end
 
       def first
-        @lock.synchronize do
+        lock.synchronize do
           reset
           @direction = :forward
           move_to_first
@@ -28,7 +28,7 @@ module RubyDB
       end
 
       def last
-        @lock.synchronize do
+        lock.synchronize do
           reset
           @direction = :backward
           move_to_last
@@ -38,7 +38,7 @@ module RubyDB
       end
 
       def next
-        @lock.synchronize do
+        lock.synchronize do
           return nil if @finished
           return first if !@started
           
@@ -58,7 +58,7 @@ module RubyDB
       end
 
       def prev
-        @lock.synchronize do
+        lock.synchronize do
           return nil if @finished
           return last if !@started
           
@@ -78,7 +78,7 @@ module RubyDB
       end
 
       def seek(key)
-        @lock.synchronize do
+        lock.synchronize do
           reset
           @direction = :forward
           
@@ -250,7 +250,7 @@ module RubyDB
         end
       end
 
-      def @lock
+      def lock
         @btree.instance_variable_get(:@lock)
       end
     end

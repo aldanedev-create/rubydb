@@ -25,15 +25,16 @@ module RubyDB
           @file = File.open(@path, "r+b")
           @file_size = @file.size
           @num_pages = @file_size / @page_size
+          @is_open = true
           validate_file
         else
           @file = File.open(@path, "w+b")
           @file_size = 0
           @num_pages = 0
+          @is_open = true
           initialize_file
         end
 
-        @is_open = true
         self
       rescue SystemCallError => e
         raise StorageError, "Failed to open database file: #{e.message}"
@@ -56,7 +57,13 @@ module RubyDB
       def write_page(page_number, data)
         raise StorageError, "File not open" unless @is_open
         raise StorageError, "File is read-only" if @read_only
-        raise StorageError, "Invalid page number: #{page_number}" if page_number >= @num_pages
+
+        if page_number == 0 && @num_pages.zero?
+          # This is the initial superblock allocation before the file has been sized.
+        elsif page_number >= @num_pages
+          raise StorageError, "Invalid page number: #{page_number}"
+        end
+
         raise StorageError, "Data size mismatch" if data.bytesize != @page_size
 
         @file.seek(page_number * @page_size)
@@ -117,12 +124,14 @@ module RubyDB
       private
 
       def initialize_file
-        # Write initial superblock page
+        # Write initial superblock page. The file must be allowed to accept page 0
+        # before the page count is established on a brand-new database.
+        @num_pages = 1
+        @file_size = @page_size
+
         superblock = Page.new(0, @page_size)
         superblock.write_header
         write_page(0, superblock.data)
-        @num_pages = 1
-        @file_size = @page_size
       end
 
       def validate_file

@@ -16,7 +16,7 @@ module RubyDB
         type_obj = Types::TypeRegistry.lookup(type)
         type_obj.deserialize(data)
       rescue => e
-        raise CorruptError, "Failed to deserialize value of type #{type}: #{e.message}"
+        raise CorruptionError, "Failed to deserialize value of type #{type}: #{e.message}"
       end
 
       # Deserialize a full row from binary data
@@ -25,83 +25,39 @@ module RubyDB
         
         row = {}
         offset = 0
+        fixed_sizes = { integer: 4, bigint: 8, smallint: 2, float: 8, boolean: 1, date: 8, time: 8, timestamp: 8 }
         
         columns.each_with_index do |col, idx|
           begin
-            # Get column metadata
             col_type = col.type_class
             col_name = col.name
-            is_nullable = col.nullable?
             has_default = col.has_default?
             
-            # Determine value length
-            length = get_column_length(data, offset, col, columns, idx)
-            
-            # Extract value data
-            if length.nil? || length == 0
-              # Variable length or no data
-              if options[:has_length_prefix] != false
-                # Read length prefix first
-                if offset + 2 <= data.bytesize
-                  len_prefix = data[offset, 2].unpack("S").first
-                  offset += 2
-                  
-                  if len_prefix == 0xFFFF  # NULL indicator
-                    row[col_name] = nil
-                    next
-                  elsif len_prefix > 0
-                    value_data = data[offset, len_prefix]
-                    offset += len_prefix
-                    
-                    # Check for NULL marker
-                    if value_data == "\x00" * len_prefix && is_nullable
-                      row[col_name] = nil
-                    else
-                      row[col_name] = deserialize(value_data, col_type)
-                    end
-                  else
-                    row[col_name] = has_default ? col.default : nil
-                  end
-                else
-                  row[col_name] = has_default ? col.default : nil
-                end
-              else
-                # Fixed length or no length prefix
-                if length > 0 && offset + length <= data.bytesize
-                  value_data = data[offset, length]
-                  offset += length
-                  
-                  if value_data == "\x00" * length && is_nullable
-                    row[col_name] = nil
-                  else
-                    row[col_name] = deserialize(value_data, col_type)
-                  end
-                else
-                  row[col_name] = has_default ? col.default : nil
-                end
-              end
-            else
-              # Fixed length
+            # Check if fixed-size type
+            if fixed_sizes.key?(col_type)
+              length = fixed_sizes[col_type]
               if offset + length <= data.bytesize
                 value_data = data[offset, length]
                 offset += length
-                
-                if value_data == "\x00" * length && is_nullable
-                  row[col_name] = nil
-                else
-                  row[col_name] = deserialize(value_data, col_type)
-                end
+                row[col_name] = deserialize(value_data, col_type)
+              else
+                row[col_name] = has_default ? col.default : nil
+              end
+            else
+              # Variable length - for last column, take remaining data
+              if idx == columns.size - 1
+                value_data = data[offset..-1]
+                row[col_name] = deserialize(value_data, col_type) if value_data.bytesize > 0
+                row[col_name] ||= (has_default ? col.default : nil)
               else
                 row[col_name] = has_default ? col.default : nil
               end
             end
           rescue => e
-            # Log error but continue with default
             row[col_name] = col.default if col.has_default?
             row[col_name] = nil if col.nullable?
-            # If not nullable and no default, raise error
-            if !col.nullable? && !col.has_default?
-              raise CorruptError, "Failed to deserialize column '#{col_name}': #{e.message}"
+            unless row[col_name]
+              raise CorruptionionError, "Failed to deserialize column '#{col_name}': #{e.message}"
             end
           end
         end
@@ -188,7 +144,7 @@ module RubyDB
         
         # Validate record size
         if record_size <= 0 || record_size > 65535
-          raise CorruptError, "Invalid record size: #{record_size}"
+          raise CorruptionError, "Invalid record size: #{record_size}"
         end
         
         # Read record data
@@ -325,28 +281,30 @@ module RubyDB
       # Get column length from data
       def self.get_column_length(data, offset, col, columns, idx)
         col_type = col.type_class
-        storage_size = col.storage_size
         
-        # Fixed length types
-        fixed_length_types = [:integer, :bigint, :smallint, :float, :boolean, :date, :time, :timestamp]
+        # Fixed length types - return their serialized size
+        fixed_sizes = {
+          integer: 8,
+          bigint: 8,
+          smallint: 2,
+          float: 8,
+          boolean: 1,
+          date: 8,
+          time: 8,
+          timestamp: 8
+        }
         
-        if fixed_length_types.include?(col_type)
-          return storage_size || 0
-        elsif storage_size && storage_size > 0
-          return storage_size
+        if fixed_sizes.key?(col_type)
+          return fixed_sizes[col_type]
         else
-          # Variable length - need to read prefix
-          return nil if offset + 2 > data.bytesize
-          
-          # Check if next two bytes are length prefix
-          len_prefix = data[offset, 2].unpack("S").first rescue 0
-          if len_prefix == 0xFFFF  # NULL marker
-            return 2  # Just the length prefix
-          elsif len_prefix > 0 && len_prefix < 65535
-            return 2 + len_prefix  # length prefix + data
-          else
-            # No length prefix, variable length until end
+          # Variable length (text, json, etc.) - read until end of data or next field boundary
+          # For now, consume remaining data if this is the last column
+          if idx == columns.size - 1
             return data.bytesize - offset
+          else
+            # For middle columns, we need a length prefix or a delimiter
+            # For simplicity, use remaining data if we don't have more info
+            return nil
           end
         end
       end

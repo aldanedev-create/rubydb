@@ -357,10 +357,12 @@ module RubyDB
           data.b
           
         when :json
-          JSON.parse(data.force_encoding("UTF-8"))
-        rescue JSON::ParserError
-          {}
-          
+          begin
+            JSON.parse(data.force_encoding("UTF-8"))
+          rescue JSON::ParserError
+            {}
+          end
+
         when :uuid
           hex = data.unpack("H*").first
           "#{hex[0...8]}-#{hex[8...12]}-#{hex[12...16]}-#{hex[16...20]}-#{hex[20...32]}"

@@ -5,7 +5,7 @@ module RubyDB
     # StorageManager - Central storage management
     class StorageManager
       attr_reader :file_manager, :page_manager, :page_allocator,
-                  :buffer_pool, :free_space_map, :visibility_map
+                  :buffer_pool, :free_space_map, :visibility_map, :page_size
 
       def initialize(path, config = {})
         @path = path
@@ -69,12 +69,12 @@ module RubyDB
 
       def allocate_page(page_type = 0)
         @stats[:allocations] += 1
-        @page_allocator.allocate_page_with_space(0, page_type)
+        @page_manager.allocate_page(page_type)
       end
 
       def free_page(page_number)
         @stats[:frees] += 1
-        @page_allocator.release_page(page_number)
+        @page_manager.free_page(page_number)
         @buffer_pool.remove_page(page_number)
       end
 

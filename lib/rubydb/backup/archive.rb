@@ -4,7 +4,6 @@ require "fileutils"
 require "time"
 require "json"
 require "zlib"
-require "archive/tar/minitar"
 
 module RubyDB
   module Backup

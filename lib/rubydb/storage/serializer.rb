@@ -10,7 +10,7 @@ module RubyDB
       end
 
       def self.serialize_row(row, columns)
-        data = ""
+        data = +""
         columns.each do |col|
           value = row[col.name]
           serialized = serialize(value, col.type_class)

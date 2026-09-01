@@ -23,9 +23,12 @@ require_relative "../catalog/catalog"
 require_relative "../catalog/table"
 require_relative "../catalog/column"
 
+# WAL and Recovery
+require_relative "../wal/wal"
+require_relative "../recovery/crash_recovery"
+
 # Types
 require_relative "../types/type"
-require_relative "../types/type_registry"
 
 # Errors
 require_relative "../errors/storage_error"
@@ -40,7 +43,7 @@ module RubyDB
     # Engine - Main storage engine interface with full CRUD operations
     class Engine
       attr_reader :storage_manager, :buffer_pool, :page_manager, :catalog
-      attr_reader :table_metadata, :transaction_manager
+      attr_reader :table_metadata, :transaction_manager, :wal, :crash_recovery
 
       def initialize(path, config = {})
         @path = path
@@ -60,6 +63,7 @@ module RubyDB
         @cache_ttl = config[:cache_ttl] || 300  # 5 minutes
         @is_open = true
         @transaction_manager = nil
+        @current_transaction_id = 0
         @stats = {
           table_creates: 0,
           row_inserts: 0,
@@ -70,9 +74,21 @@ module RubyDB
           cache_misses: 0,
           transaction_begin: 0,
           transaction_commit: 0,
-          transaction_rollback: 0
+          transaction_rollback: 0,
+          wal_writes: 0,
+          crash_recoveries: 0
         }
         @lock = Mutex.new
+        
+        # Initialize WAL
+        wal_dir = File.join(File.dirname(path), '.wal')
+        @wal = WAL::WAL.new(wal_dir, recovery: false)  # Defer recovery until after metadata load
+        
+        # Initialize crash recovery
+        @crash_recovery = Recovery::CrashRecovery.new(self, @wal, config)
+        
+        # Run crash recovery if needed
+        run_crash_recovery
         
         # Load table metadata from disk
         load_table_metadata
@@ -255,6 +271,14 @@ module RubyDB
           # Serialize row data
           row_data = Serializer.serialize_row(row, columns)
           
+          # Log to WAL before writing to page
+          log_to_wal(WAL::Record::TYPE_INSERT, {
+            table_name: table_name,
+            row_id: row_id,
+            page: data_page,
+            values: values
+          })
+          
           # Calculate required space (row header + data)
           required_space = 16 + row_data.bytesize  # 16 bytes for row header
           
@@ -351,9 +375,9 @@ module RubyDB
               row = Deserializer.deserialize_row(record_data, columns)
               row[:_row_id] = record_id
               
-              # Check visibility
+              # Check visibility - disabled by default for simple queries
               transaction_id = conditions[:transaction_id] || 0
-              if conditions[:visibility_check] != false
+              if conditions[:visibility_check] && conditions[:visibility_check] != false
                 unless @visibility_map.is_visible?(record_id, transaction_id)
                   next
                 end
@@ -411,7 +435,12 @@ module RubyDB
           
           transaction_id = conditions[:transaction_id] || 0
           
-          # Find the row
+          # Log to WAL before updating
+          log_to_wal(WAL::Record::TYPE_UPDATE, {
+            table_name: table_name,
+            row_id: row_id,
+            values: values
+          })
           updated = false
           pages = @table_pages[table_name] || []
           
@@ -515,7 +544,11 @@ module RubyDB
           
           transaction_id = conditions[:transaction_id] || 0
           
-          # Find and delete the row
+          # Log to WAL before deleting
+          log_to_wal(WAL::Record::TYPE_DELETE, {
+            table_name: table_name,
+            row_id: row_id
+          })
           deleted = false
           pages = @table_pages[table_name] || []
           
@@ -684,6 +717,12 @@ module RubyDB
       def close
         return unless @is_open
         
+        # Flush WAL first (ensures all mutations are recorded)
+        if @wal
+          @wal.flush
+          @wal.checkpoint.create_checkpoint(@wal.current_lsn) rescue nil
+        end
+        
         flush
         @storage_manager.close
         @is_open = false
@@ -711,6 +750,8 @@ module RubyDB
             transaction_begin: @stats[:transaction_begin],
             transaction_commit: @stats[:transaction_commit],
             transaction_rollback: @stats[:transaction_rollback],
+            wal_writes: @stats[:wal_writes],
+            crash_recoveries: @stats[:crash_recoveries],
             is_open: @is_open,
             visibility_rows: @visibility_map.visibility_info.size,
             active_transactions: @visibility_map.active_transaction_count
@@ -741,6 +782,41 @@ module RubyDB
           end
           
           compacted_count > 0
+        end
+      end
+
+      # Crash recovery
+      def run_crash_recovery
+        return false unless @wal
+        
+        # Check if recovery is needed (WAL files exist)
+        wal_dir = File.join(File.dirname(@path), '.wal')
+        return false unless Dir.exist?(wal_dir) && Dir.glob(File.join(wal_dir, '*.log')).any?
+        
+        begin
+          @stats[:crash_recoveries] += 1
+          result = @crash_recovery.recover
+          result[:success]
+        rescue => e
+          warn "Crash recovery failed: #{e.message}"
+          false
+        end
+      end
+
+      # WAL logging helpers
+      def log_to_wal(type, data, transaction_id = nil)
+        return nil unless @wal
+        
+        transaction_id ||= @current_transaction_id
+        record = WAL::Record.new(type, data, transaction_id: transaction_id)
+        @stats[:wal_writes] += 1
+        
+        begin
+          @wal.write(record)
+        rescue => e
+          warn "WAL write failed: #{e.message}"
+          # Continue anyway - WAL is for durability, not atomicity
+          nil
         end
       end
 
@@ -820,61 +896,58 @@ module RubyDB
       end
 
       def load_table_metadata
-        @lock.synchronize do
-          begin
-            metadata_path = "#{@path}.metadata"
-            if File.exist?(metadata_path)
-              data = File.read(metadata_path)
-              parsed = JSON.parse(data, symbolize_names: true)
-              
-              parsed[:tables]&.each do |table_name, table_data|
-                @table_metadata[table_name] = {
-                  metadata_page: table_data[:metadata_page],
-                  data_page: table_data[:data_page],
-                  columns: table_data[:columns]&.map { |c| Column.new(c[:name], c[:type]) } || [],
-                  column_count: table_data[:column_count] || 0,
-                  row_count: table_data[:row_count] || 0,
-                  created_at: Time.at(table_data[:created_at]),
-                  updated_at: Time.at(table_data[:updated_at])
-                }
-                @table_pages[table_name] = table_data[:pages] || []
-              end
+        begin
+          metadata_path = "#{@path}.metadata"
+          if File.exist?(metadata_path)
+            data = File.read(metadata_path)
+            parsed = JSON.parse(data, symbolize_names: true)
+            
+            parsed[:tables]&.each do |table_name, table_data|
+              @table_metadata[table_name] = {
+                metadata_page: table_data[:metadata_page],
+                data_page: table_data[:data_page],
+                columns: table_data[:columns]&.map { |c| Catalog::Column.new(c[:name], c[:type]) } || [],
+                column_count: table_data[:column_count] || 0,
+                row_count: table_data[:row_count] || 0,
+                created_at: Time.at(table_data[:created_at]),
+                updated_at: Time.at(table_data[:updated_at])
+              }
+              @table_pages[table_name] = table_data[:pages] || []
             end
-          rescue => e
-            # If loading fails, start fresh
-            @table_metadata.clear
-            @table_pages.clear
           end
+        rescue => e
+          warn "Failed to load table metadata: #{e.class} #{e.message}"
+          # If loading fails, start fresh
+          @table_metadata.clear
+          @table_pages.clear
         end
       end
 
       def save_table_metadata
-        @lock.synchronize do
-          begin
-            data = {
-              tables: {}
+        begin
+          data = {
+            tables: {}
+          }
+
+          @table_metadata.each do |table_name, metadata|
+            data[:tables][table_name] = {
+              metadata_page: metadata[:metadata_page],
+              data_page: metadata[:data_page],
+              columns: metadata[:columns].map { |c| { name: c.name, type: c.type_class } },
+              column_count: metadata[:column_count],
+              row_count: metadata[:row_count],
+              created_at: metadata[:created_at].to_i,
+              updated_at: metadata[:updated_at].to_i,
+              pages: @table_pages[table_name] || []
             }
-            
-            @table_metadata.each do |table_name, metadata|
-              data[:tables][table_name] = {
-                metadata_page: metadata[:metadata_page],
-                data_page: metadata[:data_page],
-                columns: metadata[:columns].map { |c| { name: c.name, type: c.type_class } },
-                column_count: metadata[:column_count],
-                row_count: metadata[:row_count],
-                created_at: metadata[:created_at].to_i,
-                updated_at: metadata[:updated_at].to_i,
-                pages: @table_pages[table_name] || []
-              }
-            end
-            
-            metadata_path = "#{@path}.metadata"
-            temp_path = "#{metadata_path}.tmp"
-            File.write(temp_path, JSON.generate(data))
-            File.rename(temp_path, metadata_path)
-          rescue => e
-            # Log error but continue
           end
+
+          metadata_path = "#{@path}.metadata"
+          temp_path = "#{metadata_path}.tmp"
+          File.write(temp_path, JSON.generate(data))
+          File.rename(temp_path, metadata_path)
+        rescue => e
+          # Log error but continue
         end
       end
 

@@ -68,7 +68,9 @@ module RubyDB
         CONSTRAINT = :CONSTRAINT
         CASCADE = :CASCADE
         RESTRICT = :RESTRICT
-        BEGIN = :BEGIN
+        ADD = :ADD
+        TO = :TO
+        BEGIN_TRANSACTION = :BEGIN
         COMMIT = :COMMIT
         ROLLBACK = :ROLLBACK
         SAVEPOINT = :SAVEPOINT

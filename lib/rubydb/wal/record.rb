@@ -2,6 +2,7 @@
 
 require "json"
 require "digest"
+require_relative "../errors/corruption_error"
 
 module RubyDB
   module WAL
@@ -67,7 +68,7 @@ module RubyDB
 
         # Verify checksum
         calculated = Digest::SHA256.hexdigest(json_data)[0...16]
-        raise CorruptError, "WAL record checksum mismatch" if calculated != checksum
+        raise CorruptionError, "WAL record checksum mismatch" if calculated != checksum
 
         parsed = JSON.parse(json_data, symbolize_names: true)
 

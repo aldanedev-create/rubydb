@@ -68,7 +68,7 @@ module RubyDB
       end
 
       def page_free_space_percentage(page_number)
-        total = @page_manager.page_manager.page_size
+        total = @page_manager.file_manager.page_size
         free = get_free_space(page_number)
         (free.to_f / total * 100).round(2)
       end

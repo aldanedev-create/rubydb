@@ -26,9 +26,8 @@ module RubyDB
       end
 
       def write_header
-        @header.serialize.each_with_index do |byte, idx|
-          @data[idx] = byte
-        end
+        serialized = @header.serialize
+        @data[0, serialized.bytesize] = serialized
         @dirty = true
       end
 

@@ -150,12 +150,12 @@ module RubyDB
 
       def stats
         @lock.synchronize do
-          @stats.merge({
-            current_segment: File.basename(@current_segment.path) if @current_segment,
-            current_segment_size: @current_segment_size,
-            segments_count: list_segments.size,
-            log_dir: @log_dir
-          })
+          stats_hash = @stats.dup
+          stats_hash[:current_segment] = File.basename(@current_segment.path) if @current_segment
+          stats_hash[:current_segment_size] = @current_segment_size
+          stats_hash[:segments_count] = list_segments.size
+          stats_hash[:log_dir] = @log_dir
+          stats_hash
         end
       end
 

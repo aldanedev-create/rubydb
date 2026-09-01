@@ -294,15 +294,19 @@ module RubyDB
       end
 
       def extract_predicate_columns(predicate)
+        return [] if predicate.nil?
+
         case predicate
         when Predicate::Comparison
-          [predicate.left.name rescue nil].compact
+          left_name = predicate.left.respond_to?(:name) ? predicate.left.name : nil
+          [left_name].compact
         when Predicate::And, Predicate::Or
           extract_predicate_columns(predicate.left) + extract_predicate_columns(predicate.right)
         when Predicate::Not
           extract_predicate_columns(predicate.operand)
         when Predicate::Between, Predicate::In, Predicate::IsNull, Predicate::Like
-          [predicate.expression.name rescue nil].compact
+          expr_name = predicate.expression.respond_to?(:name) ? predicate.expression.name : nil
+          [expr_name].compact
         else
           []
         end

@@ -42,7 +42,7 @@ module RubyDB
           @stats[:allocations] += 1
           @stats[:total_space_requested] += needed_bytes
 
-          page_size = @page_manager.page_manager.page_size
+          page_size = @page_manager.file_manager.page_size
           max_record_size = page_size - PageHeader::SIZE - 8 # 8 bytes for record header
 
           # Validate request
@@ -349,7 +349,7 @@ module RubyDB
       # Allocate an overflow page for large records
       def allocate_overflow_page(parent_page_number, needed_bytes)
         @lock.synchronize do
-          page_size = @page_manager.page_manager.page_size
+          page_size = @page_manager.file_manager.page_size
           
           # Validate request
           if needed_bytes > page_size - PageHeader::SIZE - 8

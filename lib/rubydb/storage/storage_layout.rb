@@ -54,7 +54,8 @@ module RubyDB
       # Table metadata layout
       class TableMetadata
         attr_accessor :table_id, :table_name, :column_count,
-                      :row_count, :first_page, :last_page
+                      :row_count, :first_page, :last_page,
+                      :created_at, :updated_at
 
         def initialize
           @table_id = 0
@@ -63,14 +64,17 @@ module RubyDB
           @row_count = 0
           @first_page = 0
           @last_page = 0
+          @created_at = Time.now.to_i
+          @updated_at = Time.now.to_i
         end
 
         def serialize
-          data = ""
+          data = +""
           data << [@table_id].pack("Q>")
-          data << @table_name.ljust(64)
+          data << @table_name.to_s.ljust(64)
           data << [@column_count, @row_count].pack("I>Q>")
           data << [@first_page, @last_page].pack("Q>Q>")
+          data << [@created_at, @updated_at].pack("Q>Q>")
           data
         end
 
@@ -80,6 +84,7 @@ module RubyDB
           tm.table_name = data[8, 64].strip
           tm.column_count, tm.row_count = data[72, 12].unpack("I>Q>")
           tm.first_page, tm.last_page = data[84, 16].unpack("Q>Q>")
+          tm.created_at, tm.updated_at = data[100, 16].unpack("Q>Q>")
           tm
         end
       end
@@ -87,7 +92,8 @@ module RubyDB
       # Column metadata layout
       class ColumnMetadata
         attr_accessor :column_id, :column_name, :data_type,
-                      :is_nullable, :is_primary_key, :position
+                      :is_nullable, :is_primary_key, :position,
+                      :default, :created_at
 
         def initialize
           @column_id = 0
@@ -96,17 +102,22 @@ module RubyDB
           @is_nullable = true
           @is_primary_key = false
           @position = 0
+          @default = nil
+          @created_at = Time.now.to_i
         end
 
         def serialize
-          data = ""
+          data = +""
           data << [@column_id, @position].pack("I>I>")
-          data << @column_name.ljust(64)
+          data << @column_name.to_s.ljust(64)
           data << [@data_type.to_s].pack("Z*")
           flags = 0
           flags |= 1 if @is_nullable
           flags |= 2 if @is_primary_key
           data << [flags].pack("C")
+          default_payload = @default.nil? ? "" : @default.to_s
+          data << default_payload.ljust(64)
+          data << [@created_at].pack("Q>")
           data
         end
 
@@ -118,6 +129,8 @@ module RubyDB
           flags = data[72 + cm.data_type.to_s.length + 1].unpack("C").first
           cm.is_nullable = (flags & 1) != 0
           cm.is_primary_key = (flags & 2) != 0
+          cm.default = data[73 + cm.data_type.to_s.length, 64].strip unless data[73 + cm.data_type.to_s.length, 64].strip.empty?
+          cm.created_at = data[137, 8].unpack("Q>").first
           cm
         end
       end

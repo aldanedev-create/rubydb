@@ -59,9 +59,10 @@ module RubyDB
 
           @stats[:records_written] += 1
 
-          # Flush if buffer is full
-          if @buffer_current_size >= @buffer_size
+          # Flush if buffer is full OR if sync is enabled (for durability)
+          if @buffer_current_size >= @buffer_size || @sync_on_write
             flush_buffer
+            _sync if @sync_on_write
           end
 
           lsn
@@ -88,16 +89,20 @@ module RubyDB
       def flush
         @lock.synchronize do
           flush_buffer
-          sync if @sync_on_write
+          _sync if @sync_on_write
         end
       end
 
       def sync
         @lock.synchronize do
-          if @current_segment && @current_segment.open?
-            @current_segment.instance_variable_get(:@file).fsync
-            @stats[:syncs] += 1
-          end
+          _sync
+        end
+      end
+
+      private def _sync
+        if @current_segment && @current_segment.open?
+          @current_segment.instance_variable_get(:@file).fsync
+          @stats[:syncs] += 1
         end
       end
 

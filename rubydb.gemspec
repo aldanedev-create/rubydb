@@ -16,7 +16,10 @@ Gem::Specification.new do |spec|
   DESC
   spec.homepage = 'https://github.com/yourusername/rubydb'
   spec.license = 'MIT'
-  spec.required_ruby_version = '>= 4.0.0'
+  # The implementation is currently compatible with the workspace Ruby runtime used for
+  # local development and CI. This is a practical compatibility target until the
+  # project adds a narrower support matrix and explicit Ruby-version policy.
+  spec.required_ruby_version = '>= 3.3.0'
 
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = 'https://github.com/yourusername/rubydb'

@@ -28,7 +28,7 @@ module RubyDB
         @lock.synchronize do
           records = []
           @segments.each do |segment|
-            records.concat(read_segment(segment))
+            records.concat(_read_segment(segment))
           end
           records
         end
@@ -46,9 +46,9 @@ module RubyDB
 
             if segment.segment_id == start_lsn.segment_id
               # Read from offset
-              records.concat(read_segment_from_offset(segment, start_lsn.offset))
+              records.concat(_read_segment_from_offset(segment, start_lsn.offset))
             else
-              records.concat(read_segment(segment))
+              records.concat(_read_segment(segment))
             end
 
             break if @config[:limit] && records.size >= @config[:limit]
@@ -66,9 +66,9 @@ module RubyDB
             break if segment.segment_id > end_lsn.segment_id
 
             if segment.segment_id == end_lsn.segment_id
-              records.concat(read_segment_to_offset(segment, end_lsn.offset))
+              records.concat(_read_segment_to_offset(segment, end_lsn.offset))
             else
-              records.concat(read_segment(segment))
+              records.concat(_read_segment(segment))
             end
           end
 
@@ -85,11 +85,11 @@ module RubyDB
             next if segment.segment_id < start_lsn.segment_id
 
             if segment.segment_id == start_lsn.segment_id
-              records.concat(read_segment_range(segment, start_lsn.offset, end_lsn.offset))
+              records.concat(_read_segment_range(segment, start_lsn.offset, end_lsn.offset))
             elsif segment.segment_id == end_lsn.segment_id
-              records.concat(read_segment_to_offset(segment, end_lsn.offset))
+              records.concat(_read_segment_to_offset(segment, end_lsn.offset))
             else
-              records.concat(read_segment(segment))
+              records.concat(_read_segment(segment))
             end
           end
 
@@ -99,107 +99,110 @@ module RubyDB
 
       def read_segment(segment)
         @lock.synchronize do
-          records = []
-          offset = 0
-
-          while true
-            record_data = segment.read_record_at(offset)
-            break if record_data.nil? || record_data.empty?
-
-            begin
-              lsn = LSN.new(segment.segment_id, offset)
-              record = Record.deserialize(record_data, lsn)
-              records << record
-              @stats[:records_read] += 1
-              @stats[:bytes_read] += record_data.bytesize
-              offset += record_data.bytesize
-            rescue => e
-              @stats[:corrupted_records] += 1
-              break
-            end
-          end
-
-          @stats[:segments_read] += 1
-          records
+          _read_segment(segment)
         end
       end
 
-      def read_segment_from_offset(segment, offset)
-        @lock.synchronize do
-          records = []
-          current_offset = offset
+      private def _read_segment(segment)
+        records = []
+        offset = 0
 
-          while true
-            record_data = segment.read_record_at(current_offset)
-            break if record_data.nil? || record_data.empty?
+        puts "WAL DEBUG: _read_segment starting for segment #{segment.segment_id}" if ENV['DEBUG_RECOVERY']
+        while true
+          record_data = segment.read_record_at(offset)
+          break if record_data.nil? || record_data.empty?
+          puts "WAL DEBUG: read record at offset #{offset}, size=#{record_data.bytesize}" if ENV['DEBUG_RECOVERY']
 
-            begin
-              lsn = LSN.new(segment.segment_id, current_offset)
-              record = Record.deserialize(record_data, lsn)
-              records << record
-              @stats[:records_read] += 1
-              @stats[:bytes_read] += record_data.bytesize
-              current_offset += record_data.bytesize
-            rescue => e
-              @stats[:corrupted_records] += 1
-              break
-            end
+          begin
+            lsn = LSN.new(segment.segment_id, offset)
+            record = Record.deserialize(record_data, lsn)
+            records << record
+            @stats[:records_read] += 1
+            @stats[:bytes_read] += record_data.bytesize
+            offset += record_data.bytesize
+            puts "WAL DEBUG: deserialized record #{record.type}" if ENV['DEBUG_RECOVERY']
+          rescue => e
+            @stats[:corrupted_records] += 1
+            puts "WAL DEBUG: failed to deserialize at offset #{offset}: #{e.message}" if ENV['DEBUG_RECOVERY']
+            break
           end
-
-          records
         end
+
+        @stats[:segments_read] += 1
+        puts "WAL DEBUG: finished reading segment #{segment.segment_id}, found #{records.count} records" if ENV['DEBUG_RECOVERY']
+        records
       end
 
-      def read_segment_to_offset(segment, offset)
-        @lock.synchronize do
-          records = []
-          current_offset = 0
+      private def _read_segment_from_offset(segment, offset)
+        records = []
+        current_offset = offset
 
-          while current_offset < offset
-            record_data = segment.read_record_at(current_offset)
-            break if record_data.nil? || record_data.empty?
+        while true
+          record_data = segment.read_record_at(current_offset)
+          break if record_data.nil? || record_data.empty?
 
-            begin
-              lsn = LSN.new(segment.segment_id, current_offset)
-              record = Record.deserialize(record_data, lsn)
-              records << record
-              @stats[:records_read] += 1
-              @stats[:bytes_read] += record_data.bytesize
-              current_offset += record_data.bytesize
-            rescue => e
-              @stats[:corrupted_records] += 1
-              break
-            end
+          begin
+            lsn = LSN.new(segment.segment_id, current_offset)
+            record = Record.deserialize(record_data, lsn)
+            records << record
+            @stats[:records_read] += 1
+            @stats[:bytes_read] += record_data.bytesize
+            current_offset += record_data.bytesize
+          rescue => e
+            @stats[:corrupted_records] += 1
+            break
           end
-
-          records
         end
+
+        records
       end
 
-      def read_segment_range(segment, start_offset, end_offset)
-        @lock.synchronize do
-          records = []
-          current_offset = start_offset
+      private def _read_segment_to_offset(segment, offset)
+        records = []
+        current_offset = 0
 
-          while current_offset < end_offset
-            record_data = segment.read_record_at(current_offset)
-            break if record_data.nil? || record_data.empty?
+        while current_offset < offset
+          record_data = segment.read_record_at(current_offset)
+          break if record_data.nil? || record_data.empty?
 
-            begin
-              lsn = LSN.new(segment.segment_id, current_offset)
-              record = Record.deserialize(record_data, lsn)
-              records << record
-              @stats[:records_read] += 1
-              @stats[:bytes_read] += record_data.bytesize
-              current_offset += record_data.bytesize
-            rescue => e
-              @stats[:corrupted_records] += 1
-              break
-            end
+          begin
+            lsn = LSN.new(segment.segment_id, current_offset)
+            record = Record.deserialize(record_data, lsn)
+            records << record
+            @stats[:records_read] += 1
+            @stats[:bytes_read] += record_data.bytesize
+            current_offset += record_data.bytesize
+          rescue => e
+            @stats[:corrupted_records] += 1
+            break
           end
-
-          records
         end
+
+        records
+      end
+
+      private def _read_segment_range(segment, start_offset, end_offset)
+        records = []
+        current_offset = start_offset
+
+        while current_offset < end_offset
+          record_data = segment.read_record_at(current_offset)
+          break if record_data.nil? || record_data.empty?
+
+          begin
+            lsn = LSN.new(segment.segment_id, current_offset)
+            record = Record.deserialize(record_data, lsn)
+            records << record
+            @stats[:records_read] += 1
+            @stats[:bytes_read] += record_data.bytesize
+            current_offset += record_data.bytesize
+          rescue => e
+            @stats[:corrupted_records] += 1
+            break
+          end
+        end
+
+        records
       end
 
       def reload
@@ -228,6 +231,7 @@ module RubyDB
 
         # Find all WAL segment files
         wal_files = Dir.glob(File.join(@wal_dir, "wal_*.log"))
+        puts "WAL DEBUG: found #{wal_files.count} WAL files: #{wal_files.map { |f| File.basename(f) }.inspect}" if ENV['DEBUG_RECOVERY']
         wal_files.sort.each do |file_path|
           # Extract segment ID from filename
           if file_path =~ /wal_(\d+)\.log$/
@@ -236,9 +240,11 @@ module RubyDB
             if segment.exists?
               segment.open
               @segments << segment
+              puts "WAL DEBUG: loaded segment #{segment_id}" if ENV['DEBUG_RECOVERY']
             end
           end
         end
+        puts "WAL DEBUG: total segments loaded: #{@segments.count}" if ENV['DEBUG_RECOVERY']
       end
     end
   end

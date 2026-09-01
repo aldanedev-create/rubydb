@@ -59,37 +59,54 @@ module RubyDB
       class << self
         attr_reader :types
 
-        def register(name, type_class)
-          @types[name.to_sym] = type_class
+        def register(name, type_class = nil)
+          klass = type_class || resolve(name)
+          return if klass.nil?
+
+          @types[name.to_sym] = klass
         end
 
         def lookup(name, **kwargs)
-          type_class = @types[name.to_sym]
+          type_class = @types[name.to_sym] || resolve(name)
           return type_class.new(**kwargs) if type_class
+
           raise ConfigurationError, "Unknown type: #{name}"
         end
 
         def reset
           @types = {}
         end
-      end
 
-      # Register all built-in types
-      register(:integer, Integer)
-      register(:bigint, BigInt)
-      register(:smallint, SmallInt)
-      register(:float, Float)
-      register(:decimal, Decimal)
-      register(:boolean, Boolean)
-      register(:text, Text)
-      register(:varchar, Varchar)
-      register(:blob, Blob)
-      register(:date, Date)
-      register(:time, Time)
-      register(:timestamp, Timestamp)
-      register(:json, Json)
-      register(:uuid, UUID)
-      register(:null, Null)
+        private
+
+        def resolve(name)
+          name = name.to_sym
+          const_name = case name
+                       when :bigint then "BigInt"
+                       when :smallint then "SmallInt"
+                       when :float then "Float"
+                       when :decimal then "Decimal"
+                       when :boolean then "Boolean"
+                       when :text then "Text"
+                       when :varchar then "Varchar"
+                       when :blob then "Blob"
+                       when :date then "Date"
+                       when :time then "Time"
+                       when :timestamp then "Timestamp"
+                       when :json then "Json"
+                       when :uuid then "UUID"
+                       when :null then "Null"
+                       when :integer then "Integer"
+                       else name.to_s.split("_").map { |part| part.capitalize }.join
+                       end
+
+          klass = RubyDB::Types.const_get(const_name)
+          @types[name] = klass
+          klass
+        rescue NameError
+          nil
+        end
+      end
     end
   end
 end

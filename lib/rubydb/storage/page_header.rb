@@ -44,18 +44,18 @@ module RubyDB
       def self.deserialize(data)
         header = new
         values = data.unpack("Q>Q>I>I>I>I>I>I>Q>Q>I>I")
-        @page_number = values[0]
-        @page_size = values[1]
-        @header_size = values[2]
-        @data_end = values[3]
-        @flags = values[4]
-        @checksum = values[5]
-        @version = values[6]
-        @page_type = values[7]
-        @next_page = values[8]
-        @prev_page = values[9]
-        @free_start = values[10]
-        @free_end = values[11]
+        header.page_number = values[0]
+        header.page_size = values[1]
+        header.header_size = values[2]
+        header.data_end = values[3]
+        header.flags = values[4]
+        header.checksum = values[5]
+        header.version = values[6]
+        header.page_type = values[7]
+        header.next_page = values[8]
+        header.prev_page = values[9]
+        header.free_start = values[10]
+        header.free_end = values[11]
         header
       end
 
