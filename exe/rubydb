@@ -1,0 +1,23 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# RubyDB executable - This is the gem's main executable that gets installed
+# when the gem is installed. It delegates to bin/rubydb.
+
+# This file is the entry point that RubyGems uses when the gem is installed.
+# It allows users to run `rubydb` from anywhere after `gem install rubydb`.
+
+require_relative "../lib/rubydb"
+require_relative "../lib/rubydb/cli/application"
+
+# Load and execute the CLI application
+begin
+  RubyDB::CLI::Application.start(ARGV)
+rescue Interrupt
+  puts "\nInterrupted. Exiting..."
+  exit 0
+rescue StandardError => e
+  $stderr.puts "Error: #{e.message}"
+  $stderr.puts e.backtrace if ENV["RUBYDB_DEBUG"]
+  exit 1
+end

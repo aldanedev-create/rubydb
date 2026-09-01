@@ -1,0 +1,44 @@
+inherit_gem:
+  standard: config/base.yml
+
+AllCops:
+  TargetRubyVersion: 4.0
+  NewCops: enable
+  Exclude:
+    - 'bin/**/*'
+    - 'exe/**/*'
+    - 'tmp/**/*'
+    - 'vendor/**/*'
+    - 'test/fixtures/**/*'
+    - 'fuzz/**/*'
+
+# Ruby 4.0 modern features
+Style/HashSyntax:
+  EnforcedShorthandSyntax: either
+
+Style/EndlessMethod:
+  Enabled: true
+  EnforcedStyle: allow_single_line
+
+Style/PatternMatching:
+  Enabled: true
+
+Lint/ShadowingOuterLocalVariable:
+  Enabled: false
+
+Metrics/ClassLength:
+  Max: 200
+
+Metrics/MethodLength:
+  Max: 25
+
+Metrics/BlockLength:
+  Max: 50
+  Exclude:
+    - 'spec/**/*'
+    - 'test/**/*'
+    - '*.gemspec'
+
+Naming/FileName:
+  Exclude:
+    - 'lib/rubydb.rb'

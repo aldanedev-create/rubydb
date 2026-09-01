@@ -1,0 +1,126 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# RubyDB Server - Production database server
+
+require "optparse"
+require_relative "../lib/rubydb"
+require_relative "../lib/rubydb/server"
+
+# Parse command line options
+options = {
+  host: "localhost",
+  port: 7432,
+  database: nil,
+  config: nil,
+  daemonize: false,
+  pid_file: nil,
+  log_file: nil,
+  debug: false
+}
+
+OptionParser.new do |opts|
+  opts.banner = "Usage: rubydb-server [options]"
+
+  opts.on("-h", "--host HOST", "Bind to host (default: localhost)") do |h|
+    options[:host] = h
+  end
+
+  opts.on("-p", "--port PORT", Integer, "Bind to port (default: 7432)") do |p|
+    options[:port] = p
+  end
+
+  opts.on("-d", "--database PATH", "Path to database file") do |db|
+    options[:database] = db
+  end
+
+  opts.on("-c", "--config FILE", "Configuration file path") do |config|
+    options[:config] = config
+  end
+
+  opts.on("-D", "--daemonize", "Run as daemon") do
+    options[:daemonize] = true
+  end
+
+  opts.on("--pid-file FILE", "PID file location") do |pid|
+    options[:pid_file] = pid
+  end
+
+  opts.on("--log-file FILE", "Log file location") do |log|
+    options[:log_file] = log
+  end
+
+  opts.on("--debug", "Enable debug mode") do
+    options[:debug] = true
+  end
+
+  opts.on("-v", "--version", "Print version") do
+    require_relative "../lib/rubydb/version"
+    puts "RubyDB Server v#{RubyDB::VERSION}"
+    exit 0
+  end
+
+  opts.on("-h", "--help", "Print this help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+# Validate required options
+if options[:database].nil? && options[:config].nil?
+  $stderr.puts "Error: --database or --config is required"
+  exit 1
+end
+
+# Start the server
+begin
+  if options[:daemonize]
+    Process.daemon(true, true) if Process.respond_to?(:daemon)
+  end
+
+  # Write PID file if specified
+  if options[:pid_file]
+    File.write(options[:pid_file], Process.pid.to_s)
+  end
+
+  # Load configuration
+  config = if options[:config]
+    RubyDB::Configuration.load(options[:config])
+  else
+    RubyDB::Configuration.new do |c|
+      c.host = options[:host]
+      c.port = options[:port]
+      c.database = options[:database]
+      c.debug = options[:debug]
+    end
+  end
+
+  # Initialize and start server
+  server = RubyDB::Server.new(config)
+  
+  trap("INT") do
+    puts "\nShutting down RubyDB server..."
+    server.stop
+    exit 0
+  end
+
+  trap("TERM") do
+    puts "Terminating RubyDB server..."
+    server.stop
+    exit 0
+  end
+
+  puts "RubyDB Server v#{RubyDB::VERSION} starting..."
+  puts "Listening on #{config.host}:#{config.port}"
+  puts "Database: #{config.database}"
+  puts "Press Ctrl+C to stop"
+  
+  server.start
+
+rescue StandardError => e
+  $stderr.puts "Fatal error: #{e.message}"
+  $stderr.puts e.backtrace if options[:debug]
+  exit 1
+ensure
+  File.delete(options[:pid_file]) if options[:pid_file] && File.exist?(options[:pid_file])
+end

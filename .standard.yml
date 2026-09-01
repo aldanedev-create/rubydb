@@ -1,0 +1,14 @@
+# Standard Ruby configuration
+ruby_version: 4.0
+
+ignore:
+  - 'tmp/**/*'
+  - 'vendor/**/*'
+  - 'test/fixtures/**/*'
+  - 'fuzz/**/*'
+  - 'bin/**/*'
+
+# Allow some flexibility in development
+plugins:
+  - rubocop-performance
+  - rubocop-rspec

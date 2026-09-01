@@ -1,0 +1,20 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Ruby files
+*.rb text diff=ruby
+*.erb text diff=ruby
+*.rake text diff=ruby
+*.gemspec text diff=ruby
+
+# Markdown
+*.md text diff=markdown
+
+# YAML
+*.yml text diff=yaml
+*.yaml text diff=yaml
+
+# Binary formats
+*.rdb binary
+*.rdb-wal binary
+*.rdb-shm binary

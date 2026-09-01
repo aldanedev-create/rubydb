@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# RubyDB CLI - Main entry point for database management commands
+
+require_relative "../lib/rubydb"
+require_relative "../lib/rubydb/cli/application"
+
+# Load the CLI application and run it
+begin
+  RubyDB::CLI::Application.start(ARGV)
+rescue Interrupt
+  puts "\nInterrupted. Exiting..."
+  exit 0
+rescue StandardError => e
+  $stderr.puts "Error: #{e.message}"
+  $stderr.puts e.backtrace if ENV["RUBYDB_DEBUG"]
+  exit 1
+end
