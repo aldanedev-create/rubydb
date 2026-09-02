@@ -1,16 +1,14 @@
 # frozen_string_literal: true
 
-require_relative "lib/active_record/connection_adapters/rubydb_adapter"
-
 Gem::Specification.new do |spec|
   spec.name = "rubydb-activerecord"
   spec.version = "0.1.0"
-  spec.authors = ["Your Name"]
-  spec.email = ["your.email@example.com"]
+  spec.authors = ["Aldane Hutchinson"]
+  spec.email = ["aldanehutchinson5@gmail.com"]
 
   spec.summary = "ActiveRecord adapter for RubyDB"
   spec.description = "ActiveRecord adapter for the RubyDB database"
-  spec.homepage = "https://github.com/yourusername/rubydb"
+  spec.homepage = "https://github.com/aldanedev-create/rubydb"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
 

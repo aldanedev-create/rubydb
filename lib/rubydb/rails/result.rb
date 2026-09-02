@@ -65,7 +65,9 @@ module RubyDB
       end
 
       def column_names
-        @columns.map { |c| c[:name] || c }
+        @columns.map do |column|
+          column.is_a?(Hash) ? (column[:name] || column["name"] || column) : column
+        end
       end
 
       def column_types

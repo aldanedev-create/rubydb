@@ -43,8 +43,11 @@ module ActiveRecord
         uuid: { name: "UUID" }
       }
 
-      def initialize(connection, logger, connection_params, config)
-        super(connection, logger, connection_params, config)
+      # ActiveRecord 7.2 constructs adapters with a single configuration hash.
+      # Accept trailing deprecated arguments so applications upgrading from older
+      # ActiveRecord versions do not fail during connection establishment.
+      def initialize(config, *)
+        super(config)
 
         @connection = RubyDB::Rails::Connection.new(config)
         @connection.connect
@@ -55,7 +58,9 @@ module ActiveRecord
         @query_cache = {}
         @statements = {}
         @statement_counter = 0
-        @lock = Mutex.new
+        # AbstractAdapter uses this monitor while creating transactions. It
+        # must be re-entrant because ActiveRecord acquires it recursively.
+        @lock = Monitor.new
       end
 
       def adapter_name
@@ -109,18 +114,43 @@ module ActiveRecord
       # ==================== SCHEMA METHODS ====================
 
       def primary_key(table_name)
+        return @connection.engine.table_columns(table_name).find(&:primary_key?)&.name&.to_s || "id" if embedded?
+
         result = execute("PRAGMA table_info(#{quote_table_name(table_name)})")
         row = result.find { |r| r["pk"] == 1 }
         row ? row["name"] : "id"
       end
 
       def tables
+        return @connection.engine.list_tables.map(&:to_s) if embedded?
+
         result = execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
         result.map { |row| row["name"] }
       end
 
       def table_exists?(table_name)
         tables.include?(table_name.to_s)
+      end
+
+      # ActiveRecord's schema cache asks for these before a model is first
+      # instantiated. The embedded engine has catalog metadata already, so
+      # avoid generating unsupported SQLite catalog queries.
+      def data_sources
+        return tables if embedded?
+
+        super
+      end
+
+      def data_source_exists?(name)
+        return table_exists?(name) if embedded?
+
+        super
+      end
+
+      def views
+        return [] if embedded?
+
+        super
       end
 
       def indexes(table_name)
@@ -135,6 +165,8 @@ module ActiveRecord
       end
 
       def columns(table_name)
+        return embedded_columns(table_name) if embedded?
+
         result = execute("PRAGMA table_info(#{quote_table_name(table_name)})")
         result.map do |row|
           ActiveRecord::ConnectionAdapters::Column.new(
@@ -157,19 +189,23 @@ module ActiveRecord
       # ==================== QUERY METHODS ====================
 
       def execute(sql, name = nil)
+        sql = sql_for_execution(sql)
         log(sql, name) do
           @connection.execute(sql)
         end
       end
 
       def exec_query(sql, name = nil, binds = [])
+        sql = sql_for_execution(sql)
+        warn "RubyDB ActiveRecord query: #{sql}" if ENV["RUBYDB_DEBUG_SQL"] == "1"
         log(sql, name) do
           params = binds.map { |bind| bind.value }
-          @connection.execute(sql, params)
+          active_record_result(@connection.execute(sql, params))
         end
       end
 
       def exec_delete(sql, name = nil, binds = [])
+        sql = sql_for_execution(sql)
         log(sql, name) do
           params = binds.map { |bind| bind.value }
           result = @connection.execute(sql, params)
@@ -178,6 +214,7 @@ module ActiveRecord
       end
 
       def exec_update(sql, name = nil, binds = [])
+        sql = sql_for_execution(sql)
         log(sql, name) do
           params = binds.map { |bind| bind.value }
           result = @connection.execute(sql, params)
@@ -185,31 +222,35 @@ module ActiveRecord
         end
       end
 
-      def exec_insert(sql, name = nil, binds = [], pk = nil, sequence_name = nil)
+      def exec_insert(sql, name = nil, binds = [], pk = nil, sequence_name = nil, returning: nil)
+        sql = sql_for_execution(sql)
         log(sql, name) do
           params = binds.map { |bind| bind.value }
           result = @connection.execute(sql, params)
-          {
-            row_count: result.affected_rows,
-            last_insert_id: result.first && result.first["id"]
-          }
+          id = result.row_id
+          ActiveRecord::Result.new([pk || "id"], id.nil? ? [] : [[id]])
         end
       end
 
-      def insert(sql, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [])
-        result = exec_insert(sql, name, binds, pk, sequence_name)
-        id_value || result[:last_insert_id]
+      def insert(arel, name = nil, pk = nil, id_value = nil, sequence_name = nil, binds = [], returning: nil)
+        sql, binds = to_sql_and_binds(arel, binds)
+        result = exec_insert(sql, name, binds, pk, sequence_name, returning: returning)
+        return returning_column_values(result) unless returning.nil?
+
+        id_value || last_inserted_id(result)
       end
 
-      def update(sql, name = nil, binds = [])
+      def update(arel, name = nil, binds = [])
+        sql, binds = to_sql_and_binds(arel, binds)
         exec_update(sql, name, binds)
       end
 
-      def delete(sql, name = nil, binds = [])
+      def delete(arel, name = nil, binds = [])
+        sql, binds = to_sql_and_binds(arel, binds)
         exec_delete(sql, name, binds)
       end
 
-      def select_all(sql, name = nil, binds = [])
+      def select_all(sql, name = nil, binds = [], preparable: nil, async: false, allow_retry: false)
         exec_query(sql, name, binds)
       end
 
@@ -599,6 +640,61 @@ module ActiveRecord
       # ==================== PRIVATE METHODS ====================
 
       private
+
+      def embedded?
+        !@connection.engine.nil?
+      end
+
+      def embedded_columns(table_name)
+        @connection.engine.table_columns(table_name).map do |column|
+          ActiveRecord::ConnectionAdapters::Column.new(
+            column.name.to_s,
+            column.has_default? ? column.default : nil,
+            ActiveRecord::ConnectionAdapters::SqlTypeMetadata.new(
+              sql_type: column.type.to_s.upcase,
+              type: rails_type_for(column.type),
+              limit: column.options[:limit]
+            ),
+            column.nullable?
+          )
+        end
+      end
+
+      def rails_type_for(type)
+        case type.to_sym
+        when :integer, :bigint, :smallint then :integer
+        when :float then :float
+        when :decimal then :decimal
+        when :boolean then :boolean
+        when :date then :date
+        when :time then :time
+        when :datetime, :timestamp then :datetime
+        when :binary, :blob then :binary
+        when :json then :json
+        else :string
+        end
+      end
+
+      def sql_for_execution(sql)
+        sql = sql.to_sql if sql.respond_to?(:to_sql)
+        # RubyDB's SQL parser currently accepts unqualified column names.
+        # ActiveRecord emits quoted table-qualified names for even the simplest
+        # model lookup, so strip only the qualifier from generated identifiers.
+        sql = sql.gsub(/(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\.\*/, "*")
+        sql.gsub(/(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\.(?="[^"]+"|[A-Za-z_][A-Za-z0-9_]*)/, "")
+      end
+
+      def active_record_result(result)
+        rows = result.to_a
+        columns = result.columns.map do |column|
+          column.is_a?(Hash) ? (column[:name] || column["name"] || column) : column
+        end.map(&:to_s)
+        columns = rows.first.keys.map(&:to_s) if columns.empty? && rows.first.respond_to?(:keys)
+        values = rows.map do |row|
+          columns.map { |column| row[column] || row[column.to_sym] }
+        end
+        ActiveRecord::Result.new(columns, values)
+      end
 
       def parse_index_columns(sql)
         if sql =~ /\(([^)]+)\)/
