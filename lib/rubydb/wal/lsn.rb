@@ -63,6 +63,13 @@ module RubyDB
         new(segment_id, offset)
       end
 
+      def self.from_s(value)
+        match = value.to_s.match(/\ALSN\((\d+),\s*(\d+)\)\z/)
+        raise ArgumentError, "Invalid LSN: #{value.inspect}" unless match
+
+        new(match[1].to_i, match[2].to_i)
+      end
+
       def self.null
         new(0, 0)
       end

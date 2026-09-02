@@ -176,9 +176,42 @@ module RubyDB
       end
 
       def already_applied?(record)
-        # Check if record has already been applied
-        # In production, this would check the actual state
+        data = record.data || {}
+        case record.type
+        when :insert
+          return false unless data[:row_id]
+          !@engine.select_row(data[:table], data[:row_id], data[:columns] || []).nil?
+        when :update
+          row = data[:row_id] && @engine.select_row(data[:table], data[:row_id], data[:columns] || [])
+          row && data.fetch(:values, {}).all? { |key, value| row[key] == value || row[key.to_s] == value }
+        when :delete
+          data[:row_id] && @engine.select_row(data[:table], data[:row_id], data[:columns] || []).nil?
+        when :create_table
+          @engine.table_exists?(data[:table_name])
+        when :drop_table
+          !@engine.table_exists?(data[:table_name])
+        when :schema_change
+          schema_change_applied?(data)
+        else
+          false
+        end
+      rescue StandardError
         false
+      end
+
+      def schema_change_applied?(data)
+        case data[:operation]
+        when :add_column
+          table = @engine.find_table(data[:table_name])
+          table && table.columns.any? { |column| column.name.to_s == data[:column_name].to_s }
+        when :drop_column
+          table = @engine.find_table(data[:table_name])
+          table && !table.columns.any? { |column| column.name.to_s == data[:column_name].to_s }
+        when :rename_table
+          @engine.table_exists?(data[:new_name]) && !@engine.table_exists?(data[:old_name])
+        else
+          false
+        end
       end
 
       def group_by_transaction(records)

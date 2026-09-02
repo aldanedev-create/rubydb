@@ -12,7 +12,7 @@ module RubyDB
   module Transactions
     # Transaction - Represents a database transaction
     class Transaction
-      attr_reader :id, :start_time, :status, :isolation_level, :read_only
+      attr_reader :id, :start_time, :status, :isolation_level, :read_only, :priority
       attr_reader :savepoints, :locked_rows, :modified_rows, :accessed_tables
       attr_accessor :parent_transaction
 

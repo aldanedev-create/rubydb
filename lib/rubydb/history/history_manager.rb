@@ -3,6 +3,7 @@
 require "fileutils"
 require "json"
 require "time"
+require "monitor"
 
 module RubyDB
   module History
@@ -27,7 +28,7 @@ module RubyDB
           timelines_deleted: 0,
           history_size: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
 
         FileUtils.mkdir_p(@history_dir)
         load_history

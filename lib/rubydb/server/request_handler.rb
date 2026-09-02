@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "monitor"
+
 module RubyDB
   module Server
     # RequestHandler - Handles and routes requests
@@ -21,12 +23,14 @@ module RubyDB
           total_processing_time_ms: 0,
           avg_processing_time_ms: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @handlers = {}
         @middleware = []
         @query_handlers = {}
         @prepared_statements = {}
         @statement_counter = 0
+        @health = config[:health] || RubyDB::Monitoring::Health.new(engine, auto_check: false)
+        @metrics = config[:metrics] || RubyDB::Monitoring::Metrics.new(auto_flush: false)
 
         # Register default handlers
         register_default_handlers
@@ -58,8 +62,8 @@ module RubyDB
         end
       end
 
-      def register_handler(type, handler)
-        @handlers[type] = handler
+      def register_handler(type, handler = nil, &block)
+        @handlers[type] = handler || block
       end
 
       def register_middleware(middleware)
@@ -147,6 +151,11 @@ module RubyDB
         register_handler(:ping) do |request|
           handle_ping(request)
         end
+
+        register_handler(:liveness) { |_request| success_response(@health.liveness) }
+        register_handler(:readiness) { |_request| success_response(@health.readiness) }
+        register_handler(:health) { |_request| success_response(@health.check) }
+        register_handler(:metrics) { |_request| success_response({ format: "prometheus", body: @metrics.to_prometheus }) }
       end
 
       def route_request(request)
@@ -233,14 +242,13 @@ module RubyDB
       end
 
       def execute_sql(sql, params)
-        # In production, this would use the SQL parser and executor
-        {
-          rows: [],
-          row_count: 0,
-          columns: [],
-          sql: sql,
-          params: params
-        }
+        tokens = RubyDB::SQL::Lexer.new(sql).tokenize
+        statements = RubyDB::SQL::Parser.new(tokens).parse
+        results = statements.map do |statement|
+          plan = RubyDB::Execution::Planner.new(@engine).plan(statement)
+          RubyDB::Execution::Executor.new(@engine).execute(plan)
+        end
+        results.size == 1 ? results.first : results
       end
 
       def extract_params(sql)

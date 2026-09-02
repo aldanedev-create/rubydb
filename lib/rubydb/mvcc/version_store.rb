@@ -2,6 +2,10 @@
 
 require "set"
 require "json"
+require "fileutils"
+require "time"
+require "monitor"
+require_relative "version"
 
 module RubyDB
   module MVCC
@@ -12,6 +16,7 @@ module RubyDB
       def initialize(config = {})
         @versions = {}  # row_id => [versions]
         @version_map = {}  # version_id => version
+        @version_keys = {} # version_id => storage key
         @active_versions = Set.new
         @stats = {
           versions_created: 0,
@@ -25,24 +30,26 @@ module RubyDB
         @version_count = 0
         @row_count = 0
         @max_versions_per_row = config[:max_versions_per_row] || 100
-        @lock = Mutex.new
+        @lock = Monitor.new
         @persistence_path = config[:persistence_path]
         @dirty = false
+        load if @persistence_path && File.exist?(@persistence_path)
       end
 
-      def create_version(row_id, data, transaction_id)
+      def create_version(row_id, data, transaction_id, key: row_id)
         @lock.synchronize do
           # Get current latest version
-          versions = @versions[row_id] || []
+          versions = @versions[key] || []
           prev_version_id = versions.last&.version_id
 
           # Create new version
           version = Version.new(row_id, data, transaction_id, prev_version_id)
 
           # Store version
-          @versions[row_id] ||= []
-          @versions[row_id] << version
+          @versions[key] ||= []
+          @versions[key] << version
           @version_map[version.version_id] = version
+          @version_keys[version.version_id] = key
 
           # Update active versions
           @active_versions.add(version.version_id)
@@ -71,10 +78,12 @@ module RubyDB
           @active_versions.delete(version.version_id)
 
           # Remove from version chain if it was the latest
-          versions = @versions[version.row_id]
+          key = @version_keys[version.version_id] || version.row_id
+          versions = @versions[key]
           if versions && versions.last&.version_id == version.version_id
             versions.pop
             @version_map.delete(version.version_id)
+            @version_keys.delete(version.version_id)
           end
 
           @stats[:versions_aborted] += 1
@@ -82,26 +91,29 @@ module RubyDB
         end
       end
 
-      def get_latest_version(row_id, transaction_id = nil, snapshot = nil)
+      def get_latest_version(row_id, transaction_id = nil, snapshot = nil, key: row_id)
         @lock.synchronize do
           # Check cache for snapshot
           cache_key = "#{row_id}:#{transaction_id}:#{snapshot&.id}"
 
-          versions = @versions[row_id]
+          versions = @versions[key]
           return nil unless versions
 
           # Get the latest committed version visible to transaction
           versions.reverse_each do |version|
             if snapshot
               if version.visible_to?(transaction_id, snapshot)
+                return nil if version.is_deleted
                 @stats[:cache_hits] += 1
                 return version
               end
-            elsif version.is_committed && !version.is_deleted
-              # Check if version is committed before transaction started
-              if version.commit_id && transaction_id && version.commit_id <= transaction_id
+            elsif version.is_committed
+              # A nil transaction ID means "latest committed". Otherwise a
+              # version is visible only when its commit ID is not newer than
+              # the reader's transaction ID.
+              if transaction_id.nil? || version.commit_id.nil? || version.commit_id <= transaction_id
                 @stats[:cache_hits] += 1
-                return version
+                return version.is_deleted ? nil : version
               end
             end
           end
@@ -130,6 +142,33 @@ module RubyDB
       def get_all_versions(row_id)
         @lock.synchronize do
           @versions[row_id] || []
+        end
+      end
+
+      def keys(prefix = nil)
+        @lock.synchronize do
+          values = @versions.keys
+          prefix ? values.select { |key| key.to_s.start_with?(prefix.to_s) } : values
+        end
+      end
+
+      def validate_serializable!(snapshot, read_keys, write_keys, read_predicates: [])
+        @lock.synchronize do
+          dependencies = Set.new(read_keys.to_a + write_keys.to_a)
+          @versions.each do |key, versions|
+            predicate_conflict = read_predicates.any? { |predicate| key.to_s.start_with?(predicate.to_s) }
+            next unless dependencies.include?(key) || predicate_conflict
+
+            versions.each do |version|
+              next unless version.is_committed
+              next unless version.commit_id && version.commit_id.to_i > snapshot.transaction_id.to_i
+              next if snapshot.committed_transactions.include?(version.commit_id)
+
+              raise RubyDB::DatabaseError,
+                "serialization failure: concurrent commit conflicts with #{key.inspect}"
+            end
+          end
+          true
         end
       end
 
@@ -164,6 +203,7 @@ module RubyDB
             # Only prune committed versions that are not active
             if old_version.is_committed && !@active_versions.include?(old_version.version_id)
               @version_map.delete(old_version.version_id)
+              @version_keys.delete(old_version.version_id)
               @stats[:versions_pruned] += 1
               pruned += 1
             else
@@ -186,20 +226,40 @@ module RubyDB
         @lock.synchronize do
           total_pruned = 0
           @versions.keys.each do |row_id|
-            total_pruned += prune_versions(row_id, max_versions)
+            versions = @versions[row_id]
+            keep_count = max_versions || @max_versions_per_row
+            while versions && versions.size > keep_count
+              version = versions.first
+              break unless version.is_committed && !@active_versions.include?(version.version_id)
+
+              versions.shift
+              @version_map.delete(version.version_id)
+              @version_keys.delete(version.version_id)
+              @stats[:versions_pruned] += 1
+              total_pruned += 1
+            end
           end
+          @dirty = true if total_pruned > 0
           total_pruned
         end
       end
 
-      def vacuum
+      def vacuum(min_active_transaction_id: nil)
         @lock.synchronize do
           # Remove versions that are no longer needed
           removed = 0
           @versions.each do |row_id, versions|
-            # Remove aborted versions
+            # Keep the newest version as the base visible version. Older
+            # committed history may be removed only before the oldest active
+            # transaction; active and uncommitted versions are never removed.
+            newest = versions.last
+            protected_base = versions.reverse.find(&:is_committed)
             versions.delete_if do |version|
-              if version.is_aborted
+              removable = version.is_aborted ||
+                (version != newest && version != protected_base && version.is_committed &&
+                 min_active_transaction_id && version.commit_id &&
+                 version.commit_id < min_active_transaction_id)
+              if removable && !@active_versions.include?(version.version_id)
                 @version_map.delete(version.version_id)
                 removed += 1
                 true
@@ -231,8 +291,8 @@ module RubyDB
             timestamp: Time.now.iso8601
           }
 
-          @versions.each do |row_id, versions|
-            data[:versions][row_id] = versions.map do |v|
+          @versions.each do |row_key, versions|
+            data[:versions][row_key.to_s] = versions.map do |v|
               {
                 row_id: v.row_id,
                 version_id: v.version_id,
@@ -259,10 +319,13 @@ module RubyDB
 
           @versions.clear
           @version_map.clear
+          @version_keys.clear
           @active_versions.clear
 
-          data[:versions].each do |row_id, versions_data|
-            @versions[row_id] = versions_data.map do |v_data|
+          data[:versions].each do |row_key, versions_data|
+            row_key = row_key.to_s
+            row_key = row_key.to_i if row_key.match?(/\A\d+\z/)
+            @versions[row_key] = versions_data.map do |v_data|
               version = Version.new(
                 v_data[:row_id],
                 v_data[:data],
@@ -278,6 +341,7 @@ module RubyDB
               version.instance_variable_set(:@visibility, v_data[:visibility].to_sym)
 
               @version_map[version.version_id] = version
+              @version_keys[version.version_id] = row_key
               version
             end
           end
@@ -293,7 +357,14 @@ module RubyDB
         return unless @persistence_path && @dirty
 
         @lock.synchronize do
-          File.write(@persistence_path, serialize)
+          FileUtils.mkdir_p(File.dirname(@persistence_path))
+          temp_path = "#{@persistence_path}.tmp"
+          File.open(temp_path, "w") do |file|
+            file.write(serialize)
+            file.flush
+            file.fsync
+          end
+          File.rename(temp_path, @persistence_path)
           @dirty = false
         end
       end

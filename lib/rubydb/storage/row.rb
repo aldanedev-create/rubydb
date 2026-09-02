@@ -24,7 +24,14 @@ module RubyDB
 
         # Initialize values
         columns.each do |col|
-          @values[col.name] = normalized_values[col.name] || col.default
+          value = if normalized_values.key?(col.name)
+                    normalized_values[col.name]
+                  elsif normalized_values.key?(col.name.to_sym)
+                    normalized_values[col.name.to_sym]
+                  else
+                    col.default
+                  end
+          @values[col.name] = value
         end
       end
 

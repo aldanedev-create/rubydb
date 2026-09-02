@@ -5,6 +5,24 @@ require "set"
 
 module RubyDB
   module Replication
+    # Durable slot state is represented by the primary while the replication
+    # catalog is still file-backed. A slot retains the last acknowledged LSN
+    # and prevents accidental reuse of a replica identity.
+    class ReplicationSlot
+      attr_reader :name, :primary
+      attr_accessor :confirmed_lsn
+
+      def initialize(name, primary)
+        @name = name.to_s
+        @primary = primary
+        @confirmed_lsn = 0
+      end
+
+      def advance(lsn)
+        @confirmed_lsn = [@confirmed_lsn, lsn.to_i].max
+      end
+    end
+
     # Failover - Handles automatic failover
     class Failover
       attr_reader :stats
@@ -92,7 +110,8 @@ module RubyDB
       end
 
       def health_check
-        @lock.synchronize do
+        trigger_reason = nil
+        result = @lock.synchronize do
           result = @replication_manager.health_check
 
           @health_check_history << {
@@ -111,7 +130,7 @@ module RubyDB
             if @stats[:consecutive_failures] >= @max_consecutive_failures &&
                @failover_trigger == :auto &&
                !@failover_triggered
-              trigger_failover("health check failures")
+              trigger_reason = "health check failures"
             end
           else
             @stats[:consecutive_failures] = 0
@@ -119,6 +138,8 @@ module RubyDB
 
           result
         end
+        trigger_failover(trigger_reason) if trigger_reason
+        result
       end
 
       def stats
@@ -221,15 +242,16 @@ module RubyDB
       def find_candidate_replicas
         candidates = []
 
-        # In production, would query for available replicas
-        # For now, return the current replica if it exists
-        if @replication_manager.replica&.running?
+        replica = @replication_manager.replica
+        status = replica&.replication_status
+        if replica&.running? && status && status[:state] == Replica::STATE_SYNCED
           candidates << {
             node_id: @replication_manager.replica.config[:node_id] || "replica_1",
-            host: @replication_manager.replica.primary_host,
-            port: @replication_manager.replica.primary_port,
-            status: "running",
-            lag_ms: 0
+            host: replica.primary_host,
+            port: replica.primary_port,
+            status: status[:state].to_s,
+            lag_ms: status[:lag_ms].to_i,
+            replayed_lsn: status[:last_replayed_lsn].to_i
           }
         end
 
@@ -237,25 +259,31 @@ module RubyDB
       end
 
       def choose_best_candidate(candidates)
-        candidates.min_by { |c| c[:lag_ms] || 0 }
+        candidates.min_by { |c| [c[:lag_ms] || 0, -(c[:replayed_lsn] || 0)] }
       end
 
       def promote_candidate(candidate)
-        # In production, would promote the candidate
-        { success: true }
+        result = @replication_manager.promote_to_primary
+        return { success: false, error: "Promotion manager returned no result" } unless result.is_a?(Hash)
+
+        result[:success] ? result : { success: false, error: result[:error] || "Promotion failed" }
       end
 
       def verify_promotion(candidate)
-        # In production, would verify the promotion
-        { success: true }
+        mode = @replication_manager.respond_to?(:mode) ? @replication_manager.mode : nil
+        return { success: false, error: "Promotion did not enter primary mode" } unless mode == ReplicationManager::MODE_PRIMARY
+
+        health = @replication_manager.health_check
+        health[:healthy] ? { success: true, health: health } : { success: false, error: "Promoted node is unhealthy" }
       end
 
       def failover_result(success, message, extra = {})
+        started_at = @failover_start_time || Time.now
         result = {
           success: success,
           message: message,
           timestamp: Time.now.iso8601,
-          elapsed_ms: (Time.now - @failover_start_time) * 1000,
+          elapsed_ms: (Time.now - started_at) * 1000,
           state: @state
         }.merge(extra)
 

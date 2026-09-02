@@ -53,7 +53,7 @@ The code does not yet demonstrate end-to-end restart correctness or real crash r
 
 ### 3. Transaction and MVCC semantics are not yet proven
 
-The transaction manager and visibility map exist, but the code still contains simplified rollback logic and many component interactions are not validated against real isolation scenarios. This is not enough for production data safety.
+The transaction manager and visibility map exist, and transaction rollback now restores update/delete before-images with regression coverage. Broader isolation scenarios and workload validation remain part of the production-readiness audit.
 
 ### 4. SQL engine is partial
 

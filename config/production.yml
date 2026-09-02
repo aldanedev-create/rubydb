@@ -1,0 +1,36 @@
+server:
+  host: <%= ENV.fetch("RUBYDB_HOST", "127.0.0.1").to_json %>
+  port: <%= ENV.fetch("RUBYDB_PORT", "7432") %>
+  max_connections: <%= ENV.fetch("RUBYDB_MAX_CONNECTIONS", "100") %>
+  min_workers: <%= ENV.fetch("RUBYDB_MIN_WORKERS", "2") %>
+  max_workers: <%= ENV.fetch("RUBYDB_MAX_WORKERS", "20") %>
+  worker_queue_size: <%= ENV.fetch("RUBYDB_WORKER_QUEUE_SIZE", "1000") %>
+  read_timeout: <%= ENV.fetch("RUBYDB_READ_TIMEOUT", "30") %>
+  write_timeout: <%= ENV.fetch("RUBYDB_WRITE_TIMEOUT", "30") %>
+  idle_timeout: <%= ENV.fetch("RUBYDB_IDLE_TIMEOUT", "300") %>
+  max_request_size: <%= ENV.fetch("RUBYDB_MAX_REQUEST_SIZE", "10485760") %>
+  daemonize: false
+  pid_file: <%= ENV.fetch("RUBYDB_PID_FILE", "rubydb.pid").to_json %>
+
+storage:
+  data_dir: <%= ENV.fetch("RUBYDB_DATA_DIR", "/var/lib/rubydb/data").to_json %>
+  fsync: true
+  wal_enabled: true
+
+logging:
+  log_dir: <%= ENV.fetch("RUBYDB_LOG_DIR", "/var/log/rubydb").to_json %>
+  log_level: <%= ENV.fetch("RUBYDB_LOG_LEVEL", "info").to_json %>
+
+auth:
+  method: password
+  credentials:
+    username: <%= ENV.fetch("RUBYDB_USERNAME").to_json %>
+    password: <%= ENV.fetch("RUBYDB_PASSWORD").to_json %>
+
+ssl:
+  enabled: <%= ENV.fetch("RUBYDB_SSL_ENABLED", "true") %>
+  cert_file: <%= ENV.fetch("RUBYDB_SSL_CERT_FILE", "/etc/rubydb/tls/server.crt").to_json %>
+  key_file: <%= ENV.fetch("RUBYDB_SSL_KEY_FILE", "/etc/rubydb/tls/server.key").to_json %>
+  ca_file: <%= ENV.fetch("RUBYDB_SSL_CA_FILE", "/etc/rubydb/tls/ca.crt").to_json %>
+  verify_peer: <%= ENV.fetch("RUBYDB_SSL_VERIFY_PEER", "false") %>
+  min_version: TLS1_2

@@ -4,6 +4,7 @@ require "digest"
 require "securerandom"
 require "time"
 require "base64"
+require "openssl"
 
 module RubyDB
   module Security
@@ -195,7 +196,6 @@ module RubyDB
 
       def authenticate_scram(user, scram_data)
         return false unless user && scram_data
-        # In production, implement full SCRAM verification
         verify_scram_response(user, scram_data)
       end
 
@@ -255,8 +255,47 @@ module RubyDB
       end
 
       def verify_scram_response(user, scram_data)
-        # Placeholder for SCRAM verification
-        true
+        return false unless scram_data.is_a?(Hash)
+
+        value = ->(key) { scram_data[key] || scram_data[key.to_s] }
+        client_first = value.call(:client_first_bare)
+        server_first = value.call(:server_first)
+        client_final = value.call(:client_final_without_proof)
+        proof = value.call(:proof)
+        return false if [client_first, server_first, client_final, proof].any?(&:nil?)
+
+        metadata = user.metadata || {}
+        salt_value = metadata[:scram_salt] || metadata["scram_salt"]
+        iterations = Integer(metadata[:scram_iterations] || metadata["scram_iterations"] || 120_000)
+        stored_value = metadata[:scram_stored_key] || metadata["scram_stored_key"]
+        server_value = metadata[:scram_server_key] || metadata["scram_server_key"]
+        return false unless salt_value && stored_value && server_value
+
+        salt = salt_value.is_a?(String) ? Base64.decode64(salt_value) : salt_value
+        stored_key = decode_scram_value(stored_value)
+        server_key = decode_scram_value(server_value)
+        auth_message = [client_first, server_first, client_final].join(",")
+        signature = OpenSSL::HMAC.digest("SHA256", stored_key, auth_message)
+        proof_bytes = Base64.decode64(proof.to_s)
+        client_key = proof_bytes.bytes.each_with_index.map { |byte, index| byte ^ signature.getbyte(index) }.pack("C*")
+        secure_compare(Digest::SHA256.digest(client_key), stored_key)
+      rescue ArgumentError, TypeError
+        false
+      end
+
+      def decode_scram_value(value)
+        return value if value.is_a?(String) && value.bytesize == 32 && value !~ /\A[A-Za-z0-9+\/=]+\z/
+
+        decoded = Base64.decode64(value.to_s)
+        decoded.bytesize == 32 ? decoded : value.to_s
+      end
+
+      def secure_compare(left, right)
+        return false unless left.bytesize == right.bytesize
+
+        result = 0
+        left.bytes.each_with_index { |byte, index| result |= byte ^ right.getbyte(index) }
+        result.zero?
       end
     end
   end

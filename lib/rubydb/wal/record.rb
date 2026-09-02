@@ -2,6 +2,7 @@
 
 require "json"
 require "digest"
+require "time"
 require_relative "../errors/corruption_error"
 
 module RubyDB
@@ -49,7 +50,9 @@ module RubyDB
         }
 
         json_data = JSON.generate(record_data)
-        @size = json_data.bytesize + 8 # +8 for checksum
+        # The serialized payload is checksum (16 ASCII bytes) followed by JSON.
+        # Segment framing is owned by Segment, so this is the payload size.
+        @size = json_data.bytesize + 16
 
         # Calculate checksum
         @checksum = Digest::SHA256.hexdigest(json_data)[0...16]

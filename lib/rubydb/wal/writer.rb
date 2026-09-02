@@ -17,7 +17,7 @@ module RubyDB
         @buffer = []
         @buffer_size = config[:buffer_size] || 1024 * 1024  # 1MB
         @buffer_current_size = 0
-        @sync_on_write = config[:sync] || true
+        @sync_on_write = config.key?(:sync) ? config[:sync] : true
         @stats = {
           records_written: 0,
           bytes_written: 0,
@@ -75,7 +75,7 @@ module RubyDB
           last_lsn = nil
 
           records.each do |record|
-            lsn = write_record(record)
+            lsn = write_record_locked(record)
             start_lsn ||= lsn
             last_lsn = lsn
           end
@@ -111,7 +111,9 @@ module RubyDB
           @shutdown = true
           @running = false
           @write_thread&.kill if !wait
-          flush
+          flush_buffer
+          _sync if @sync_on_write
+          @current_segment.close if @current_segment&.open?
         end
       end
 
@@ -129,6 +131,24 @@ module RubyDB
 
       private
 
+      def write_record_locked(record)
+        lsn = next_lsn
+        record.instance_variable_set(:@lsn, lsn)
+
+        serialized = record.serialize
+        record_data = serialized[:checksum] + serialized[:data]
+        @buffer << { record: record, data: record_data, lsn: lsn }
+        @buffer_current_size += record_data.bytesize
+        @stats[:records_written] += 1
+
+        if @buffer_current_size >= @buffer_size || @sync_on_write
+          flush_buffer
+          _sync if @sync_on_write
+        end
+
+        lsn
+      end
+
       def create_new_segment
         segment_id = @current_segment ? @current_segment.segment_id + 1 : 1
         segment = Segment.new(segment_id, @wal_dir, @segment_max_size)
@@ -141,7 +161,7 @@ module RubyDB
       def next_lsn
         @current_lsn = LSN.new(
           @current_segment.segment_id,
-          @current_lsn.offset + 1
+          @current_segment.size + @buffer.sum { |entry| entry[:data].bytesize + Segment::FRAME_HEADER_SIZE }
         )
       end
 

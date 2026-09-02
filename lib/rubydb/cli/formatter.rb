@@ -93,6 +93,10 @@ module RubyDB
       def format_migrations(migrations)
         return @output.puts("No migrations found", :yellow) if migrations.empty?
 
+        migrations = migrations.map do |migration|
+          migration.merge(applied: migration[:applied] || migration[:state]&.to_sym == :applied)
+        end
+
         headers = ["Version", "Name", "Status", "Applied At"]
         rows = migrations.map do |m|
           [

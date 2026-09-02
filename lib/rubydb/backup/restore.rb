@@ -3,6 +3,10 @@
 require "fileutils"
 require "json"
 require "zlib"
+require "monitor"
+require "digest"
+require "pathname"
+require_relative "../storage/engine"
 
 module RubyDB
   module Backup
@@ -21,7 +25,7 @@ module RubyDB
           avg_time_ms: 0,
           last_restore: nil
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @incremental_restores = {}
       end
 
@@ -132,26 +136,29 @@ module RubyDB
       private
 
       def restore_full(backup_path, metadata, options)
+        destination = options[:destination] || @engine&.data_dir
+        raise ArgumentError, "Restore destination is required" unless destination
+        FileUtils.mkdir_p(destination)
+
         # Restore data files
         files = metadata[:files] || []
         files.each do |file|
-          src = File.join(backup_path, file)
+          src = manifest_file_path(backup_path, file)
+          raise ArgumentError, "Invalid manifest file path: #{file}" unless src
           next unless File.exist?(src)
 
           # Determine destination
-          dest = if file.start_with?("wal/")
-            @engine.wal_dir
-          else
-            @engine.data_dir
-          end
+          dest = file.start_with?("wal/") ? File.join(destination, "wal") : destination
+          FileUtils.mkdir_p(dest)
 
-          dest_path = File.join(dest, File.basename(file))
+          destination_name = File.basename(file).sub(/\.gz\z/, "")
+          dest_path = File.join(dest, destination_name)
           restore_file(src, dest_path)
         end
 
         # Restore schema
         schema_path = File.join(backup_path, "schema.sql")
-        if File.exist?(schema_path)
+        if File.exist?(schema_path) && @engine
           schema = File.read(schema_path)
           @engine.execute_schema(schema)
         end
@@ -166,15 +173,16 @@ module RubyDB
         end
 
         # Restore base backup first
-        base_path = File.join(@config[:backup_dir], base_backup)
+        base_path = backup_path_for_name(base_backup)
+        return { success: false, error: "Invalid base backup name" } unless base_path
         unless Dir.exist?(base_path)
           return { success: false, error: "Base backup not found" }
         end
 
-        restore_full(base_path, metadata, options)
-
-        # Then apply incremental changes
-        restore_full(backup_path, metadata, options)
+        base_metadata = JSON.parse(File.read(File.join(base_path, "manifest.json")), symbolize_names: true)
+        base_result = restore_full(base_path, base_metadata, options)
+        return base_result unless base_result[:success]
+        apply_delta(backup_path, metadata, options)
 
         { success: true, restored_from: metadata[:name], base: base_backup }
       end
@@ -186,15 +194,16 @@ module RubyDB
         end
 
         # Restore base backup first
-        base_path = File.join(@config[:backup_dir], base_backup)
+        base_path = backup_path_for_name(base_backup)
+        return { success: false, error: "Invalid base backup name" } unless base_path
         unless Dir.exist?(base_path)
           return { success: false, error: "Base backup not found" }
         end
 
-        restore_full(base_path, metadata, options)
-
-        # Then apply differential changes
-        restore_full(backup_path, metadata, options)
+        base_metadata = JSON.parse(File.read(File.join(base_path, "manifest.json")), symbolize_names: true)
+        base_result = restore_full(base_path, base_metadata, options)
+        return base_result unless base_result[:success]
+        apply_delta(backup_path, metadata, options)
 
         { success: true, restored_from: metadata[:name], base: base_backup }
       end
@@ -204,6 +213,66 @@ module RubyDB
           decompress_file(src, dest)
         else
           FileUtils.cp(src, dest)
+        end
+      end
+
+      def backup_path_for_name(name)
+        value = name.to_s
+        return nil if value.empty? || value != File.basename(value)
+
+        root = File.expand_path(@config[:backup_dir] || "backups")
+        path = File.expand_path(File.join(root, value))
+        path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+      end
+
+      def manifest_file_path(root_path, relative_path)
+        relative = relative_path.to_s
+        return nil if relative.empty? || Pathname.new(relative).absolute?
+
+        root = File.expand_path(root_path)
+        path = File.expand_path(File.join(root, relative))
+        path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+      end
+
+      def apply_delta(delta_path, metadata, options)
+        changes_path = File.join(delta_path, "changes.json")
+        return { success: false, error: "Delta changes file not found" } unless File.file?(changes_path)
+        if metadata[:checksum] && Digest::SHA256.file(changes_path).hexdigest != metadata[:checksum]
+          return { success: false, error: "Delta checksum mismatch" }
+        end
+
+        engine = @engine
+        owned_engine = false
+        if engine.nil?
+          destination = options[:destination]
+          database_file = Dir.glob(File.join(destination.to_s, "*.rdb")).first
+          return { success: false, error: "Engine or restored database is required for delta restore" } unless database_file
+          engine = Storage::Engine.new(database_file, auto_vacuum: false)
+          owned_engine = true
+        end
+        changes = JSON.parse(File.read(changes_path), symbolize_names: true).fetch(:changes)
+        changes.each { |change| apply_delta_change(engine, change) }
+        { success: true }
+      rescue StandardError => error
+        { success: false, error: error.message }
+      ensure
+        engine&.close if owned_engine
+      end
+
+      def apply_delta_change(engine, change)
+        table = change[:table_name] || change[:table]
+        case change[:type].to_s
+        when "insert"
+          columns = engine.table_columns(table)
+          values = (change[:values] || change[:data] || {}).each_with_object({}) { |(key, value), result| result[key.to_s] = value }
+          engine.insert_row(table, columns, values)
+        when "update"
+          values = (change[:values] || change[:data] || {}).each_with_object({}) { |(key, value), result| result[key.to_s] = value }
+          engine.update_row(table, change[:row_id], values, visibility_check: false)
+        when "delete"
+          engine.delete_row(table, change[:row_id], visibility_check: false)
+        else
+          raise ArgumentError, "Unsupported delta operation: #{change[:type]}"
         end
       end
 

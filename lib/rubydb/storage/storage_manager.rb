@@ -17,7 +17,8 @@ module RubyDB
         @page_manager = PageManager.new(@file_manager)
         @buffer_pool = BufferPool.new(@buffer_size)
         @free_space_map = FreeSpaceMap.new(@page_manager)
-        @visibility_map = VisibilityMap.new(@page_manager)
+        visibility_path = config[:visibility_path] || "#{path}.visibility"
+        @visibility_map = VisibilityMap.new(@page_manager, config.merge(visibility_path: visibility_path))
         @page_allocator = PageAllocator.new(@page_manager)
 
         # Connect components

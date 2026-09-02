@@ -2,6 +2,13 @@
 
 require "socket"
 require "timeout"
+require "monitor"
+require_relative "message"
+require_relative "encoder"
+require_relative "decoder"
+require_relative "version"
+require_relative "capabilities"
+require_relative "handshake"
 
 module RubyDB
   module Protocol
@@ -28,7 +35,7 @@ module RubyDB
           reconnects: 0,
           connection_time: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @read_timeout = options[:read_timeout] || 30
         @write_timeout = options[:write_timeout] || 30
       end
@@ -205,16 +212,7 @@ module RubyDB
       private
 
       def read_data
-        data = ""
-
-        while true
-          chunk = @socket.recv(@chunk_size)
-          break if chunk.empty?
-          data << chunk
-          break if data.bytesize >= @chunk_size
-        end
-
-        data
+        @socket.gets || ""
       end
 
       def perform_handshake

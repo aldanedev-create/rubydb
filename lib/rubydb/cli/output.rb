@@ -39,7 +39,7 @@ module RubyDB
         $stdout.print("\n") if newline
       end
 
-      def puts(message, color = nil)
+      def puts(message = "", color = nil)
         print(message, color, true)
       end
 

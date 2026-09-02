@@ -25,6 +25,8 @@ module RubyDB
             opts.on("-r", "--restore NAME", "Restore snapshot") do |name|
               options[:restore] = name
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
+            opts.on("--dir DIR", "Snapshot directory") { |path| options[:snapshot_dir] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -33,18 +35,21 @@ module RubyDB
 
           parser.parse!(args)
 
+          database = RubyDB::Database.new(options[:database] || "data/rubydb.rdb", auto_connect: false).connect
+          snapshots = RubyDB::Backup::Snapshot.new(
+            database.engine, snapshot_dir: options[:snapshot_dir] || "snapshots"
+          )
+
           if options[:list]
-            @formatter.format_snapshots([
-              { name: "snapshot_20240101", created_at: "2024-01-01 10:00:00", size: "100MB" }
-            ])
-            return
+            @formatter.format_snapshots(snapshots.list_snapshots)
+            return 0
           end
 
           if options[:delete]
-            @output.spinner("Deleting snapshot #{options[:delete]}...") do
-              @output.success("Snapshot deleted")
-            end
-            return
+            result = snapshots.delete_snapshot(options[:delete])
+            raise result[:error] unless result[:success]
+            @output.success("Snapshot #{options[:delete]} deleted")
+            return 0
           end
 
           if options[:restore]
@@ -53,17 +58,20 @@ module RubyDB
             response = $stdin.gets.chomp
             return unless response.downcase == "yes"
 
-            @output.spinner("Restoring snapshot #{options[:restore]}...") do
-              @output.success("Snapshot restored")
-            end
-            return
+            result = snapshots.restore_snapshot(options[:restore])
+            raise result[:error] unless result[:success]
+            @output.success("Snapshot #{options[:restore]} restored")
+            return 0
           end
 
           name = options[:name] || "snapshot_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
 
-          @output.spinner("Creating snapshot #{name}...") do
-            @output.success("Snapshot #{name} created")
-          end
+          result = snapshots.create_snapshot(name)
+          raise result[:error] unless result[:success]
+          @output.success("Snapshot #{name} created")
+          0
+        ensure
+          database&.close
         end
       end
     end

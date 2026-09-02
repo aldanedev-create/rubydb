@@ -9,6 +9,7 @@ module RubyDB
       attr_reader :row_id, :version_id, :created_at, :transaction_id
       attr_reader :data, :prev_version_id, :next_version_id
       attr_accessor :is_committed, :is_aborted, :is_deleted
+      attr_reader :commit_id, :committed_at, :aborted_at, :visibility
 
       def initialize(row_id, data, transaction_id, prev_version_id = nil)
         @row_id = row_id

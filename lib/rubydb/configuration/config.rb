@@ -74,10 +74,11 @@ module RubyDB
       end
 
       def reload
-        @lock.synchronize do
+        config_path = @lock.synchronize do
           @loaded = false
-          load(@config_path)
+          @config_path
         end
+        load(config_path)
       end
 
       def get(path)

@@ -128,6 +128,121 @@ module RubyDB
         end
       end
 
+      class CreateDatabase < Plan
+        attr_reader :options
+        def initialize(name, options = {})
+          super(:create_database)
+          @database_name = name
+          @options = options
+        end
+        def database_name = @database_name
+      end
+
+      class DropDatabase < Plan
+        attr_reader :options
+        def initialize(name, options = {})
+          super(:drop_database)
+          @database_name = name
+          @options = options
+        end
+        def database_name = @database_name
+      end
+
+      class CreateSchema < Plan
+        attr_reader :schema_name, :options
+        def initialize(name, options = {})
+          super(:create_schema)
+          @schema_name = name
+          @options = options
+        end
+      end
+
+      class DropSchema < Plan
+        attr_reader :schema_name, :options
+        def initialize(name, options = {})
+          super(:drop_schema)
+          @schema_name = name
+          @options = options
+        end
+      end
+
+      class CreateView < Plan
+        attr_reader :view_name, :query, :options
+        def initialize(name, query, options = {})
+          super(:create_view)
+          @view_name = name
+          @query = query
+          @options = options
+        end
+      end
+
+      class DropView < Plan
+        attr_reader :view_name, :options
+        def initialize(name, options = {})
+          super(:drop_view)
+          @view_name = name
+          @options = options
+        end
+      end
+
+      class CreateTrigger < Plan
+        attr_reader :trigger_name, :timing, :event, :target_table, :function_name
+        def initialize(name, timing, event, table, function_name)
+          super(:create_trigger)
+          @trigger_name, @timing, @event, @target_table, @function_name = name, timing, event, table, function_name
+        end
+      end
+
+      class DropTrigger < Plan
+        attr_reader :trigger_name, :options
+        def initialize(name, options = {})
+          super(:drop_trigger)
+          @trigger_name, @options = name, options
+        end
+      end
+
+      class Vacuum < Plan
+        def initialize
+          super(:vacuum)
+        end
+      end
+
+      class AlterTableAddColumn < Plan
+        attr_reader :column_name, :column_type, :options
+
+        def initialize(table_name, column_name, column_type, options = {})
+          super(:alter_table_add_column, table_name)
+          @column_name = column_name
+          @column_type = column_type
+          @options = options
+        end
+      end
+
+      class AlterTableDropColumn < Plan
+        attr_reader :column_name
+
+        def initialize(table_name, column_name)
+          super(:alter_table_drop_column, table_name)
+          @column_name = column_name
+        end
+      end
+
+      class AlterTableAddConstraint < Plan
+        attr_reader :constraint
+        def initialize(table_name, constraint)
+          super(:alter_table_add_constraint, table_name)
+          @constraint = constraint
+        end
+      end
+
+      class AlterTableDropConstraint < Plan
+        attr_reader :constraint_name
+        def initialize(table_name, constraint_name)
+          super(:alter_table_drop_constraint, table_name)
+          @constraint_name = constraint_name
+        end
+      end
+
       class CreateIndex < Plan
         attr_reader :index_name, :options
 
@@ -166,6 +281,30 @@ module RubyDB
       class Rollback < Plan
         def initialize
           super(:rollback)
+        end
+      end
+
+      class Savepoint < Plan
+        attr_reader :name
+        def initialize(name)
+          super(:savepoint)
+          @name = name
+        end
+      end
+
+      class RollbackToSavepoint < Plan
+        attr_reader :name
+        def initialize(name)
+          super(:rollback_to_savepoint)
+          @name = name
+        end
+      end
+
+      class ReleaseSavepoint < Plan
+        attr_reader :name
+        def initialize(name)
+          super(:release_savepoint)
+          @name = name
         end
       end
 

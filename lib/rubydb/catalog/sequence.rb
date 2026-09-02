@@ -77,8 +77,8 @@ module RubyDB
           cycle: data[:cycle] || false
         )
         seq.current_value = data[:current_value] if data[:current_value]
-        seq.created_at = Time.parse(data[:created_at]) if data[:created_at]
-        seq.modified_at = Time.parse(data[:modified_at]) if data[:modified_at]
+        seq.send(:created_at=, Time.parse(data[:created_at])) if data[:created_at]
+        seq.send(:modified_at=, Time.parse(data[:modified_at])) if data[:modified_at]
         seq
       end
 

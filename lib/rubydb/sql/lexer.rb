@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "strscan"
+require_relative "../errors/error"
+require_relative "../errors/parser_error"
 
 module RubyDB
   module SQL
@@ -56,33 +58,33 @@ module RubyDB
         token =
           case
           when @scanner.scan(/[a-zA-Z_][a-zA-Z0-9_]*/)
-            word = $&.upcase
+            word = @scanner.matched.upcase
             update_position($&)
             if Keywords.keyword?(word)
               Token.new(Keywords.token_type(word), word, **pos)
             else
-              Token.new(Token::Type::IDENTIFIER, $&, **pos)
+              Token.new(Token::Type::IDENTIFIER, @scanner.matched, **pos)
             end
 
-          when @scanner.scan(/'[^']*'/)
+          when @scanner.scan(/'(?:''|[^'])*'/)
             update_position($&)
-            Token.new(Token::Type::STRING, $&[1..-2], **pos)
+            Token.new(Token::Type::STRING, @scanner.matched[1..-2].gsub("''", "'"), **pos)
 
           when @scanner.scan(/"[^"]*"/)
             update_position($&)
-            Token.new(Token::Type::IDENTIFIER, $&[1..-2], **pos)
+            Token.new(Token::Type::IDENTIFIER, @scanner.matched[1..-2], **pos)
 
           when @scanner.scan(/`[^`]*`/)
             update_position($&)
-            Token.new(Token::Type::IDENTIFIER, $&[1..-2], **pos)
+            Token.new(Token::Type::IDENTIFIER, @scanner.matched[1..-2], **pos)
 
           when @scanner.scan(/\d+\.\d+/)
             update_position($&)
-            Token.new(Token::Type::NUMBER, $&.to_f, **pos)
+            Token.new(Token::Type::NUMBER, @scanner.matched.to_f, **pos)
 
           when @scanner.scan(/\d+/)
             update_position($&)
-            Token.new(Token::Type::NUMBER, $&.to_i, **pos)
+            Token.new(Token::Type::NUMBER, @scanner.matched.to_i, **pos)
 
           when @scanner.scan(/\?/)
             update_position($&)
@@ -90,11 +92,11 @@ module RubyDB
 
           when @scanner.scan(/\$\d+/)
             update_position($&)
-            Token.new(Token::Type::PARAMETER, $&[1..-1].to_i, **pos)
+            Token.new(Token::Type::PARAMETER, @scanner.matched[1..-1].to_i, **pos)
 
           when @scanner.scan(/<=/)
             update_position($&)
-            Token.new(Token::Type::LTE, ">=", **pos)
+            Token.new(Token::Type::LTE, "<=", **pos)
 
           when @scanner.scan(/>=/)
             update_position($&)
@@ -102,7 +104,7 @@ module RubyDB
 
           when @scanner.scan(/!=|<>/)
             update_position($&)
-            Token.new(Token::Type::NE, $&, **pos)
+            Token.new(Token::Type::NE, @scanner.matched, **pos)
 
           when @scanner.scan(/=/)
             update_position($&)
@@ -191,14 +193,14 @@ module RubyDB
           else
             char = @scanner.getch
             update_position(char)
-            # Skip unknown characters for now
-            nil
+            raise RubyDB::ParserError, "Unexpected character #{char.inspect} at #{@current_position[:line]}:#{@current_position[:column]}"
           end
 
         token
       end
 
       def update_position(text)
+        text ||= @scanner.matched
         lines = text.count("\n")
         if lines > 0
           @current_position[:line] += lines

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "monitor"
+
 module RubyDB
   module Migrations
     # SchemaDiff - Compares schemas and generates migrations
@@ -18,7 +20,7 @@ module RubyDB
           columns_removed: 0,
           columns_changed: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
       end
 
       def diff(source_schema, target_schema)
@@ -32,7 +34,8 @@ module RubyDB
             added_columns: [],
             removed_columns: [],
             changed_columns: [],
-            warnings: []
+            warnings: [],
+            target_schema: target_schema
           }
 
           # Compare tables
@@ -180,7 +183,7 @@ module RubyDB
 
         # Columns to add
         diff_result[:added_columns].each do |col|
-          code << "  engine.add_column('#{col[:table]}', '#{col[:column]}', '#{target_schema[col[:table]][col[:column]]}')"
+          code << "  engine.add_column('#{col[:table]}', '#{col[:column]}', '#{diff_result[:target_schema][col[:table]][col[:column]]}')"
         end
 
         # Columns to remove

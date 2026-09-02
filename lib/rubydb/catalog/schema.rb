@@ -71,18 +71,18 @@ module RubyDB
 
       def self.deserialize(data)
         schema = new(data[:name], owner: data[:owner])
-        schema.created_at = Time.parse(data[:created_at]) if data[:created_at]
+        schema.send(:created_at=, Time.parse(data[:created_at])) if data[:created_at]
 
         data[:tables]&.each do |name, table_data|
-          schema.tables[name] = Table.deserialize(table_data)
+          schema.tables[name.to_s] = Table.deserialize(table_data)
         end
 
         data[:views]&.each do |name, view_data|
-          schema.views[name] = View.deserialize(view_data)
+          schema.views[name.to_s] = View.deserialize(view_data)
         end
 
         data[:sequences]&.each do |name, seq_data|
-          schema.sequences[name] = Sequence.deserialize(seq_data)
+          schema.sequences[name.to_s] = Sequence.deserialize(seq_data)
         end
 
         schema

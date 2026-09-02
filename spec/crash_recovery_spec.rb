@@ -3,6 +3,7 @@
 require 'spec_helper'
 require 'tmpdir'
 require 'fileutils'
+require 'rbconfig'
 
 RSpec.describe "RubyDB crash recovery" do
   let(:temp_dir) { Dir.mktmpdir }
@@ -66,7 +67,7 @@ RSpec.describe "RubyDB crash recovery" do
       expect(engine.close).to be_truthy
 
       # WAL directory should exist
-      wal_dir = File.join(File.dirname(db_path), '.wal')
+      wal_dir = "#{db_path}.wal"
       expect(Dir.exist?(wal_dir)).to be_truthy
     end
   end
@@ -102,7 +103,8 @@ RSpec.describe "RubyDB crash recovery" do
       RUBY
 
       # Run the crash script in a subprocess
-      pid = spawn("cd #{temp_dir} && ruby -Ilib #{crash_script}", chdir: temp_dir)
+      ruby_lib = File.expand_path('../lib', __dir__)
+      pid = spawn(RbConfig.ruby, '-I', ruby_lib, crash_script, chdir: temp_dir)
       Process.wait(pid)
       crash_exit_code = $?.exitstatus
 

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "optparse"
+
 module RubyDB
   module CLI
     module Commands
@@ -27,9 +29,17 @@ module RubyDB
 
           parser.parse!(args)
 
-          @output.spinner("Stopping RubyDB server...") do
-            @output.success("RubyDB server stopped")
-          end
+          pid_file = options[:pid_file] || "rubydb.pid"
+          raise "PID file not found: #{pid_file}" unless File.file?(pid_file)
+          pid = Integer(File.read(pid_file).strip, 10)
+          Process.kill(0, pid)
+          Process.kill(options[:force] ? "KILL" : "TERM", pid)
+          @output.success("RubyDB server stop signal sent to PID #{pid}")
+          0
+        rescue Errno::ESRCH
+          raise "RubyDB process #{pid} is not running"
+        rescue ArgumentError
+          raise "Invalid PID in #{pid_file}"
         end
       end
     end

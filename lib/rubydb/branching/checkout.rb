@@ -131,12 +131,21 @@ module RubyDB
       end
 
       def get_branch_data(branch_name)
-        # In production, would load branch data from storage
-        {}
+        branch = @branch_manager.get_branch(branch_name)
+        raise ArgumentError, "Branch '#{branch_name}' not found" unless branch
+        snapshot = branch.respond_to?(:state_snapshot) ? branch.state_snapshot : nil
+        changes = branch.respond_to?(:logical_changes) ? branch.logical_changes : branch.changes
+        { base: snapshot, changes: changes }
       end
 
       def apply_branch_state(branch_data)
-        # In production, would apply branch state to engine
+        unless @engine.respond_to?(:apply_branch_state)
+          raise ArgumentError, "Branch checkout requires an engine state-application hook"
+        end
+
+        result = @engine.apply_branch_state(branch_data)
+        raise ArgumentError, "Engine rejected branch state" if result == false
+        result
       end
 
       def record_checkout(branch_name, options)

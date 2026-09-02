@@ -49,8 +49,15 @@ module RubyDB
           parse_commit
         when Token::Type::ROLLBACK
           parse_rollback
+        when Token::Type::SAVEPOINT
+          parse_savepoint
+        when Token::Type::RELEASE
+          parse_release_savepoint
         when Token::Type::EXPLAIN
           parse_explain
+        when Token::Type::VACUUM
+          advance
+          AST::Vacuum.new
         when nil, Token::Type::EOF
           nil
         else
@@ -376,8 +383,17 @@ module RubyDB
           parse_create_table
         when Token::Type::INDEX
           parse_create_index
+        when Token::Type::UNIQUE
+          advance
+          parse_create_index(unique: true)
         when Token::Type::DATABASE
           parse_create_database
+        when Token::Type::SCHEMA
+          parse_create_schema
+        when Token::Type::VIEW
+          parse_create_view
+        when Token::Type::TRIGGER
+          parse_create_trigger
         else
           raise ParserError, "Unexpected CREATE type: #{current_token}"
         end
@@ -385,6 +401,13 @@ module RubyDB
 
       def parse_create_table
         advance # TABLE
+        if_not_exists = false
+        if current_token&.type == Token::Type::IF
+          advance
+          expect(Token::Type::NOT)
+          expect(Token::Type::EXISTS)
+          if_not_exists = true
+        end
         table_name = expect(Token::Type::IDENTIFIER).value
         expect(Token::Type::LPAREN)
 
@@ -407,7 +430,8 @@ module RubyDB
             # Column definition
             column_name = expect(Token::Type::IDENTIFIER).value
             column_type = expect_data_type
-            options = parse_column_options            columns << AST::ColumnDefinition.new(column_name, column_type, options)
+            options = parse_column_options
+            columns << AST::ColumnDefinition.new(column_name, column_type, options)
           end
 
           break unless current_token&.type == Token::Type::COMMA
@@ -416,7 +440,7 @@ module RubyDB
 
         expect(Token::Type::RPAREN)
 
-        AST::CreateTable.new(table_name, columns, constraints)
+        AST::CreateTable.new(table_name, columns, constraints, if_not_exists: if_not_exists)
       end
 
       def parse_data_type
@@ -522,6 +546,33 @@ module RubyDB
         options
       end
 
+      def parse_referential_action(kind)
+        return nil unless current_token&.type == Token::Type::ON
+        advance
+        expected = kind == :delete ? Token::Type::DELETE : Token::Type::UPDATE
+        expect(expected)
+        action = case current_token&.type
+                 when Token::Type::CASCADE
+                   advance
+                   :cascade
+                 when Token::Type::RESTRICT
+                   advance
+                   :restrict
+                 when Token::Type::SET
+                   advance
+                   expect(Token::Type::NULL) if current_token&.type == Token::Type::NULL
+                   if current_token&.type == Token::Type::DEFAULT
+                     advance
+                     :set_default
+                   else
+                     :set_null
+                   end
+                 else
+                   raise ParserError, "Expected referential action, got #{current_token}"
+                 end
+        action
+      end
+
       def parse_constraint(name = nil)
         case current_token&.type
         when Token::Type::PRIMARY
@@ -557,7 +608,9 @@ module RubyDB
             advance
           end
           expect(Token::Type::RPAREN)
-          AST::ForeignKeyConstraint.new(name, columns, ref_table, ref_columns)
+          on_delete = parse_referential_action(:delete)
+          on_update = parse_referential_action(:update)
+          AST::ForeignKeyConstraint.new(name, columns, ref_table, ref_columns, on_delete: on_delete, on_update: on_update)
         when Token::Type::UNIQUE
           advance
           expect(Token::Type::LPAREN)
@@ -580,8 +633,15 @@ module RubyDB
         end
       end
 
-      def parse_create_index
+      def parse_create_index(unique: false)
         advance # INDEX
+        if_not_exists = false
+        if current_token&.type == Token::Type::IF
+          advance
+          expect(Token::Type::NOT)
+          expect(Token::Type::EXISTS)
+          if_not_exists = true
+        end
         index_name = expect(Token::Type::IDENTIFIER).value
         expect(Token::Type::ON)
         table_name = expect(Token::Type::IDENTIFIER).value
@@ -594,19 +654,78 @@ module RubyDB
         end
         expect(Token::Type::RPAREN)
 
-        unique = false
+        # Legacy grammar accepted UNIQUE after the column list; retain it.
         if current_token&.type == Token::Type::UNIQUE
           unique = true
           advance
         end
 
-        AST::CreateIndex.new(index_name, table_name, columns, unique)
+        AST::CreateIndex.new(index_name, table_name, columns, unique: unique, if_not_exists: if_not_exists)
       end
 
       def parse_create_database
         advance # DATABASE
+        if_not_exists = false
+        if current_token&.type == Token::Type::IF
+          advance
+          expect(Token::Type::NOT)
+          expect(Token::Type::EXISTS)
+          if_not_exists = true
+        end
         db_name = expect(Token::Type::IDENTIFIER).value
-        AST::CreateDatabase.new(db_name)
+        AST::CreateDatabase.new(db_name, if_not_exists: if_not_exists)
+      end
+
+      def parse_create_schema
+        advance
+        if_not_exists = false
+        if current_token&.type == Token::Type::IF
+          advance
+          expect(Token::Type::NOT)
+          expect(Token::Type::EXISTS)
+          if_not_exists = true
+        end
+        name = expect(Token::Type::IDENTIFIER).value
+        AST::CreateSchema.new(name, if_not_exists: if_not_exists)
+      end
+
+      def parse_create_view
+        advance
+        if_not_exists = false
+        if current_token&.type == Token::Type::IF
+          advance
+          expect(Token::Type::NOT)
+          expect(Token::Type::EXISTS)
+          if_not_exists = true
+        end
+        name = expect(Token::Type::IDENTIFIER).value
+        expect(Token::Type::AS)
+        AST::CreateView.new(name, parse_select, if_not_exists: if_not_exists)
+      end
+
+      def parse_create_trigger
+        advance
+        name = expect(Token::Type::IDENTIFIER).value
+        timing = if current_token&.type == Token::Type::BEFORE
+                   advance
+                   :before
+                 else
+                   expect(Token::Type::AFTER)
+                   :after
+                 end
+        event_token = current_token
+        unless [Token::Type::INSERT, Token::Type::UPDATE, Token::Type::DELETE].include?(event_token&.type)
+          raise ParserError, "Expected trigger event, got: #{event_token}"
+        end
+        advance
+        expect(Token::Type::ON)
+        table_name = expect(Token::Type::IDENTIFIER).value
+        expect(Token::Type::EXECUTE)
+        expect(Token::Type::FUNCTION)
+        function_name = expect(Token::Type::IDENTIFIER).value
+        expect(Token::Type::LPAREN)
+        expect(Token::Type::RPAREN)
+        AST::CreateTrigger.new(name, timing, event_token.value.to_s.downcase.to_sym, table_name, function_name)
       end
 
       def parse_drop
@@ -614,16 +733,67 @@ module RubyDB
         case current_token&.type
         when Token::Type::TABLE
           advance
+          if_exists = false
+          if current_token&.type == Token::Type::IF
+            advance
+            expect(Token::Type::EXISTS)
+            if_exists = true
+          end
           table_name = expect(Token::Type::IDENTIFIER).value
-          AST::DropTable.new(table_name)
+          AST::DropTable.new(table_name, if_exists: if_exists)
         when Token::Type::INDEX
           advance
+          if_exists = false
+          if current_token&.type == Token::Type::IF
+            advance
+            expect(Token::Type::EXISTS)
+            if_exists = true
+          end
           index_name = expect(Token::Type::IDENTIFIER).value
-          AST::DropIndex.new(index_name)
+          AST::DropIndex.new(index_name, if_exists: if_exists)
         when Token::Type::DATABASE
           advance
+          if_exists = false
+          if current_token&.type == Token::Type::IF
+            advance
+            expect(Token::Type::EXISTS)
+            if_exists = true
+          end
           db_name = expect(Token::Type::IDENTIFIER).value
-          AST::DropDatabase.new(db_name)
+          AST::DropDatabase.new(db_name, if_exists: if_exists)
+        when Token::Type::SCHEMA
+          advance
+          if_exists = false
+          if current_token&.type == Token::Type::IF
+            advance
+            expect(Token::Type::EXISTS)
+            if_exists = true
+          end
+          name = expect(Token::Type::IDENTIFIER).value
+          cascade = false
+          if current_token&.type == Token::Type::CASCADE
+            advance
+            cascade = true
+          end
+          AST::DropSchema.new(name, if_exists: if_exists, cascade: cascade)
+        when Token::Type::VIEW
+          advance
+          if_exists = false
+          if current_token&.type == Token::Type::IF
+            advance
+            expect(Token::Type::EXISTS)
+            if_exists = true
+          end
+          AST::DropView.new(expect(Token::Type::IDENTIFIER).value, if_exists: if_exists)
+        when Token::Type::TRIGGER
+          advance
+          if_exists = false
+          if current_token&.type == Token::Type::IF
+            advance
+            expect(Token::Type::EXISTS)
+            if_exists = true
+          end
+          AST::DropTrigger.new(expect(Token::Type::IDENTIFIER).value, if_exists: if_exists)
         else
           raise ParserError, "Unexpected DROP type: #{current_token}"
         end
@@ -686,10 +856,22 @@ module RubyDB
         end
         if current_token&.type == Token::Type::TO
           advance
+          advance if current_token&.type == Token::Type::SAVEPOINT
           savepoint = expect(Token::Type::IDENTIFIER).value
           return AST::RollbackToSavepoint.new(savepoint)
         end
         AST::Rollback.new
+      end
+
+      def parse_savepoint
+        expect(Token::Type::SAVEPOINT)
+        AST::Savepoint.new(expect(Token::Type::IDENTIFIER).value)
+      end
+
+      def parse_release_savepoint
+        expect(Token::Type::RELEASE)
+        expect(Token::Type::SAVEPOINT) if current_token&.type == Token::Type::SAVEPOINT
+        AST::ReleaseSavepoint.new(expect(Token::Type::IDENTIFIER).value)
       end
 
       def parse_explain
@@ -701,7 +883,7 @@ module RubyDB
           analyze = false
         end
         statement = parse_statement
-        AST::Explain.new(statement, analyze)
+        AST::Explain.new(statement, analyze: analyze)
       end
 
       def expect(type)

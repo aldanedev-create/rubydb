@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "monitor"
+
 module RubyDB
   module Indexes
     # B-Tree index implementation
@@ -13,7 +15,7 @@ module RubyDB
         @root = nil
         @node_pages = {}
         @next_page = 1000
-        @lock = Mutex.new
+        @lock = Monitor.new
         
         # Initialize root node
         initialize_root
@@ -28,11 +30,11 @@ module RubyDB
           result = @root.insert(key, row_id)
           
           # Handle root split
-          if result.is_a?(Array) && result.size == 2
+          if result.is_a?(Array) && result.size == 3
             left, right, split_key = result
             
             # Create new root
-            new_root = BTreeNode.new(allocate_page, false, @order)
+            new_root = BTreeNode.new(allocate_page, false, @order, method(:allocate_page))
             new_root.keys = [split_key]
             new_root.children = [left, right]
             left.parent = new_root
@@ -134,7 +136,7 @@ module RubyDB
       private
 
       def initialize_root
-        @root = BTreeNode.new(allocate_page, true, @order)
+        @root = BTreeNode.new(allocate_page, true, @order, method(:allocate_page))
         @height = 1
         @is_built = false
       end
@@ -148,9 +150,10 @@ module RubyDB
 
       def extract_key(row)
         if @columns.size == 1
-          row[@columns.first]
+          column = @columns.first
+          row.key?(column) ? row[column] : row[column.to_s]
         else
-          @columns.map { |col| row[col] }
+          @columns.map { |col| row.key?(col) ? row[col] : row[col.to_s] }
         end
       end
 

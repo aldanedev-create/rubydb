@@ -88,6 +88,29 @@ module RubyDB
         end
       end
 
+      # Liveness answers whether the monitoring process is responsive. It
+      # deliberately does not touch storage or replication dependencies.
+      def liveness
+        {
+          status: STATUS_HEALTHY,
+          live: true,
+          timestamp: Time.now.iso8601
+        }
+      end
+
+      # Readiness answers whether the database can safely receive work. It
+      # runs the configured dependency checks and never reports ready when a
+      # check is unhealthy.
+      def readiness
+        result = check
+        {
+          status: result[:status],
+          ready: result[:status] == STATUS_HEALTHY,
+          timestamp: result[:timestamp],
+          checks: result[:checks]
+        }
+      end
+
       def status
         @status
       end

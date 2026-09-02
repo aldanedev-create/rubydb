@@ -3,6 +3,7 @@
 require "json"
 require "fileutils"
 require "time"
+require "monitor"
 
 module RubyDB
   module Replication
@@ -26,7 +27,7 @@ module RubyDB
           segments_archived: 0,
           segments_deleted: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
 
         create_log_directory
         open_current_segment
@@ -91,28 +92,17 @@ module RubyDB
 
       def get_last_lsn
         @lock.synchronize do
-          # Read the last entry from the current segment
           return nil unless @current_segment
 
-          @current_segment.seek(0, IO::SEEK_END)
-
-          # Read backwards to find last complete line
-          pos = @current_segment.pos
-          while pos > 0
-            @current_segment.seek(pos - 1, IO::SEEK_SET)
-            char = @current_segment.read(1)
-            if char == "\n"
-              line = @current_segment.readline
-              begin
-                entry = JSON.parse(line, symbolize_names: true)
-                return entry[:lsn]
-              rescue JSON::ParserError
-                # Continue searching
-              end
+          @current_segment.rewind
+          @current_segment.each_line.to_a.reverse_each do |line|
+            begin
+              return JSON.parse(line, symbolize_names: true)[:lsn]
+            rescue JSON::ParserError
+              next
             end
-            pos -= 1
           end
-
+          @current_segment.seek(0, IO::SEEK_END)
           nil
         end
       end
@@ -159,6 +149,14 @@ module RubyDB
         end
       end
 
+      def close
+        @lock.synchronize do
+          @current_segment&.close unless @current_segment&.closed?
+          @current_segment = nil
+          true
+        end
+      end
+
       private
 
       def create_log_directory
@@ -171,7 +169,7 @@ module RubyDB
         segment_name = "replication_#{Time.now.strftime('%Y%m%d_%H%M%S')}_#{@segment_counter}.log"
         segment_path = File.join(@log_dir, segment_name)
 
-        @current_segment = File.open(segment_path, "a")
+        @current_segment = File.open(segment_path, "a+")
         @current_segment.sync = false
         @current_segment_size = File.size(segment_path)
         @stats[:segments_created] += 1

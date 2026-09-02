@@ -99,7 +99,8 @@ module RubyDB
 
       def self.from_json(json_data)
         data = JSON.parse(json_data, symbolize_names: true)
-        msg = new(data[:type], data[:payload] || {})
+        type = data[:type].respond_to?(:to_sym) ? data[:type].to_sym : data[:type]
+        msg = new(type, data[:payload] || {})
         msg.instance_variable_set(:@id, data[:id])
         msg.instance_variable_set(:@created_at, Time.parse(data[:created_at]))
         msg.instance_variable_set(:@compressed, data[:compressed] || false)

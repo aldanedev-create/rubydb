@@ -5,7 +5,7 @@ module RubyDB
     module AST
       # SELECT statement AST node
       class Select < Node
-        attr_reader :columns, :from, :where, :order_by, :limit, :offset, :distinct
+        attr_reader :columns, :from, :where, :order_by, :limit, :offset, :distinct, :group_by
 
         def initialize(columns, from, where = nil, order_by = nil, limit = nil, offset = nil, distinct = false, location: nil)
           super(location: location)
@@ -16,6 +16,7 @@ module RubyDB
           @limit = limit
           @offset = offset
           @distinct = distinct
+          @group_by = []
         end
 
         def accept(visitor)
@@ -62,7 +63,9 @@ module RubyDB
 
         # Helper methods for semantic analysis
         def has_star?
-          @columns.any? { |col| col.expression.is_a?(Star) }
+          @columns.any? do |col|
+            col.is_a?(Star) || (col.respond_to?(:expression) && col.expression.is_a?(Star))
+          end
         end
 
         def column_count

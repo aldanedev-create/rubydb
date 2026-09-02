@@ -68,45 +68,19 @@ module RubyDB
       end
 
       def diff_tables(branch_a, branch_b, tables = nil)
-        # In production, would compare table structures
-        {
-          success: true,
-          type: :tables,
-          differences: [],
-          tables: []
-        }
+        compare_changes(branch_a, branch_b, tables, :tables)
       end
 
       def diff_schemas(branch_a, branch_b, tables = nil)
-        # In production, would compare schemas
-        {
-          success: true,
-          type: :schemas,
-          differences: [],
-          tables: []
-        }
+        compare_changes(branch_a, branch_b, tables, :schemas)
       end
 
       def diff_data(branch_a, branch_b, tables = nil)
-        # In production, would compare data
-        {
-          success: true,
-          type: :data,
-          differences: [],
-          rows: []
-        }
+        compare_changes(branch_a, branch_b, tables, :data)
       end
 
       def diff_all(branch_a, branch_b, tables = nil)
-        # In production, would compare everything
-        {
-          success: true,
-          type: :all,
-          differences: [],
-          tables: [],
-          rows: [],
-          schemas: []
-        }
+        compare_changes(branch_a, branch_b, tables, :all)
       end
 
       def diff_table(branch_a, branch_b, table)
@@ -140,15 +114,25 @@ module RubyDB
       private
 
       def perform_table_diff(branch_a, branch_b, table)
-        # In production, would diff a specific table
-        {
-          success: true,
-          table: table,
-          differences: [],
-          branch_a_rows: 0,
-          branch_b_rows: 0
-        }
+        compare_changes(branch_a, branch_b, [table], :table).merge(table: table)
       end
+
+      def compare_changes(branch_a, branch_b, tables, type)
+        a = branch_a.respond_to?(:logical_changes) ? branch_a : @branch_manager.get_branch(branch_a)
+        b = branch_b.respond_to?(:logical_changes) ? branch_b : @branch_manager.get_branch(branch_b)
+        return { success: false, error: "Branch not found: #{branch_a.inspect}, #{branch_b.inspect}" } unless a && b
+
+        filter = tables && Array(tables).map(&:to_s)
+        changes_a = a.respond_to?(:logical_changes) ? a.logical_changes : a.changes
+        changes_b = b.respond_to?(:logical_changes) ? b.logical_changes : b.changes
+        changes_a = changes_a.select { |change| filter.include?(change[:table].to_s) } if filter
+        changes_b = changes_b.select { |change| filter.include?(change[:table].to_s) } if filter
+        added = changes_b.reject { |change| changes_a.include?(change) }
+        removed = changes_a.reject { |change| changes_b.include?(change) }
+        { success: true, type: type, tables: (changes_a + changes_b).map { |c| c[:table] }.compact.uniq,
+          rows: { added: added, removed: removed }, changes: { added: added, removed: removed } }
+      end
+
     end
   end
 end

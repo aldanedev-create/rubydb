@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "json"
+require "monitor"
+
 module RubyDB
   module Indexes
     # IndexManager - Manages all indexes for the database
@@ -22,7 +25,7 @@ module RubyDB
         }
         @cache = {}
         @cache_size = 100
-        @lock = Mutex.new
+        @lock = Monitor.new
         
         load_indexes
       end
@@ -151,13 +154,31 @@ module RubyDB
         @lock.synchronize do
           indexes = get_indexes_for_table(table_name)
           return unless indexes.any?
+
+          validate_insert!(table_name, row)
+          row_id = row[:_row_id] || row["id"] || row[:id]
           
           indexes.each do |index|
             key = extract_key(row, index.columns)
-            row_id = row[:_row_id] || row["id"] || row[:id]
             index.insert(key, row_id)
             @stats[:index_inserts] += 1
           end
+        end
+      end
+
+      def validate_insert!(table_name, row)
+        @lock.synchronize do
+          indexes = get_indexes_for_table(table_name)
+          row_id = row[:_row_id] || row["id"] || row[:id]
+          indexes.each do |index|
+            next unless index.unique
+            key = extract_key(row, index.columns)
+            existing = index.search(key)
+            if !existing.nil? && existing != row_id
+              raise DatabaseError, "Duplicate value for unique index '#{index.name}'"
+            end
+          end
+          true
         end
       end
 
@@ -179,11 +200,13 @@ module RubyDB
         @lock.synchronize do
           indexes = get_indexes_for_table(table_name)
           return unless indexes.any?
+
+          validate_update!(table_name, old_row, new_row)
+          row_id = new_row[:_row_id] || new_row["id"] || new_row[:id]
           
           indexes.each do |index|
             old_key = extract_key(old_row, index.columns)
             new_key = extract_key(new_row, index.columns)
-            row_id = new_row[:_row_id] || new_row["id"] || new_row[:id]
             
             if old_key != new_key
               # Update index
@@ -191,6 +214,24 @@ module RubyDB
               index.insert(new_key, row_id)
             end
           end
+        end
+      end
+
+      def validate_update!(table_name, old_row, new_row)
+        @lock.synchronize do
+          indexes = get_indexes_for_table(table_name)
+          row_id = new_row[:_row_id] || new_row["id"] || new_row[:id]
+          indexes.each do |index|
+            next unless index.unique
+            old_key = extract_key(old_row, index.columns)
+            new_key = extract_key(new_row, index.columns)
+            next if old_key == new_key
+            existing = index.search(new_key)
+            if !existing.nil? && existing != row_id
+              raise DatabaseError, "Duplicate value for unique index '#{index.name}'"
+            end
+          end
+          true
         end
       end
 
@@ -258,9 +299,10 @@ module RubyDB
 
       def extract_key(row, columns)
         if columns.size == 1
-          row[columns.first]
+          column = columns.first
+          row.key?(column) ? row[column] : row[column.to_s]
         else
-          columns.map { |col| row[col] }
+          columns.map { |col| row.key?(col) ? row[col] : row[col.to_s] }
         end
       end
 
@@ -287,9 +329,14 @@ module RubyDB
               parsed = JSON.parse(data, symbolize_names: true)
               
               parsed[:indexes]&.each do |name, index_data|
-                # Recreate index from metadata
-                # This would need to load the actual index data
-                # Simplified for now
+                table_name = index_data[:table_name]
+                table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
+                name = name.to_sym if name.respond_to?(:to_sym)
+                columns = Array(index_data[:columns]).map { |column| column.respond_to?(:to_sym) ? column.to_sym : column }
+                options = (index_data[:options] || {}).transform_keys(&:to_sym)
+                options[:type] = index_data[:type].to_sym if index_data[:type]
+                options[:unique] = index_data[:unique] unless index_data[:unique].nil?
+                create_index(name, table_name, columns, options)
               end
             end
           rescue => e

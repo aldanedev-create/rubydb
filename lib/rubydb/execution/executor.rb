@@ -44,6 +44,32 @@ module RubyDB
             execute_create_table(plan)
           when Plan::DropTable
             execute_drop_table(plan)
+          when Plan::CreateDatabase
+            execute_create_database(plan)
+          when Plan::DropDatabase
+            execute_drop_database(plan)
+          when Plan::CreateSchema
+            execute_create_schema(plan)
+          when Plan::DropSchema
+            execute_drop_schema(plan)
+          when Plan::CreateView
+            execute_create_view(plan)
+          when Plan::DropView
+            execute_drop_view(plan)
+          when Plan::CreateTrigger
+            execute_create_trigger(plan)
+          when Plan::DropTrigger
+            execute_drop_trigger(plan)
+          when Plan::Vacuum
+            execute_vacuum(plan)
+          when Plan::AlterTableAddColumn
+            execute_alter_table_add_column(plan)
+          when Plan::AlterTableDropColumn
+            execute_alter_table_drop_column(plan)
+          when Plan::AlterTableAddConstraint
+            execute_alter_table_add_constraint(plan)
+          when Plan::AlterTableDropConstraint
+            execute_alter_table_drop_constraint(plan)
           when Plan::CreateIndex
             execute_create_index(plan)
           when Plan::DropIndex
@@ -54,6 +80,12 @@ module RubyDB
             execute_commit(plan)
           when Plan::Rollback
             execute_rollback(plan)
+          when Plan::Savepoint
+            execute_savepoint(plan)
+          when Plan::RollbackToSavepoint
+            execute_rollback_to_savepoint(plan)
+          when Plan::ReleaseSavepoint
+            execute_release_savepoint(plan)
           when Plan::Explain
             execute_explain(plan)
           else
@@ -80,6 +112,12 @@ module RubyDB
           rows = rows.select { |row| evaluate_predicate(plan.predicate, row) }
         end
 
+        # ORDER BY is evaluated against the source rows, so a column used
+        # solely for ordering remains available even when it is not selected.
+        if plan.order_by && !plan.order_by.empty? && (!plan.group_by || plan.group_by.empty?)
+          rows = sort_rows(rows, plan.order_by)
+        end
+
         # Apply projections (SELECT columns)
         if plan.projections
           rows = rows.map { |row| project_row(row, plan.projections) }
@@ -91,12 +129,12 @@ module RubyDB
         end
 
         # Apply GROUP BY
-        if plan.group_by
+        if plan.group_by && !plan.group_by.empty?
           rows = group_rows(rows, plan.group_by, plan.aggregates)
         end
 
         # Apply ORDER BY
-        if plan.order_by
+        if plan.order_by && !plan.order_by.empty? && plan.group_by && !plan.group_by.empty?
           rows = sort_rows(rows, plan.order_by)
         end
 
@@ -130,14 +168,9 @@ module RubyDB
         table_columns = @engine.table_columns(table_name)
         row_id = @engine.insert_row(table_name, table_columns, row_data)
 
-        # Update indexes
-        if @engine.respond_to?(:index_manager)
-          row = row_data.merge("_row_id" => row_id)
-          @engine.index_manager.insert_row(table_name, row)
-        end
-
         {
           row_count: 1,
+          affected_rows: 1,
           row_id: row_id,
           message: "INSERT 1"
         }
@@ -168,6 +201,7 @@ module RubyDB
 
         {
           row_count: updated_count,
+          affected_rows: updated_count,
           message: "UPDATE #{updated_count}"
         }
       end
@@ -189,6 +223,7 @@ module RubyDB
 
         {
           row_count: deleted_count,
+          affected_rows: deleted_count,
           message: "DELETE #{deleted_count}"
         }
       end
@@ -216,6 +251,73 @@ module RubyDB
           row_count: 0,
           message: "DROP TABLE #{table_name}"
         }
+      end
+
+      def execute_create_database(plan)
+        @engine.catalog.create_database(plan.database_name, **(plan.options || {}))
+        { row_count: 0, message: "CREATE DATABASE #{plan.database_name}" }
+      end
+
+      def execute_drop_database(plan)
+        @engine.catalog.drop_database(plan.database_name, **(plan.options || {}))
+        { row_count: 0, message: "DROP DATABASE #{plan.database_name}" }
+      end
+
+      def execute_create_schema(plan)
+        @engine.catalog.create_schema(plan.schema_name, **(plan.options || {}))
+        { row_count: 0, message: "CREATE SCHEMA #{plan.schema_name}" }
+      end
+
+      def execute_drop_schema(plan)
+        @engine.catalog.drop_schema(plan.schema_name, **(plan.options || {}))
+        { row_count: 0, message: "DROP SCHEMA #{plan.schema_name}" }
+      end
+
+      def execute_create_view(plan)
+        query = plan.query.respond_to?(:to_sql) ? plan.query.to_sql : plan.query
+        @engine.catalog.create_view(plan.view_name, query, **(plan.options || {}))
+        { row_count: 0, message: "CREATE VIEW #{plan.view_name}" }
+      end
+
+      def execute_drop_view(plan)
+        @engine.catalog.drop_view(plan.view_name, **(plan.options || {}))
+        { row_count: 0, message: "DROP VIEW #{plan.view_name}" }
+      end
+
+      def execute_create_trigger(plan)
+        definition = "EXECUTE FUNCTION #{plan.function_name}()"
+        @engine.catalog.create_trigger(plan.trigger_name, plan.event, plan.target_table, definition, timing: plan.timing, function_name: plan.function_name)
+        { row_count: 0, message: "CREATE TRIGGER #{plan.trigger_name}" }
+      end
+
+      def execute_drop_trigger(plan)
+        @engine.catalog.drop_trigger(plan.trigger_name, **(plan.options || {}))
+        { row_count: 0, message: "DROP TRIGGER #{plan.trigger_name}" }
+      end
+
+      def execute_vacuum(_plan)
+        result = @engine.vacuum
+        { row_count: 0, vacuum: result, message: "VACUUM" }
+      end
+
+      def execute_alter_table_add_column(plan)
+        @engine.add_column(plan.table_name, plan.column_name, plan.column_type, plan.options)
+        { row_count: 0, message: "ALTER TABLE #{plan.table_name} ADD COLUMN #{plan.column_name}" }
+      end
+
+      def execute_alter_table_drop_column(plan)
+        @engine.drop_column(plan.table_name, plan.column_name)
+        { row_count: 0, message: "ALTER TABLE #{plan.table_name} DROP COLUMN #{plan.column_name}" }
+      end
+
+      def execute_alter_table_add_constraint(plan)
+        @engine.add_constraint(plan.table_name, plan.constraint)
+        { row_count: 0, message: "ALTER TABLE #{plan.table_name} ADD CONSTRAINT #{plan.constraint.name}" }
+      end
+
+      def execute_alter_table_drop_constraint(plan)
+        @engine.drop_constraint(plan.table_name, plan.constraint_name)
+        { row_count: 0, message: "ALTER TABLE #{plan.table_name} DROP CONSTRAINT #{plan.constraint_name}" }
       end
 
       def execute_create_index(plan)
@@ -277,6 +379,21 @@ module RubyDB
         }
       end
 
+      def execute_savepoint(plan)
+        @engine.create_savepoint(plan.name)
+        { row_count: 0, message: "SAVEPOINT #{plan.name}" }
+      end
+
+      def execute_rollback_to_savepoint(plan)
+        @engine.rollback_to_savepoint(plan.name)
+        { row_count: 0, message: "ROLLBACK TO SAVEPOINT #{plan.name}" }
+      end
+
+      def execute_release_savepoint(plan)
+        @engine.release_savepoint(plan.name)
+        { row_count: 0, message: "RELEASE SAVEPOINT #{plan.name}" }
+      end
+
       def execute_explain(plan)
         statement = plan.statement
         analyze = plan.analyze || false
@@ -309,6 +426,10 @@ module RubyDB
       # Scan operations
       def scan_table(plan)
         table_name = plan.table_name
+        if @engine.catalog.respond_to?(:find_view) && (view = @engine.catalog.find_view(table_name))
+          statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(view.query).tokenize).parse.first
+          return scan_table(Planner.new(@engine).plan(statement))
+        end
         columns = @engine.table_columns(table_name)
 
         if plan.scan_type == :index && plan.index
@@ -365,6 +486,20 @@ module RubyDB
 
       def evaluate_expression(expr, row = nil)
         case expr
+        when SQL::AST::Literal
+          expr.value
+        when SQL::AST::Identifier
+          row ? (row[expr.name] || row[expr.name.to_sym]) : nil
+        when SQL::AST::UnaryOp
+          apply_ast_unary_op(expr.operator, evaluate_expression(expr.operand, row))
+        when SQL::AST::BinaryOp
+          apply_ast_binary_op(
+            expr.operator,
+            evaluate_expression(expr.left, row),
+            evaluate_expression(expr.right, row)
+          )
+        when SQL::AST::FunctionCall
+          apply_function(expr.name, expr.arguments.map { |argument| evaluate_expression(argument, row) })
         when Expression::Literal
           expr.value
         when Expression::Column
@@ -411,6 +546,36 @@ module RubyDB
         when :divide then left / right if right != 0
         when :modulo then left % right if right != 0
         when :concat then left.to_s + right.to_s
+        else nil
+        end
+      end
+
+      def apply_ast_unary_op(operator, value)
+        return nil if value.nil?
+
+        case operator
+        when SQL::Token::Type::PLUS then value
+        when SQL::Token::Type::MINUS then -value
+        when SQL::Token::Type::NOT then !value
+        else value
+        end
+      end
+
+      def apply_ast_binary_op(operator, left, right)
+        case operator
+        when SQL::Token::Type::EQ then left == right
+        when SQL::Token::Type::NE then left != right
+        when SQL::Token::Type::LT then !left.nil? && !right.nil? && left < right
+        when SQL::Token::Type::LTE then !left.nil? && !right.nil? && left <= right
+        when SQL::Token::Type::GT then !left.nil? && !right.nil? && left > right
+        when SQL::Token::Type::GTE then !left.nil? && !right.nil? && left >= right
+        when SQL::Token::Type::AND then !!left && !!right
+        when SQL::Token::Type::OR then !!left || !!right
+        when SQL::Token::Type::PLUS then apply_binary_op(left, right, :plus)
+        when SQL::Token::Type::MINUS then apply_binary_op(left, right, :minus)
+        when SQL::Token::Type::STAR then apply_binary_op(left, right, :multiply)
+        when SQL::Token::Type::SLASH then apply_binary_op(left, right, :divide)
+        when SQL::Token::Type::PERCENT then apply_binary_op(left, right, :modulo)
         else nil
         end
       end
@@ -473,10 +638,14 @@ module RubyDB
       def project_row(row, projections)
         result = {}
         projections.each do |proj|
-          if proj.is_a?(String) || proj.is_a?(Symbol)
-            result[proj.to_s] = row[proj.to_s]
-          elsif proj.is_a?(Expression)
-            result[proj.alias || proj.to_s] = evaluate_expression(proj, row)
+          expression = proj.respond_to?(:expression) ? proj.expression : proj
+
+          if expression.is_a?(SQL::AST::Star)
+            result.merge!(row)
+          elsif expression.is_a?(String) || expression.is_a?(Symbol)
+            result[expression.to_s] = row[expression.to_s]
+          else
+            result[projection_name(proj)] = evaluate_expression(expression, row)
           end
         end
         result
@@ -536,7 +705,7 @@ module RubyDB
         rows.sort do |a, b|
           comparison = 0
           order_by.each do |order|
-            col = order.column.to_s
+            col = (order.is_a?(Hash) ? order[:column] : order.column).to_s
             val_a = a[col]
             val_b = b[col]
 
@@ -550,7 +719,8 @@ module RubyDB
               comparison = val_a <=> val_b
             end
 
-            comparison = -comparison if order.direction == :desc
+            direction = order.is_a?(Hash) ? order[:direction] : order.direction
+            comparison = -comparison if direction == :desc
             break unless comparison == 0
           end
           comparison
@@ -559,10 +729,27 @@ module RubyDB
 
       def get_column_names(plan)
         if plan.projections
-          plan.projections.map { |p| p.is_a?(String) ? p : p.alias || p.to_s }
+          plan.projections.map { |projection| projection_name(projection) }
         else
           @engine.table_columns(plan.table_name).map(&:name)
         end
+      end
+
+      def projection_name(projection)
+        return projection.to_s if projection.is_a?(String) || projection.is_a?(Symbol)
+
+        expression = projection.respond_to?(:expression) ? projection.expression : projection
+        alias_name = if projection.respond_to?(:alias_name)
+          projection.alias_name
+        elsif projection.respond_to?(:alias)
+          projection.alias
+        end
+        return alias_name.to_s if alias_name
+
+        return expression.name.to_s if expression.respond_to?(:name) && expression.name
+        return expression.to_sql if expression.respond_to?(:to_sql)
+
+        expression.to_s
       end
 
       def format_plan(plan)

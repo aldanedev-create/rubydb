@@ -35,6 +35,8 @@ module RubyDB
         "DISTINCT" => Token::Type::DISTINCT,
         "ORDER" => Token::Type::ORDER,
         "BY" => Token::Type::BY,
+        "ASC" => Token::Type::ASC,
+        "DESC" => Token::Type::DESC,
         "GROUP" => Token::Type::GROUP,
         "HAVING" => Token::Type::HAVING,
         "LIMIT" => Token::Type::LIMIT,
@@ -46,6 +48,7 @@ module RubyDB
         "ANY" => Token::Type::ANY,
         "SOME" => Token::Type::SOME,
         "EXISTS" => Token::Type::EXISTS,
+        "IF" => Token::Type::IF,
         "BETWEEN" => Token::Type::BETWEEN,
         "LIKE" => Token::Type::LIKE,
         "ILIKE" => Token::Type::ILIKE,
@@ -67,12 +70,17 @@ module RubyDB
         "CONSTRAINT" => Token::Type::CONSTRAINT,
         "CASCADE" => Token::Type::CASCADE,
         "RESTRICT" => Token::Type::RESTRICT,
+        "BEFORE" => Token::Type::BEFORE,
+        "AFTER" => Token::Type::AFTER,
+        "EXECUTE" => Token::Type::EXECUTE,
+        "FUNCTION" => Token::Type::FUNCTION,
         "ADD" => Token::Type::ADD,
         "TO" => Token::Type::TO,
         "BEGIN" => Token::Type::BEGIN_TRANSACTION,
         "COMMIT" => Token::Type::COMMIT,
         "ROLLBACK" => Token::Type::ROLLBACK,
         "SAVEPOINT" => Token::Type::SAVEPOINT,
+        "RELEASE" => Token::Type::RELEASE,
         "TRANSACTION" => Token::Type::TRANSACTION,
         "EXPLAIN" => Token::Type::EXPLAIN,
         "ANALYZE" => Token::Type::ANALYZE,
@@ -100,12 +108,12 @@ module RubyDB
         SELECT INSERT UPDATE DELETE CREATE ALTER DROP
         TABLE INDEX DATABASE SCHEMA VIEW TRIGGER
         FROM WHERE SET VALUES INTO JOIN ON AS
-        DISTINCT ORDER BY GROUP HAVING LIMIT OFFSET
+        DISTINCT ORDER BY ASC DESC GROUP HAVING LIMIT OFFSET
         UNION INTERSECT EXCEPT ALL ANY SOME EXISTS
         BETWEEN LIKE ILIKE IN IS NULL NOT AND OR
         TRUE FALSE PRIMARY FOREIGN KEY UNIQUE CHECK
         DEFAULT REFERENCES CONSTRAINT CASCADE RESTRICT
-        BEGIN COMMIT ROLLBACK SAVEPOINT TRANSACTION
+        BEGIN COMMIT ROLLBACK SAVEPOINT RELEASE TRANSACTION
       ].freeze
 
       # Data type keywords

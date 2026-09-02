@@ -53,13 +53,6 @@ module RubyDB
             # Update in engine
             @engine.update_row(table_name, row_id, row_data, transaction_id: transaction_id)
 
-            # Update indexes
-            if @engine.respond_to?(:index_manager)
-              old_row = row
-              new_row = row_data.merge("_row_id" => row_id)
-              @engine.index_manager.update_row(table_name, old_row, new_row)
-            end
-
             updated_count += 1
             updated_rows << { row_id: row_id, old: row, new: row_data }
           end
@@ -98,11 +91,6 @@ module RubyDB
             # Update in engine
             old_row = @engine.select_row(table_name, row_id, table_columns)
             @engine.update_row(table_name, row_id, row_data, transaction_id: transaction_id)
-
-            if @engine.respond_to?(:index_manager) && old_row
-              new_row = row_data.merge("_row_id" => row_id)
-              @engine.index_manager.update_row(table_name, old_row, new_row)
-            end
 
             updated_count += 1
             updated_rows << { row_id: row_id, old: old_row, new: row_data }

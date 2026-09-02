@@ -10,6 +10,7 @@ module RubyDB
       attr_reader :id, :transaction_id, :created_at
       attr_reader :active_transactions, :committed_transactions
       attr_reader :min_transaction_id, :max_transaction_id
+      attr_reader :read_keys, :write_keys, :read_predicates
 
       def initialize(transaction_id, active_transactions = [], committed_transactions = [])
         @id = generate_snapshot_id(transaction_id)
@@ -20,8 +21,23 @@ module RubyDB
         @min_transaction_id = active_transactions.min || 0
         @max_transaction_id = active_transactions.max || 0
         @version_cache = {}
+        @read_keys = Set.new
+        @write_keys = Set.new
+        @read_predicates = Set.new
         @cache_size = 1000
         @lock = Mutex.new
+      end
+
+      def record_read(key)
+        @lock.synchronize { @read_keys.add(key) }
+      end
+
+      def record_write(key)
+        @lock.synchronize { @write_keys.add(key) }
+      end
+
+      def record_predicate(predicate)
+        @lock.synchronize { @read_predicates.add(predicate) }
       end
 
       def generate_snapshot_id(transaction_id)

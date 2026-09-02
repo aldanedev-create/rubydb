@@ -119,7 +119,7 @@ module RubyDB
             records << record
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
-            offset += record_data.bytesize
+            offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
             puts "WAL DEBUG: deserialized record #{record.type}" if ENV['DEBUG_RECOVERY']
           rescue => e
             @stats[:corrupted_records] += 1
@@ -147,7 +147,7 @@ module RubyDB
             records << record
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
-            current_offset += record_data.bytesize
+            current_offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
           rescue => e
             @stats[:corrupted_records] += 1
             break
@@ -171,7 +171,7 @@ module RubyDB
             records << record
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
-            current_offset += record_data.bytesize
+            current_offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
           rescue => e
             @stats[:corrupted_records] += 1
             break
@@ -195,7 +195,7 @@ module RubyDB
             records << record
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
-            current_offset += record_data.bytesize
+            current_offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
           rescue => e
             @stats[:corrupted_records] += 1
             break
@@ -207,9 +207,18 @@ module RubyDB
 
       def reload
         @lock.synchronize do
+          @segments.each(&:close)
           @segments.clear
           @current_segment_index = 0
           load_segments
+          true
+        end
+      end
+
+      def close
+        @lock.synchronize do
+          @segments.each(&:close)
+          @segments.clear
           true
         end
       end

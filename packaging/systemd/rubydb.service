@@ -1,0 +1,22 @@
+[Unit]
+Description=RubyDB database server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rubydb
+Group=rubydb
+ExecStart=/usr/local/bin/rubydb start --host 127.0.0.1 --port 7432 --data-dir /var/lib/rubydb/data --log-dir /var/log/rubydb --pid-file /run/rubydb.pid
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rubydb /var/log/rubydb /run
+
+[Install]
+WantedBy=multi-user.target

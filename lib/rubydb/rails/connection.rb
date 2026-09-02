@@ -8,12 +8,13 @@ module RubyDB
   module Rails
     # Connection - Rails database connection
     class Connection
-      attr_reader :config, :client, :logger, :transaction
+      attr_reader :config, :client, :engine, :logger, :transaction
 
       include Quoting
 
       def initialize(config)
         @config = config
+        @engine = config[:engine]
         @logger = config[:logger]
         @client = nil
         @transaction = nil
@@ -31,6 +32,14 @@ module RubyDB
       def connect
         @lock.synchronize do
           return if @connected
+
+          if @engine
+            if @engine.respond_to?(:open?) && !@engine.open?
+              raise ConnectionError, "Embedded RubyDB engine is not open"
+            end
+            @connected = true
+            return
+          end
 
           @client = RubyDB::Client::Client.new(
             host: @config[:host] || "localhost",
@@ -50,13 +59,15 @@ module RubyDB
         @lock.synchronize do
           return unless @connected
 
-          @client&.disconnect
+          @client&.disconnect unless @engine
           @connected = false
           @statements.clear
         end
       end
 
       def connected?
+        return @connected && (!@engine.respond_to?(:open?) || @engine.open?) if @engine
+
         @connected && @client&.connected?
       end
 
@@ -70,8 +81,12 @@ module RubyDB
           end
         end
 
-        result = @client.query(sql, params)
-        rails_result = Result.new(result.to_hash)
+        rails_result = if @engine
+          Result.new(execute_embedded(sql, params))
+        else
+          result = @client.query(sql, params)
+          Result.new(result.to_hash)
+        end
 
         if @query_cache_enabled && sql =~ /^SELECT/i && @query_cache.size < @query_cache_size
           @query_cache[cache_key] = rails_result
@@ -82,24 +97,37 @@ module RubyDB
 
       def prepare(sql)
         ensure_connected
+        if @engine
+          @statement_counter += 1
+          @statements[@statement_counter] = sql
+          return @statement_counter
+        end
         @client.prepare(sql)
       end
 
       def execute_prepared(statement_id, params = [])
         ensure_connected
+        return execute(@statements.fetch(statement_id), params) if @engine
+
         result = @client.execute(statement_id, params)
         Result.new(result.to_hash)
       end
 
       def close_statement(statement_id)
         ensure_connected
+        return @statements.delete(statement_id) if @engine
+
         @client.close_statement(statement_id)
       end
 
       def begin_db_transaction
         ensure_connected
         @transaction_depth += 1
-        @client.begin_transaction if @transaction_depth == 1
+        if @engine && @transaction_depth == 1
+          @engine.begin_transaction
+          @transaction = @engine.current_transaction
+        end
+        @client.begin_transaction if !@engine && @transaction_depth == 1
       end
 
       def commit_db_transaction
@@ -107,7 +135,11 @@ module RubyDB
         return if @transaction_depth <= 0
 
         @transaction_depth -= 1
-        @client.commit if @transaction_depth == 0
+        if @transaction_depth == 0
+          @engine.commit_transaction(@transaction) if @engine
+          @client.commit unless @engine
+          @transaction = nil
+        end
       end
 
       def rollback_db_transaction
@@ -115,7 +147,11 @@ module RubyDB
         return if @transaction_depth <= 0
 
         @transaction_depth -= 1
-        @client.rollback if @transaction_depth == 0
+        if @transaction_depth == 0
+          @engine.rollback_transaction(@transaction) if @engine
+          @client.rollback unless @engine
+          @transaction = nil
+        end
         @transaction_depth = 0 if @transaction_depth < 0
       end
 
@@ -182,6 +218,49 @@ module RubyDB
       end
 
       private
+
+      def execute_embedded(sql, params)
+        bound_sql = bind_parameters(sql, params)
+        statements = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(bound_sql).tokenize).parse
+        results = statements.map do |statement|
+          plan = RubyDB::Execution::Planner.new(@engine).plan(statement)
+          RubyDB::Execution::Executor.new(@engine).execute(plan)
+        end
+        results.size == 1 ? results.first : { rows: results, row_count: results.size }
+      end
+
+      def bind_parameters(sql, params)
+        return sql if params.empty?
+
+        index = 0
+        quoted = false
+        result = +""
+        position = 0
+
+        while position < sql.length
+          char = sql[position]
+          if char == "'"
+            if quoted && sql[position + 1] == "'"
+              result << "''"
+              position += 2
+              next
+            end
+            quoted = !quoted
+            result << char
+          elsif char == "?" && !quoted
+            raise ArgumentError, "Not enough bind parameters" if index >= params.size
+
+            result << quote(params[index])
+            index += 1
+          else
+            result << char
+          end
+          position += 1
+        end
+        raise ArgumentError, "Too many bind parameters" unless index == params.size
+
+        result
+      end
 
       def ensure_connected
         connect unless @connected

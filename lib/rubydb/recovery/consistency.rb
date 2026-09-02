@@ -201,7 +201,8 @@ module RubyDB
         @lock.synchronize do
           results = { repaired: false, actions: [] }
 
-          corruption_info[:issues].each do |issue|
+          issues = Array(corruption_info[:issues])
+          issues.each do |issue|
             case issue[:type]
             when "page_header"
               repaired = repair_page_header(issue[:page])
@@ -221,10 +222,16 @@ module RubyDB
             when "index_entries"
               repaired = repair_index(issue[:index])
               results[:actions] << { type: "repair_index", index: issue[:index], success: repaired }
+            else
+              results[:actions] << {
+                type: "unsupported_repair",
+                issue: issue[:type],
+                success: false
+              }
             end
           end
 
-          results[:repaired] = results[:actions].all? { |a| a[:success] }
+          results[:repaired] = results[:actions].any? && results[:actions].all? { |a| a[:success] }
           results
         end
       end
@@ -396,12 +403,12 @@ module RubyDB
           row = @engine.select_row(table, row_id, columns)
           return false unless row
 
-          # Set column to default value
           col_def = columns.find { |c| c.name == column }
-          row[column] = col_def.default if col_def && col_def.has_default?
+          return false unless col_def && col_def.has_default?
 
-          @engine.update_row(table, row_id, row)
-          true
+          row[column] = col_def.default
+
+          !!@engine.update_row(table, row_id, row)
         rescue
           false
         end
@@ -410,8 +417,7 @@ module RubyDB
       def repair_index(index_name)
         begin
           if @engine.respond_to?(:index_manager)
-            @engine.index_manager.rebuild_index(index_name)
-            true
+            !!@engine.index_manager.rebuild_index(index_name)
           else
             false
           end

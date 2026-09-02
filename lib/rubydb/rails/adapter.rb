@@ -13,7 +13,7 @@ module RubyDB
   module Rails
     # Adapter - Rails database adapter
     class Adapter
-      attr_reader :config, :connection, :logger
+      attr_reader :config, :connection, :engine, :logger
 
       include DatabaseStatements
       include SchemaStatements
@@ -23,6 +23,7 @@ module RubyDB
 
       def initialize(config)
         @config = config
+        @engine = config[:engine]
         @logger = config[:logger]
         @connection = Connection.new(config)
         @connection.connect
@@ -81,14 +82,12 @@ module RubyDB
       end
 
       def primary_key(table_name)
-        result = execute("SELECT name FROM pragma_table_info(?)", [table_name])
-        row = result.find { |r| r["pk"] == 1 }
-        row ? row["name"] : "id"
+        column = columns(table_name).find { |entry| entry[:primary_key] }
+        column ? column[:name] : "id"
       end
 
       def tables
-        result = execute("SELECT name FROM sqlite_master WHERE type='table'")
-        result.map { |row| row["name"] }
+        metadata_engine.list_tables.map(&:to_s)
       end
 
       def table_exists?(table_name)
@@ -96,24 +95,24 @@ module RubyDB
       end
 
       def indexes(table_name)
-        result = execute("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=?", [table_name])
-        result.map do |row|
+        manager = metadata_engine.index_manager
+        manager.get_indexes_for_table(table_name).map do |index|
           {
-            name: row["name"],
-            columns: parse_index_columns(row["sql"])
+            name: index.name.to_s,
+            columns: index.columns.map(&:to_s),
+            unique: index.unique
           }
         end
       end
 
       def columns(table_name)
-        result = execute("PRAGMA table_info(?)", [table_name])
-        result.map do |row|
+        metadata_engine.table_columns(table_name).map do |column|
           {
-            name: row["name"],
-            type: row["type"],
-            default: row["default"],
-            null: row["notnull"] == 0,
-            primary_key: row["pk"] == 1
+            name: column.name.to_s,
+            type: column.type,
+            default: normalize_catalog_default(column.default),
+            null: column.nullable?,
+            primary_key: column.primary_key?
           }
         end
       end
@@ -123,20 +122,22 @@ module RubyDB
       end
 
       def schema_version
+        return nil unless table_exists?("schema_migrations")
+
         result = execute("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1")
-        result.first ? result.first["version"] : nil
+        result.first && (result.first["version"] || result.first[:version])
       end
 
       def dump_schema
-        schema = ""
+        schema = +""
 
         tables.each do |table|
           schema << "create_table \"#{table}\" do |t|\n"
           columns(table).each do |col|
-            next if col[:primary_key]
             type = Type.to_rails(col[:type])
             schema << "  t.#{type} \"#{col[:name]}\""
-            schema << ", default: #{quote(col[:default])}" if col[:default]
+            schema << ", primary_key: true" if col[:primary_key]
+            schema << ", default: #{quote(col[:default])}" if col.key?(:default) && !col[:default].nil?
             schema << ", null: false" unless col[:null]
             schema << "\n"
           end
@@ -174,6 +175,16 @@ module RubyDB
       end
 
       private
+
+      def metadata_engine
+        return @engine if @engine
+
+        raise ConnectionError, "RubyDB catalog introspection requires an embedded :engine"
+      end
+
+      def normalize_catalog_default(value)
+        value.respond_to?(:value) ? value.value : value
+      end
 
       def parse_index_columns(sql)
         if sql =~ /\(([^)]+)\)/

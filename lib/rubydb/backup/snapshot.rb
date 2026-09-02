@@ -3,9 +3,12 @@
 require "fileutils"
 require "time"
 require "json"
+require "digest"
+require "monitor"
 
 module RubyDB
   module Backup
+    class SnapshotError < StandardError; end unless const_defined?(:SnapshotError)
     # Snapshot - Creates point-in-time snapshots
     class Snapshot
       attr_reader :stats
@@ -24,7 +27,7 @@ module RubyDB
           total_size_bytes: 0,
           last_snapshot: nil
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
 
         FileUtils.mkdir_p(@snapshot_dir)
         load_snapshots
@@ -34,7 +37,8 @@ module RubyDB
         @lock.synchronize do
           start_time = Time.now
           snapshot_name = name || "snapshot_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
-          snapshot_path = File.join(@snapshot_dir, snapshot_name)
+          snapshot_path = snapshot_path_for_name(snapshot_name)
+          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
 
           if Dir.exist?(snapshot_path)
             return { success: false, error: "Snapshot already exists" }
@@ -66,6 +70,10 @@ module RubyDB
             # Calculate size
             size = calculate_snapshot_size(snapshot_path)
             metadata[:size] = size
+            metadata[:files] = snapshot_files(snapshot_path).to_h do |file|
+              [File.basename(file), Digest::SHA256.file(file).hexdigest]
+            end
+            File.write(File.join(snapshot_path, "snapshot.json"), JSON.generate(metadata))
 
             # Update stats
             @snapshots[snapshot_name] = metadata
@@ -87,7 +95,9 @@ module RubyDB
 
       def restore_snapshot(snapshot_name, options = {})
         @lock.synchronize do
-          snapshot_path = File.join(@snapshot_dir, snapshot_name)
+          snapshot_path = snapshot_path_for_name(snapshot_name)
+          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
+
           unless Dir.exist?(snapshot_path)
             return { success: false, error: "Snapshot does not exist" }
           end
@@ -99,6 +109,7 @@ module RubyDB
 
           begin
             metadata = JSON.parse(File.read(metadata_path), symbolize_names: true)
+            verify_snapshot!(snapshot_path, metadata)
 
             # Restore from snapshot
             restore_cow_snapshot(snapshot_path)
@@ -121,7 +132,9 @@ module RubyDB
 
       def delete_snapshot(snapshot_name)
         @lock.synchronize do
-          snapshot_path = File.join(@snapshot_dir, snapshot_name)
+          snapshot_path = snapshot_path_for_name(snapshot_name)
+          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
+
           unless Dir.exist?(snapshot_path)
             return { success: false, error: "Snapshot does not exist" }
           end
@@ -149,8 +162,18 @@ module RubyDB
 
       private
 
+      def snapshot_path_for_name(snapshot_name)
+        name = snapshot_name.to_s
+        return nil if name.empty? || name != File.basename(name)
+
+        root = File.expand_path(@snapshot_dir)
+        path = File.expand_path(File.join(root, name))
+        path == root || path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+      end
+
       def load_snapshots
-        Dir.glob(File.join(@snapshot_dir, "snapshot_*")).each do |path|
+        Dir.glob(File.join(@snapshot_dir, "*")).each do |path|
+          next unless Dir.exist?(path)
           metadata_path = File.join(path, "snapshot.json")
           next unless File.exist?(metadata_path)
 
@@ -158,7 +181,7 @@ module RubyDB
             metadata = JSON.parse(File.read(metadata_path), symbolize_names: true)
             @snapshots[metadata[:name]] = metadata
           rescue
-            # Skip corrupted snapshots
+            raise SnapshotError, "Invalid snapshot metadata: #{metadata_path}"
           end
         end
       end
@@ -166,29 +189,53 @@ module RubyDB
       def capture_database_state
         {
           tables: @engine.list_tables,
-          sequences: @engine.list_sequences,
-          current_lsn: @engine.current_lsn,
-          wal_position: @engine.wal_position,
-          active_transactions: @engine.active_transactions
+          sequences: @engine.respond_to?(:list_sequences) ? @engine.list_sequences : [],
+          current_lsn: @engine.respond_to?(:current_lsn) ? @engine.current_lsn : nil,
+          wal_position: @engine.respond_to?(:wal_position) ? @engine.wal_position : nil,
+          active_transactions: @engine.respond_to?(:active_transactions) ? @engine.active_transactions : []
         }
       end
 
       def create_cow_snapshot(snapshot_path)
-        # In production, would create copy-on-write snapshot
-        # For now, create hard links to data files
-        data_files = @engine.data_files rescue []
+        data_files = @engine.respond_to?(:data_files) ? @engine.data_files : []
+        raise SnapshotError, "Engine returned no data files" if data_files.empty?
         data_files.each do |file|
           dest = File.join(snapshot_path, File.basename(file))
-          File.link(file, dest) rescue FileUtils.cp(file, dest)
+          begin
+            File.link(file, dest)
+          rescue Errno::EEXIST
+            raise
+          rescue SystemCallError
+            FileUtils.cp(file, dest)
+          end
+          raise SnapshotError, "Snapshot file was not created: #{dest}" unless File.file?(dest)
         end
       end
 
       def restore_cow_snapshot(snapshot_path)
-        # In production, would restore from copy-on-write snapshot
-        data_files = Dir.glob(File.join(snapshot_path, "*.rdb"))
+        metadata = JSON.parse(File.read(File.join(snapshot_path, "snapshot.json")), symbolize_names: true)
+        verify_snapshot!(snapshot_path, metadata)
+        data_files = snapshot_files(snapshot_path)
         data_files.each do |file|
           dest = File.join(@engine.data_dir, File.basename(file))
           FileUtils.cp(file, dest)
+          raise SnapshotError, "Snapshot restore failed: #{dest}" unless FileUtils.compare_file(file, dest)
+        end
+        @engine.reload_from_disk if @engine.respond_to?(:reload_from_disk)
+      end
+
+      def snapshot_files(snapshot_path)
+        Dir.glob(File.join(snapshot_path, "*")).select { |file| File.file?(file) && File.basename(file) != "snapshot.json" }
+      end
+
+      def verify_snapshot!(snapshot_path, metadata)
+        files = metadata[:files]
+        raise SnapshotError, "Snapshot has no file manifest" unless files.is_a?(Hash) && files.any?
+        files.each do |name, checksum|
+          file = File.join(snapshot_path, name.to_s)
+          unless File.file?(file) && Digest::SHA256.file(file).hexdigest == checksum
+            raise SnapshotError, "Snapshot checksum mismatch: #{name}"
+          end
         end
       end
 

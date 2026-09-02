@@ -203,6 +203,28 @@ module RubyDB
           end
         end
 
+        def visit_alter_table_add_constraint(node)
+          table_info = @catalog.find_table(node.table_name)
+          unless table_info
+            @errors << "Table '#{node.table_name}' does not exist"
+            return
+          end
+          @current_table = table_info
+          node.constraint.accept(self)
+          @current_table = nil
+        end
+
+        def visit_alter_table_drop_constraint(node)
+          table_info = @catalog.find_table(node.table_name)
+          unless table_info
+            @errors << "Table '#{node.table_name}' does not exist"
+            return
+          end
+          # Constraint metadata is persisted by the storage engine and may not
+          # yet be hydrated into the catalog after a restart. The executor is
+          # authoritative for the existence check.
+        end
+
         def visit_drop_table(node)
           unless @catalog.find_table(node.name)
             unless node.if_exists
@@ -263,6 +285,46 @@ module RubyDB
             unless node.if_exists
               @errors << "Database '#{node.name}' does not exist"
             end
+          end
+        end
+
+        def visit_create_schema(node)
+          if @catalog.find_schema(node.name)
+            @errors << "Schema '#{node.name}' already exists" unless node.if_not_exists
+          end
+        end
+
+        def visit_drop_schema(node)
+          unless @catalog.find_schema(node.name)
+            @errors << "Schema '#{node.name}' does not exist" unless node.if_exists
+          end
+        end
+
+        def visit_create_view(node)
+          if @catalog.find_view(node.name)
+            @errors << "View '#{node.name}' already exists" unless node.if_not_exists
+          end
+          node.query.accept(self)
+        end
+
+        def visit_drop_view(node)
+          if !@catalog.find_view(node.name) && !node.if_exists
+            @errors << "View '#{node.name}' does not exist"
+          end
+        end
+
+        def visit_create_trigger(node)
+          unless @catalog.find_table(node.table_name)
+            @errors << "Table '#{node.table_name}' does not exist"
+          end
+          if @catalog.find_trigger(node.name)
+            @errors << "Trigger '#{node.name}' already exists"
+          end
+        end
+
+        def visit_drop_trigger(node)
+          if !@catalog.find_trigger(node.name) && !node.if_exists
+            @errors << "Trigger '#{node.name}' does not exist"
           end
         end
 
@@ -470,7 +532,7 @@ module RubyDB
 
         def function_exists?(name)
           # Check if function is registered
-          # For now, accept common SQL functions
+          # Built-in SQL functions are bound without a catalog entry.
           common_functions = %w[
             COUNT SUM AVG MAX MIN LOWER UPPER LENGTH
             SUBSTR CONCAT COALESCE NULLIF

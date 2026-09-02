@@ -30,18 +30,32 @@ module RubyDB
 
           parser.parse!(args)
 
+          config = RubyDB::Configuration::Config.instance
+          db_path = config.get("storage.data_dir") || "data/rubydb.rdb"
+          checks = []
+          engine = nil
+
+          begin
+            started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            engine = RubyDB::Storage::Engine.new(db_path, auto_vacuum: false)
+            latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round(2)
+            checks << { name: "Connection", passed: true, details: { database: db_path, latency_ms: latency_ms } }
+            checks << { name: "Storage", passed: engine.storage_manager.open?, details: engine.storage_manager.stats }
+            checks << { name: "WAL", passed: !engine.wal.nil?, details: engine.wal.stats }
+            unless options[:quick]
+              checks << { name: "Indexes", passed: !engine.index_manager.nil?, details: engine.index_manager.stats }
+            end
+          rescue => e
+            checks << { name: "Connection", passed: false, errors: [e.message] }
+          ensure
+            engine&.close if engine&.open?
+          end
+
           results = {
-            passed: true,
-            total_count: 6,
-            passed_count: 5,
-            checks: [
-              { name: "Connection", passed: true, details: { latency: "5ms" } },
-              { name: "Storage", passed: true, details: { usage: "45%", free: "55MB" } },
-              { name: "Memory", passed: true, details: { usage: "60%", total: "1024MB" } },
-              { name: "WAL", passed: true, details: { status: "healthy", size: "16MB" } },
-              { name: "Replication", passed: true, details: { role: "primary", lag: "0ms" } },
-              { name: "Indexes", passed: false, errors: ["Index 'idx_users_email' is corrupted"] }
-            ]
+            passed: checks.all? { |check| check[:passed] },
+            total_count: checks.size,
+            passed_count: checks.count { |check| check[:passed] },
+            checks: checks
           }
 
           if options[:json]
@@ -50,10 +64,7 @@ module RubyDB
             @formatter.format_doctor(results)
 
             if options[:fix] && !results[:passed]
-              @output.puts "\nAttempting to fix issues..."
-              @output.spinner("Fixing issues...") do
-                @output.success("Issues fixed")
-              end
+              @output.puts "\nAutomatic repair is not available for the reported checks; no changes were made.", :yellow
             end
           end
         end

@@ -19,9 +19,9 @@ A developer-first relational database for Ruby and Rails - currently in active d
 - **Architecture**: Complete design and implementation
 - **Storage Engine**: Partial implementation
 - **SQL Parser**: Basic SQL support
-- **Transactions**: Placeholder implementation
+- **Transactions**: WAL-backed transaction, rollback, savepoint, and MVCC paths covered by integration tests
 - **WAL**: Partial implementation
-- **Replication**: Placeholder implementation
+- **Replication**: Logical replication and guarded failover paths covered by integration tests
 - **Tests**: Unit tests exist, integration tests incomplete
 - **Performance**: Not optimized
 - **Stability**: Not production ready

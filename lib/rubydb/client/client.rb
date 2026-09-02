@@ -29,7 +29,7 @@ module RubyDB
           database: config[:database] || "rubydb",
           timeout: config[:timeout] || 30,
           pool_size: config[:pool_size] || 5,
-          auto_connect: config[:auto_connect] || true,
+          auto_connect: config.fetch(:auto_connect, true),
           ssl: config[:ssl] || false,
           compress: config[:compress] || false,
           format: config[:format] || :json
@@ -210,7 +210,7 @@ module RubyDB
           end
 
           @connection.send_commit
-          @transaction.commit
+          @transaction.mark_committed
           @stats[:transactions_committed] += 1
 
           @transaction = nil
@@ -226,7 +226,7 @@ module RubyDB
           end
 
           @connection.send_rollback
-          @transaction.rollback
+          @transaction.mark_rolled_back
           @stats[:transactions_rolled_back] += 1
 
           @transaction = nil

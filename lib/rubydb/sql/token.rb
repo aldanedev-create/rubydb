@@ -36,6 +36,8 @@ module RubyDB
         DISTINCT = :DISTINCT
         ORDER = :ORDER
         BY = :BY
+        ASC = :ASC
+        DESC = :DESC
         GROUP = :GROUP
         HAVING = :HAVING
         LIMIT = :LIMIT
@@ -47,6 +49,7 @@ module RubyDB
         ANY = :ANY
         SOME = :SOME
         EXISTS = :EXISTS
+        IF = :IF
         BETWEEN = :BETWEEN
         LIKE = :LIKE
         ILIKE = :ILIKE
@@ -70,10 +73,15 @@ module RubyDB
         RESTRICT = :RESTRICT
         ADD = :ADD
         TO = :TO
+        BEFORE = :BEFORE
+        AFTER = :AFTER
+        EXECUTE = :EXECUTE
+        FUNCTION = :FUNCTION
         BEGIN_TRANSACTION = :BEGIN
         COMMIT = :COMMIT
         ROLLBACK = :ROLLBACK
         SAVEPOINT = :SAVEPOINT
+        RELEASE = :RELEASE
         TRANSACTION = :TRANSACTION
         EXPLAIN = :EXPLAIN
         ANALYZE = :ANALYZE

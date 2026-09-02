@@ -20,7 +20,12 @@ module RubyDB
         begin: "BEGIN [TRANSACTION]",
         commit: "COMMIT [TRANSACTION]",
         rollback: "ROLLBACK [TRANSACTION] [TO SAVEPOINT name]",
-        explain: "EXPLAIN [ANALYZE] statement"
+        savepoint: "SAVEPOINT name",
+        release_savepoint: "RELEASE [SAVEPOINT] name",
+        explain: "EXPLAIN [ANALYZE] statement",
+        vacuum: "VACUUM",
+        create_view: "CREATE VIEW name AS SELECT ...",
+        create_trigger: "CREATE TRIGGER name BEFORE|AFTER event ON table EXECUTE FUNCTION name()"
       }.freeze
 
       # Column data types

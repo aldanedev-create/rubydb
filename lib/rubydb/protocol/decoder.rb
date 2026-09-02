@@ -1,4 +1,4 @@
-v# frozen_string_literal: true
+# frozen_string_literal: true
 
 require "zlib"
 require "base64"
@@ -58,7 +58,7 @@ module RubyDB
       end
 
       def decode_json(data)
-        Message.from_json(data)
+        Message.from_json(data.strip)
       end
 
       def decode_msgpack(data)

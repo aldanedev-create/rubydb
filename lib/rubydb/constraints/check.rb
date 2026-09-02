@@ -62,24 +62,9 @@ module RubyDB
       end
 
       def eval_expression(expr, row)
-        # Simple expression evaluator for Ruby expressions
-        # Supports basic comparisons and logic
         case expr
         when Symbol, String
-          expr = expr.to_s
-          # Parse simple conditions like "age > 18"
-          if expr =~ /(\w+)\s*(>=|<=|>|<|=|!=)\s*(.+)/
-            col = $1.strip
-            op = $2.strip
-            val = $3.strip
-
-            row_val = row[col]
-            return false if row_val.nil?
-
-            compare_value(row_val, val, op)
-          else
-            true
-          end
+          evaluate_predicate(expr.to_s.strip, row)
         when Proc
           expr.call(row)
         else
@@ -88,9 +73,70 @@ module RubyDB
       end
 
       def eval_sql_expression(expr, row)
-        # Simplified SQL expression evaluation
-        # In production, this would use the SQL parser
-        true
+        evaluate_predicate(expr.to_s.strip, row)
+      end
+
+      def evaluate_predicate(expression, row)
+        expression = strip_outer_parentheses(expression.strip)
+
+        split_top_level(expression, "OR").any? do |part|
+          split_top_level(part, "AND").all? { |term| evaluate_term(term, row) }
+        end
+      end
+
+      def evaluate_term(term, row)
+        term = strip_outer_parentheses(term.strip)
+        if term =~ /\A([\w.]+)\s+IS\s+(NOT\s+)?NULL\z/i
+          value = row_value(row, Regexp.last_match(1))
+          return Regexp.last_match(2).nil? ? value.nil? : !value.nil?
+        end
+
+        match = term.match(/\A([\w.]+)\s*(>=|<=|<>|!=|=|>|<)\s*(.+)\z/i)
+        return false unless match
+
+        compare_value(row_value(row, match[1]), match[3].strip, match[2])
+      end
+
+      def row_value(row, column)
+        key = column.to_s.split(".").last
+        row.key?(key) ? row[key] : row[key.to_sym]
+      end
+
+      def strip_outer_parentheses(expression)
+        while expression.start_with?("(") && expression.end_with?( ")") && balanced_parentheses?(expression[1...-1])
+          expression = expression[1...-1].strip
+        end
+        expression
+      end
+
+      def balanced_parentheses?(expression)
+        depth = 0
+        expression.each_char do |char|
+          depth += 1 if char == "("
+          depth -= 1 if char == ")"
+          return false if depth.negative?
+        end
+        depth.zero?
+      end
+
+      def split_top_level(expression, operator)
+        parts = []
+        depth = 0
+        start = 0
+        expression.to_enum(:scan, /\(|\)|\b#{operator}\b/i).each do
+          match = Regexp.last_match
+          token = match[0]
+          if token == "("
+            depth += 1
+          elsif token == ")"
+            depth -= 1
+          elsif depth.zero?
+            parts << expression[start...match.begin(0)].strip
+            start = match.end(0)
+          end
+        end
+        parts << expression[start..].strip
+        parts.size > 1 ? parts : [expression]
       end
 
       def compare_value(row_val, val, op)
@@ -107,7 +153,7 @@ module RubyDB
 
         case op
         when "=" then row_val == parsed_val
-        when "!=" then row_val != parsed_val
+        when "!=", "<>" then row_val != parsed_val
         when ">" then row_val > parsed_val
         when ">=" then row_val >= parsed_val
         when "<" then row_val < parsed_val

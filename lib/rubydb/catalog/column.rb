@@ -99,8 +99,8 @@ module RubyDB
           scale: data[:scale],
           limit: data[:limit]
         )
-        column.created_at = Time.parse(data[:created_at]) if data[:created_at]
-        column.modified_at = Time.parse(data[:modified_at]) if data[:modified_at]
+        column.send(:created_at=, Time.parse(data[:created_at])) if data[:created_at]
+        column.send(:modified_at=, Time.parse(data[:modified_at])) if data[:modified_at]
         column
       end
 

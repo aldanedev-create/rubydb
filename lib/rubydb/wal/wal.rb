@@ -11,6 +11,7 @@ require_relative "writer"
 require_relative "reader"
 require_relative "checkpoint"
 require_relative "archive"
+require_relative "../errors/recovery_error"
 
 module RubyDB
   module WAL
@@ -22,6 +23,7 @@ module RubyDB
       def initialize(wal_dir, config = {})
         @wal_dir = wal_dir
         @config = config
+        @engine = config[:engine]
         @stats = {
           writes: 0,
           reads: 0,
@@ -56,6 +58,11 @@ module RubyDB
         end
 
         @running = true
+      end
+
+      def attach_engine(engine)
+        @lock.synchronize { @engine = engine }
+        self
       end
 
       def write(record)
@@ -307,6 +314,7 @@ module RubyDB
 
           @checkpoint.stop if @checkpoint
           @writer.shutdown(wait)
+          @reader.close if @reader
         end
       end
 
@@ -343,76 +351,88 @@ module RubyDB
       end
 
       def can_commit_prepared?(record)
-        # Check if prepared transaction can be committed
-        # In production, this would check if all resources are available
-        true
+        data = record&.data
+        resources = data && data[:resources]
+        return true unless resources
+
+        Array(resources).all? do |resource|
+          case resource
+          when String then File.exist?(resource)
+          when Hash
+            path = resource[:path] || resource["path"] || resource[:file] || resource["file"]
+            path && File.exist?(path)
+          else
+            resource.respond_to?(:available?) && resource.available?
+          end
+        end
       end
 
       def replay_record(record)
-        # Replay a record during recovery
-        # In production, this would apply the changes to the database
+        engine = @engine
+        raise RubyDB::RecoveryError, "WAL replay requires an attached engine" unless engine
         data = record.data
 
         case record.type
         when :insert
           # Insert row
-          @writer.instance_variable_get(:@engine).insert_row(
+          engine.insert_row(
             data[:table],
             data[:columns],
             data[:values]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         when :update
           # Update row
-          @writer.instance_variable_get(:@engine).update_row(
+          engine.update_row(
             data[:table],
             data[:row_id],
             data[:values]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         when :delete
           # Delete row
-          @writer.instance_variable_get(:@engine).delete_row(
+          engine.delete_row(
             data[:table],
             data[:row_id]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         when :create_table
           # Create table
-          @writer.instance_variable_get(:@engine).create_table(
+          engine.create_table(
             data[:table_name],
             data[:columns]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         when :drop_table
           # Drop table
-          @writer.instance_variable_get(:@engine).drop_table(
+          engine.drop_table(
             data[:table_name]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         end
       end
 
       def undo_record(record)
-        # Undo a record during recovery
+        engine = @engine
+        raise RubyDB::RecoveryError, "WAL undo requires an attached engine" unless engine
         data = record.data
 
         case record.type
         when :insert
           # Delete the inserted row
-          @writer.instance_variable_get(:@engine).delete_row(
+          engine.delete_row(
             data[:table],
             data[:row_id]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         when :update
           # Restore old values
-          @writer.instance_variable_get(:@engine).update_row(
+          engine.update_row(
             data[:table],
             data[:row_id],
             data[:old_values]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         when :delete
           # Reinsert the deleted row
-          @writer.instance_variable_get(:@engine).insert_row(
+          engine.insert_row(
             data[:table],
             data[:columns],
             data[:row_data]
-          ) if @writer.instance_variable_defined?(:@engine)
+          )
         end
       end
     end

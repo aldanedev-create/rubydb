@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "monitor"
+
 module RubyDB
   module Indexes
     # Hash index implementation (for exact equality lookups)
@@ -9,7 +11,7 @@ module RubyDB
         @hash_table = {}
         @bucket_count = options[:bucket_count] || 1024
         @max_load_factor = options[:max_load_factor] || 0.75
-        @lock = Mutex.new
+        @lock = Monitor.new
         @is_built = false
       end
 
@@ -118,9 +120,10 @@ module RubyDB
 
       def extract_key(row)
         if @columns.size == 1
-          row[@columns.first]
+          column = @columns.first
+          row.key?(column) ? row[column] : row[column.to_s]
         else
-          @columns.map { |col| row[col] }
+          @columns.map { |col| row.key?(col) ? row[col] : row[col.to_s] }
         end
       end
 

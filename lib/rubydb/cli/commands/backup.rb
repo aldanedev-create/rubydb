@@ -24,6 +24,7 @@ module RubyDB
             opts.on("--no-verify", "Skip verification") do
               options[:no_verify] = true
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -34,7 +35,7 @@ module RubyDB
 
           # Get real config
           config = RubyDB::Configuration::Config.instance
-          db_path = config.get("storage.data_dir") || "data/rubydb.rdb"
+          db_path = options[:database] || config.get("storage.data_dir") || "data/rubydb.rdb"
           backup_dir = options[:dir] || config.get("backup.backup_dir") || "backups"
 
           # Create backup instance
@@ -61,6 +62,8 @@ module RubyDB
           end
 
           0
+        ensure
+          engine&.close if engine&.open?
         end
 
         private

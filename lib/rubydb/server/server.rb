@@ -5,11 +5,14 @@ require "thread"
 require "time"
 require "json"
 require "fileutils"
+require "monitor"
+require "openssl"
 
 require_relative "listener"
 require_relative "connection"
 require_relative "session"
 require_relative "connection_pool"
+require_relative "worker_pool"
 require_relative "worker"
 require_relative "request_handler"
 require_relative "lifecycle"
@@ -58,9 +61,13 @@ module RubyDB
           last_activity: nil
         }
 
-        @lock = Mutex.new
+        @lock = Monitor.new
         @running = false
         @shutdown = false
+        @stopping = false
+
+        validate_authentication_config!
+        validate_ssl_config!
 
         # Setup directories
         setup_directories
@@ -103,6 +110,9 @@ module RubyDB
       def stop
         @lock.synchronize do
           return unless @running
+          return true if @stopping
+
+          @stopping = true
 
           @shutdown = true
           puts "Shutting down RubyDB Server..."
@@ -119,10 +129,15 @@ module RubyDB
           # Stop lifecycle
           @lifecycle.stop
 
+          # Release the database file handle before the data directory is
+          # removed by callers (notably on Windows).
+          @engine&.close
+
           # Remove PID file
           remove_pid_file
 
           @running = false
+          @stopping = false
 
           puts "RubyDB Server stopped"
           true
@@ -143,6 +158,11 @@ module RubyDB
         @lock.synchronize do
           elapsed = @stats[:started_at] ? (Time.now - @stats[:started_at]).to_i : 0
           @stats[:uptime_seconds] = elapsed
+          pool_stats = @connection_pool&.stats || {}
+          @stats[:connections_active] = pool_stats[:active_connections] || 0
+          @stats[:connections_total] = pool_stats[:total_connections] || 0
+          @stats[:requests_processed] = pool_stats[:requests_processed] || 0
+          @stats[:requests_failed] = pool_stats[:requests_failed] || 0
 
           @stats.merge({
             engine_stats: @engine&.stats || {},
@@ -167,16 +187,18 @@ module RubyDB
         # Initialize protocol
         @protocol = Protocol::Protocol.new(
           format: :json,
-          compression: true,
+          compression: @config[:compression] || false,
           server_info: {
             version: RubyDB::VERSION,
             pid: Process.pid,
-            started_at: Time.now.iso8601
+            started_at: Time.now.iso8601,
+            default_auth: authentication_method,
+            authentication_credentials: authentication_credentials
           }
         )
 
         # Initialize connection pool
-        @connection_pool = ConnectionPool.new(@config, @protocol)
+        @connection_pool = ConnectionPool.new(@config, @protocol, @engine)
 
         # Initialize worker pool
         @worker_pool = WorkerPool.new(@config, @engine, @transaction_manager)
@@ -195,6 +217,63 @@ module RubyDB
         [:data_dir, :log_dir].each do |dir|
           path = @config[dir]
           FileUtils.mkdir_p(path) unless Dir.exist?(path)
+        end
+      end
+
+      def authentication_method
+        auth = @config[:authentication] || {}
+        (auth[:method] || auth["method"] || "none").to_s.tr("_", "-")
+      end
+
+      def authentication_credentials
+        auth = @config[:authentication] || {}
+        auth[:credentials] || auth["credentials"] || auth
+      end
+
+      def validate_authentication_config!
+        method = authentication_method
+        supported = %w[none password md5 scram-sha-256]
+        raise ServerError, "Unsupported authentication method: #{method}" unless supported.include?(method)
+
+        return if method == "none"
+
+        credentials = authentication_credentials
+        users = credentials[:users] || credentials["users"]
+        complete = users && !users.empty? ||
+          ((credentials[:username] || credentials["username"]) &&
+           (credentials[:password] || credentials["password"]))
+        raise ServerError, "Authentication credentials are required for #{method}" unless complete
+      end
+
+      def validate_ssl_config!
+        ssl = @config[:ssl] || {}
+        enabled = ssl == true || ssl[:enabled] || ssl["enabled"]
+        return unless enabled
+
+        raise ServerError, "SSL configuration must include certificate and key paths" if ssl == true
+
+        cert = ssl[:cert_file] || ssl["cert_file"]
+        key = ssl[:key_file] || ssl["key_file"]
+        raise ServerError, "ssl.cert_file and ssl.key_file are required when SSL is enabled" unless cert && key
+        raise ServerError, "SSL certificate file does not exist" unless File.file?(cert)
+        raise ServerError, "SSL key file does not exist" unless File.file?(key)
+
+        begin
+          OpenSSL::X509::Certificate.new(File.binread(cert))
+          OpenSSL::PKey.read(File.binread(key))
+        rescue OpenSSL::SSL::SSLError, OpenSSL::X509::CertificateError, OpenSSL::PKey::PKeyError, ArgumentError => e
+          raise ServerError, "SSL certificate or key is invalid: #{e.message}"
+        end
+
+        ca = ssl[:ca_file] || ssl["ca_file"]
+        if (ssl[:verify_peer] || ssl["verify_peer"]) && !ca
+          raise ServerError, "ssl.ca_file is required when peer verification is enabled"
+        end
+        raise ServerError, "SSL CA file does not exist" if ca && !File.file?(ca)
+
+        min_version = ssl[:min_version] || ssl["min_version"] || :TLS1_2
+        unless %i[TLS1_2 TLS1_3].include?(min_version.to_s.to_sym)
+          raise ServerError, "SSL min_version must be TLS1_2 or TLS1_3"
         end
       end
 

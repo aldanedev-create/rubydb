@@ -6,6 +6,10 @@ module RubyDB
   module CLI
     # Application - Main CLI application
     class Application
+      def self.start(argv = ARGV)
+        new.run(argv)
+      end
+
       def initialize
         @output = Output.new
         @formatter = Formatter.new(@output)

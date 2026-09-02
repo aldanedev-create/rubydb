@@ -159,7 +159,8 @@ module RubyDB
           end
 
           # Get page before freeing
-          page = @page_manager.get_page(page_number) rescue nil
+          page = @page_manager.get_page(page_number)
+          raise StorageError, "Page #{page_number} could not be read" unless page
           
           if page
             # Record usage stats before freeing
@@ -388,7 +389,6 @@ module RubyDB
           # Update free space map
           @free_space_map.update_page(overflow_page_number, overflow_page.free_space)
           
-          @stats[:overflow_allocations] += 1
           
           overflow_page
         end
@@ -427,9 +427,10 @@ module RubyDB
       # Release all overflow pages for a page
       def release_overflow_pages(page_number)
         @lock.synchronize do
-          overflow_pages = @overflow_pages.delete(page_number) || []
+          overflow_pages = @overflow_pages[page_number] || []
           
           released = 0
+          errors = []
           overflow_pages.each do |overflow_page_number|
             begin
               @page_manager.free_page(overflow_page_number)
@@ -438,11 +439,17 @@ module RubyDB
               @page_records_cache.delete(overflow_page_number)
               released += 1
             rescue => e
-              # Log error but continue
-              puts "Error releasing overflow page #{overflow_page_number}: #{e.message}"
+              errors << [overflow_page_number, e]
             end
           end
-          
+
+          unless errors.empty?
+            details = errors.map { |page_number, error| "#{page_number}: #{error.message}" }.join(", ")
+            raise StorageError, "Failed to release overflow pages (#{details})"
+          end
+
+          @overflow_pages.delete(page_number)
+
           released
         end
       end
@@ -515,25 +522,6 @@ module RubyDB
           # Compact the page
           compaction_result = compact_page(page_number)
           
-          # After compaction, check if we can free any overflow pages
-          page = @page_manager.get_page(page_number)
-          overflow_pages = get_overflow_pages(page_number)
-          
-          freed_overflow = 0
-          overflow_pages.each do |overflow_page_number|
-            overflow_page = @page_manager.get_page(overflow_page_number) rescue nil
-            if overflow_page
-              overflow_size = overflow_page.header.data_end - PageHeader::SIZE
-              if page.free_space >= overflow_size + 8  # +8 for record header
-                # Move overflow data back to main page
-                # In production, we would actually move the data here
-                release_overflow_pages(page_number)
-                freed_overflow = overflow_pages.size
-                break
-              end
-            end
-          end
-          
           # Update page usage
           if @page_usage[page_number]
             @page_usage[page_number][:defragmented_at] = Time.now
@@ -544,7 +532,7 @@ module RubyDB
             page_number: page_number,
             compacted: compaction_result[:compacted],
             space_reclaimed: compaction_result[:space_reclaimed],
-            freed_overflow_pages: freed_overflow,
+            freed_overflow_pages: 0,
             fragmentation_before: compaction_result[:fragmentation_before] || 0,
             fragmentation_after: page_fragmentation(page_number)
           }

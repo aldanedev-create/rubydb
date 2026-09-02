@@ -40,7 +40,7 @@ module RubyDB
           result = @connection.execute(sql, params)
           {
             row_count: result.affected_rows,
-            last_insert_id: result.first && result.first["id"]
+            last_insert_id: result.row_id || (result.first && result.first["id"])
           }
         end
       end

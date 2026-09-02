@@ -178,7 +178,6 @@ module RubyDB
             cycles.each do |cycle|
               resolve_deadlock(cycle)
             end
-            @stats[:deadlocks_resolved] += cycles.size
             return true
           end
           
@@ -245,7 +244,8 @@ module RubyDB
       def recover
         @lock.synchronize do
           # Recover from transaction log
-          entries = @transaction_log.recover
+          recovery = @transaction_log.recover
+          entries = recovery[:entries] || []
           
           entries.each do |entry|
             case entry[:type]

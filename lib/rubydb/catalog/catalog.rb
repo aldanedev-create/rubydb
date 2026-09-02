@@ -48,6 +48,28 @@ module RubyDB
         true
       end
 
+      def find_database(name)
+        @databases[name]
+      end
+
+      def create_schema(name, if_not_exists: false, authorization: nil)
+        raise DatabaseError, "No database selected" unless @current_database
+        schema = @current_database.create_schema(name, if_not_exists: if_not_exists, authorization: authorization)
+        @modified_at = Time.now
+        schema
+      end
+
+      def drop_schema(name, if_exists: false, cascade: false)
+        raise DatabaseError, "No database selected" unless @current_database
+        result = @current_database.drop_schema(name, if_exists: if_exists, cascade: cascade)
+        @modified_at = Time.now
+        result
+      end
+
+      def find_schema(name)
+        @current_database&.find_schema(name)
+      end
+
       def use_database(name)
         db = @databases[name]
         raise DatabaseError, "Database '#{name}' does not exist" unless db
@@ -155,10 +177,11 @@ module RubyDB
 
       # --- View Management ---
 
-      def create_view(name, query)
+      def create_view(name, query, if_not_exists: false)
         raise DatabaseError, "No database selected" unless @current_database
 
         if @current_database.view_exists?(name)
+          return @current_database.find_view(name) if if_not_exists
           raise DatabaseError, "View '#{name}' already exists"
         end
 
@@ -190,14 +213,14 @@ module RubyDB
 
       # --- Trigger Management ---
 
-      def create_trigger(name, event, table_name, definition)
+      def create_trigger(name, event, table_name, definition, **options)
         raise DatabaseError, "No database selected" unless @current_database
 
         if @current_database.trigger_exists?(name)
           raise DatabaseError, "Trigger '#{name}' already exists"
         end
 
-        trigger = Trigger.new(name, event, table_name, definition)
+        trigger = Trigger.new(name, event, table_name, definition, options)
         @current_database.add_trigger(trigger)
         @triggers[name] = trigger
         @modified_at = Time.now
@@ -243,15 +266,18 @@ module RubyDB
 
         data[:databases].each do |name, db_data|
           db = Database.deserialize(db_data)
-          catalog.databases[name] = db
+          catalog.databases[name.to_s] = db
         end
 
-        catalog.current_database = catalog.databases[data[:current_database]] if data[:current_database]
+        if data[:current_database]
+          current = catalog.databases[data[:current_database]] || catalog.databases[data[:current_database].to_sym]
+          catalog.send(:current_database=, current)
+        end
 
         # Rebuild indexes
         catalog.databases.each do |_name, db|
-          db.tables.each do |_table_name, table|
-            catalog.tables[table.name] = table
+          db.tables.each do |table|
+            catalog.instance_variable_get(:@tables)[table.name] = table
             table.columns.each do |col|
               # Build indexes for columns
               if col.primary_key?

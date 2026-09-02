@@ -16,6 +16,8 @@ module RubyDB
             opts.on("-b", "--create NAME", "Create and checkout branch") do |name|
               options[:create] = name
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
+            opts.on("--branch-dir DIR", "Branch metadata directory") { |path| options[:branch_dir] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -31,15 +33,20 @@ module RubyDB
             return
           end
 
-          if options[:create]
-            @output.spinner("Creating and checking out branch #{options[:create]}...") do
-              @output.success("Switched to branch #{options[:create]}")
-            end
-          else
-            @output.spinner("Switching to branch #{branch}...") do
-              @output.success("Switched to branch #{branch}")
-            end
-          end
+          database = RubyDB::Database.new(options[:database] || "data/rubydb.rdb", auto_connect: false).connect
+          manager = RubyDB::Branching::BranchManager.new(
+            database.engine,
+            branch_dir: options[:branch_dir] || "branches"
+          )
+          selected = options[:create] || branch
+          result = manager.create_branch(selected, from: manager.current_branch_name) if options[:create]
+          raise result[:error] if result && !result[:success]
+          result = manager.checkout(selected)
+          raise result[:error] unless result[:success]
+          @output.success("Switched to branch #{selected}")
+          0
+        ensure
+          database&.close
         end
       end
     end

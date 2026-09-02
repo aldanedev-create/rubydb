@@ -2,12 +2,13 @@
 
 require "thread"
 require "time"
+require "monitor"
 
 module RubyDB
   module Replication
     # ReplicationManager - Manages replication setup and coordination
     class ReplicationManager
-      attr_reader :config, :primary, :replica, :stats
+      attr_reader :config, :primary, :replica, :stats, :mode
 
       # Replication modes
       MODE_OFF = :off
@@ -39,7 +40,7 @@ module RubyDB
           switches: 0,
           errors: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @running = false
         @health_thread = nil
         @health_check_interval = config[:health_check_interval] || 10
@@ -115,7 +116,13 @@ module RubyDB
             return { success: false, error: "Not in replica mode" }
           end
 
-          # Promote replica to primary
+          status = @replica&.replication_status
+          unless status && [Replica::STATE_STREAMING, Replica::STATE_SYNCED].include?(status[:state])
+            return { success: false, error: "Replica is not synchronized enough for manual promotion" }
+          end
+
+          # Promote replica to primary. Automatic promotion is intentionally
+          # not attempted; callers must explicitly invoke this operation.
           @replica&.promote_to_primary
 
           # Switch mode

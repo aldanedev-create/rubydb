@@ -10,6 +10,7 @@ module RubyDB
       attr_reader :first_lsn, :last_lsn, :record_count
 
       DEFAULT_MAX_SIZE = 16 * 1024 * 1024  # 16MB
+      FRAME_HEADER_SIZE = 4
 
       def initialize(segment_id, wal_dir, max_size = DEFAULT_MAX_SIZE)
         @segment_id = segment_id
@@ -62,12 +63,17 @@ module RubyDB
           raise "Segment is full" if @is_full
           raise "Segment not open" unless @is_open
 
+          # Each record is framed as a 4-byte big-endian payload length followed
+          # by the checksum+JSON payload. This makes records independently
+          # readable and lets recovery safely stop at a torn tail record.
+          frame = [record_data.bytesize].pack("N") + record_data
+
           # Write record
           @file.seek(0, IO::SEEK_END)
-          @file.write(record_data)
+          @file.write(frame)
           @file.flush
 
-          @size += record_data.bytesize
+          @size += frame.bytesize
           @record_count += 1
 
           @first_lsn ||= lsn
@@ -96,18 +102,18 @@ module RubyDB
         @lock.synchronize do
           raise "Segment not open" unless @is_open
 
-          # Read checksum (16 bytes) and record length marker
-          header = @file.read(16)
-          return nil if header.nil? || header.empty?
-
-          # Read the rest of the record
-          # In production, record length would be stored in header
-          # For simplicity, we read until EOF or next record marker
-          # This is simplified - production would have proper length prefix
-
-          # For now, read the entire remaining data (not efficient for production)
           @file.seek(offset)
-          @file.read
+          header = @file.read(FRAME_HEADER_SIZE)
+          return nil if header.nil? || header.empty?
+          return nil if header.bytesize < FRAME_HEADER_SIZE
+
+          payload_size = header.unpack1("N")
+          return nil if payload_size < 16
+
+          payload = @file.read(payload_size)
+          return nil if payload.nil? || payload.bytesize < payload_size
+
+          payload
         end
       end
 
@@ -164,9 +170,23 @@ module RubyDB
       private
 
       def count_records
-        # In production, this would parse the segment to count records
-        # For now, return 0
-        0
+        count = 0
+        offset = 0
+        loop do
+          @file.seek(offset)
+          header = @file.read(FRAME_HEADER_SIZE)
+          break if header.nil? || header.bytesize < FRAME_HEADER_SIZE
+
+          payload_size = header.unpack1("N")
+          break if payload_size < 16
+
+          payload = @file.read(payload_size)
+          break if payload.nil? || payload.bytesize < payload_size
+
+          count += 1
+          offset += FRAME_HEADER_SIZE + payload_size
+        end
+        count
       end
     end
   end

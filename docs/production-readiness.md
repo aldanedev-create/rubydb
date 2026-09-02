@@ -2,7 +2,7 @@
 
 ## Status
 
-This project is not yet production-ready for real user data.
+RubyDB has verified production-oriented foundations, but it is not yet a general-purpose production database. Supported behavior is backed by the RSpec suite in `spec/`.
 
 ## Implemented features
 
@@ -18,65 +18,67 @@ The repository contains substantial scaffolding for:
 - authentication and authorization modules
 - backup and replication APIs
 - monitoring and metrics interfaces
-- Rails integration stubs
+- Rails integration adapters
+- ordered, locked migrations with durable version/checksum tracking
 
 ## Tested features
 
-The repository currently lacks a meaningful end-to-end test suite proving durability, correctness, and crash safety.
-
-The most concrete validation performed in this audit was:
-
-- library loading and page-header serialization checks
-- repository audit of current implementation state
+The current suite verifies storage reopen, subprocess crash recovery, MVCC isolation/vacuum, durable visibility version-history traversal, constraints including ON DELETE/ON UPDATE referential actions and nullable values, indexes including deep B-tree splits, SQL execution including idempotent database/table/index DDL and SQL foreign-key actions, schema DDL, views, trigger DDL and dispatch, CREATE TABLE, ALTER TABLE column and constraint changes, transaction before-image rollback and SQL savepoints, and VACUUM, live TCP sessions, TLS transport, password/SCRAM authentication and authorization, metrics updates including Prometheus export, liveness/readiness health reporting through the server request router, live CLI doctor checks with safe repair behavior, truthful CLI status reporting, live CLI branch diff/merge/checkout operations, live CLI inspection values, live CLI snapshot creation/listing and vacuum reporting, live CLI backup creation and restore dry-run validation, live CLI database creation and deletion, the documented SQL compatibility contract, full/snapshot/incremental/differential backup validation, logical replication, durable replica state, guarded failover promotion, durable fencing epochs, recovery resource checks, migration/schema-diff behavior including executable migration SQL serialization, atomic branch checkout, branch state/diff/merge behavior, foreign-key integrity lookup behavior, compound/null/boolean check-constraint evaluation, lock conflict/wait/timeout behavior, complete deadlock cycle detection and victim rollback delegation, concurrency mutex initialization, Rails schema-builder SQL generation including defaults and foreign-key conventions, engine block-based table creation, adapter schema dumps preserving primary keys and defaults, release configuration, upgrade guards, benchmark execution, standalone SCRAM verification, actual WAL checkpoint sizing, and deployment artifact checks (152 examples, 0 failures at the latest audit).
 
 ## Known limitations
 
-- no verified end-to-end durability workflow
-- no proven crash-recovery workflow
-- no real restart test suite
-- no production-grade SQL execution validation
-- no verified security enforcement in the real server path
-- no proven backup and restore workflow from a clean environment
-- no reliable compatibility target for SQL support
+- The concurrent workload verifies parallel writes and durable reopen reads. Immediate point reads interleaved with simultaneous inserts still need a dedicated race fix and regression coverage before RubyDB can claim general concurrent read/write workload certification.
+
+- incremental backups capture WAL mutations after a verified base LSN; differential backups capture the verified base-relative WAL delta and restore through the same validated delta path
+- replication is limited to the explicit logical row-mutation envelope API
+- automatic failover is limited to synchronized candidates; fencing requires a shared durable fence path and still needs multi-host split-brain validation
+- SQL compatibility is narrower than PostgreSQL or SQLite
+- production CA lifecycle, performance, and large-scale workload behavior still require dedicated validation
+- branch state application and live target-branch merges are supported through the engine reconciliation hook
 
 ## Unsupported SQL
 
-The project has not yet established and validated a documented compatibility contract. Until the engine is proven, broad SQL support claims should be treated as aspirational rather than factual.
+The supported dialect is defined in [docs/sql/compatibility.md](../sql/compatibility.md) and enforced by parser/execution integration coverage. RubyDB does not claim PostgreSQL or SQLite compatibility beyond that documented subset.
 
 ## Durability guarantees
 
-The codebase clearly aims for WAL and crash safety, but it does not yet provide verified durability guarantees under actual crash and restart conditions.
+WAL framing, reopen behavior, subprocess crash-recovery scenarios, actual checkpoint sizing, and fail-closed visibility-map loading are tested. This is not a substitute for production fault-injection and filesystem-specific validation.
 
 ## Transaction guarantees
 
-The project states that it supports transactions and MVCC, but isolation semantics and correctness under contention are not yet proven with real tests.
+Transaction commit/rollback, MVCC visibility, snapshot isolation behavior, and vacuum safe-point handling are covered by focused tests. High-contention workload validation remains outstanding.
 
 ## Isolation guarantees
 
-No production-level isolation documentation or validation is yet available.
+Read committed, repeatable read, and serializable conflict behavior are covered by focused tests; broader workload and distributed-isolation validation remains outstanding.
 
 ## Backup guarantees
 
-Backups are planned but not proven under actual restore conditions.
+Full compressed backups restore into a fresh directory and checksum tampering is detected. Incremental and differential backups validate the base, checksum the change set, and apply WAL row mutations during restore. Production-scale backup-chain and filesystem fault-injection testing remains outstanding.
 
 ## Replication guarantees
 
-Replication is included as a design area but not proven to be correct and safe.
+Logical row-mutation streaming, LSN deduplication, acknowledgments, acknowledged-LSN reporting, synchronized-candidate promotion verification, and stale-primary rejection through durable fencing epochs are tested. Multi-host fencing and split-brain recovery still require dedicated validation.
+
+## TLS guarantees
+
+TLS 1.2 or newer is enforced when enabled. Certificate/key parsing, CA-file validation, TLS client connections, and the end-to-end SSL transport path are tested. Mutual TLS is configurable through client certificates; certificate rotation and production CA lifecycle procedures remain operational work.
 
 ## Security model
 
-Authentication and authorization code exists, but the actual production enforcement path is not yet demonstrated.
+Password and SCRAM-SHA-256 authentication, server-signature verification, read/write authorization, and startup validation of incomplete auth configuration are tested through the server/session path.
 
 ## Performance characteristics
 
-The project describes performance goals but does not yet include real benchmarking evidence for read/write throughput, WAL behavior, checkpoint efficiency, or concurrency under load.
+The repository includes a deterministic storage benchmark (`RUBYDB_BENCHMARK_ITERATIONS=100 ruby -Ilib benchmarks/basic_workload.rb`) and a concurrent write/durability workload (`ruby benchmarks/concurrent_workload.rb`). Both emit machine-readable JSON. Production-scale throughput, WAL, checkpoint, and concurrency targets still require workload-specific baselines.
 
 ## Deployment requirements
 
 The project currently needs:
 
 - a validated Ruby support matrix
-- a real, tested packaging path
+- a release-hosted gem/package source (the repository currently uses placeholder project URLs)
+- a documented operator runbook for backups, upgrades, rollback, and incident preservation
 - explicit durability and crash-recovery validation
 - secure-by-default configuration development
 - a narrower set of supported features documented honestly
@@ -85,14 +87,10 @@ The project currently needs:
 
 Main remaining work is to complete the sequence laid out in the repository design:
 
-1. storage durability and restart correctness
-2. WAL and crash recovery
-3. transactions and MVCC validation
-4. catalog and index persistence
-5. SQL execution and planner integration
-6. server and authentication hardening
-7. backup/restore proof
-8. monitoring and production documentation
+1. production CA lifecycle and certificate rotation
+2. broader SQL compatibility contract and workload benchmarks
+3. production-grade failover fencing and broader SQL compatibility
+4. operator runbooks and deployment validation
 
 ## Bottom line
 

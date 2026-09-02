@@ -84,8 +84,8 @@ module RubyDB
           fills: data[:fills] || []
         )
         index.size = data[:size] if data[:size]
-        index.created_at = Time.parse(data[:created_at]) if data[:created_at]
-        index.modified_at = Time.parse(data[:modified_at]) if data[:modified_at]
+        index.send(:created_at=, Time.parse(data[:created_at])) if data[:created_at]
+        index.send(:modified_at=, Time.parse(data[:modified_at])) if data[:modified_at]
         index
       end
 

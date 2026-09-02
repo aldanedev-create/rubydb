@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "optparse"
+
 module RubyDB
   module CLI
     module Commands
@@ -25,6 +27,8 @@ module RubyDB
             opts.on("--dry-run", "Show what would be run") do
               options[:dry_run] = true
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
+            opts.on("--path DIR", "Migration directory") { |path| options[:migrations_path] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -33,16 +37,24 @@ module RubyDB
 
           parser.parse!(args)
 
+          database = RubyDB::Database.new(options[:database] || "data/rubydb.rdb", auto_connect: false).connect
+          manager = RubyDB::Migrations::MigrationManager.new(
+            database,
+            path: options[:migrations_path] || "db/migrate",
+            version: options[:version]
+          )
           if options[:dry_run]
-            @output.info("Migrations to run:")
-            @output.puts("  - 20240101000000 CreateUsers")
-            @output.puts("  - 20240102000000 AddEmailToUsers")
-            return
-          end
-
-          @output.spinner("Running migrations...") do
+            @formatter.format_migrations(manager.status)
+          elsif options[:down]
+            manager.rollback(options[:steps] || 1)
+            @output.success("Migration rollback completed")
+          else
+            manager.migrate
             @output.success("Migrations completed successfully")
           end
+          0
+        ensure
+          database&.close
         end
       end
     end

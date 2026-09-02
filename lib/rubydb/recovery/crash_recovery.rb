@@ -26,8 +26,8 @@ module RubyDB
           total_recovery_time_ms: 0
         }
         @lock = Mutex.new
-        @stop_on_error = config[:stop_on_error] || true
-        @max_errors = config[:max_errors] || 10
+        @stop_on_error = config.fetch(:stop_on_error, true)
+        @max_errors = config.fetch(:max_errors, 10)
       end
 
       def recover
@@ -113,7 +113,7 @@ module RubyDB
 
       def find_latest_checkpoint
         # Read all records and find the latest checkpoint
-        all_records = @wal.read_all rescue []
+        all_records = @wal.read_all
         checkpoints = all_records.select { |r| r.type == :checkpoint }
         return nil if checkpoints.empty?
 
@@ -122,7 +122,7 @@ module RubyDB
 
         # Get the LSN from the checkpoint data
         if latest.data && latest.data[:lsn]
-          LSN.from_s(latest.data[:lsn])
+          WAL::LSN.from_s(latest.data[:lsn])
         else
           lsn
         end
@@ -185,34 +185,38 @@ module RubyDB
       end
 
       def redo_records(records)
-        count = 0
-        records.each do |record|
-          begin
-            redo_record(record)
-            count += 1
-          rescue => e
-            @stats[:corrupted_records] += 1
-            @recovery_log << { step: "redo_error", record: record.lsn.to_s, error: e.message }
-            raise if @stop_on_error
+        @engine.with_recovery do
+          count = 0
+          records.each do |record|
+            begin
+              redo_record(record)
+              count += 1
+            rescue => e
+              @stats[:corrupted_records] += 1
+              @recovery_log << { step: "redo_error", record: record.lsn.to_s, error: e.message }
+              raise if @stop_on_error
+            end
           end
+          count
         end
-        count
       end
 
       def undo_records(records)
-        count = 0
-        # Undo in reverse order
-        records.reverse_each do |record|
-          begin
-            undo_record(record)
-            count += 1
-          rescue => e
-            @stats[:corrupted_records] += 1
-            @recovery_log << { step: "undo_error", record: record.lsn.to_s, error: e.message }
-            raise if @stop_on_error
+        @engine.with_recovery do
+          count = 0
+          # Undo in reverse order
+          records.reverse_each do |record|
+            begin
+              undo_record(record)
+              count += 1
+            rescue => e
+              @stats[:corrupted_records] += 1
+              @recovery_log << { step: "undo_error", record: record.lsn.to_s, error: e.message }
+              raise if @stop_on_error
+            end
           end
+          count
         end
-        count
       end
 
       def redo_record(record)
@@ -221,7 +225,10 @@ module RubyDB
         when :insert
           # Re-insert the row
           table_name = data[:table_name] || data[:table]
+          table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
           columns = @engine.table_columns(table_name) || []
+          existing = @engine.select_rows(table_name, columns).any? { |row| row[:_row_id] == data[:row_id] }
+          return if existing
           begin
             @engine.insert_row(table_name, columns, data[:values] || {})
           rescue => e
@@ -231,6 +238,7 @@ module RubyDB
         when :update
           # Re-apply the update
           table_name = data[:table_name] || data[:table]
+          table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
           begin
             @engine.update_row(table_name, data[:row_id], data[:values] || {})
           rescue => e
@@ -240,6 +248,7 @@ module RubyDB
         when :delete
           # Re-delete the row
           table_name = data[:table_name] || data[:table]
+          table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
           begin
             @engine.delete_row(table_name, data[:row_id])
           rescue => e
@@ -273,24 +282,28 @@ module RubyDB
         case record.type
         when :insert
           # Undo insert: delete the row
-          @engine.delete_row(data[:table], data[:row_id]) if data[:row_id]
+          table_name = data[:table_name] || data[:table]
+          table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
+          @engine.delete_row(table_name, data[:row_id]) if table_name && data[:row_id]
         when :update
           # Undo update: restore old values
           if data[:old_values]
-            @engine.update_row(data[:table], data[:row_id], data[:old_values])
+            table_name = data[:table_name] || data[:table]
+            table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
+            @engine.update_row(table_name, data[:row_id], data[:old_values], visibility_check: false)
           end
         when :delete
-          # Undo delete: reinsert the row
-          if data[:row_data]
-            @engine.insert_row(data[:table], data[:columns] || [], data[:row_data])
-          end
+          # Undo delete by restoring the original physical row version. This
+          # preserves its row ID and avoids creating a duplicate row.
+          table_name = data[:table_name] || data[:table]
+          table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
+          @engine.restore_deleted_row(table_name, data[:row_id]) if table_name && data[:row_id]
         end
       end
 
       def can_commit_prepared?(record)
-        # Check if a prepared transaction can be committed
-        # In production, this would check if all resources are available
-        # and if the transaction is still valid
+        # Prepared transactions may commit only when their recorded resources
+        # remain available after recovery.
         data = record.data
         return true unless data && data[:resources]
 
@@ -301,9 +314,15 @@ module RubyDB
       end
 
       def resource_available?(resource)
-        # Check if a resource is available
-        # In production, this would check the actual resource state
-        true
+        case resource
+        when String
+          File.exist?(resource)
+        when Hash
+          path = resource[:path] || resource["path"] || resource[:file] || resource["file"]
+          path ? File.exist?(path) : false
+        else
+          resource.respond_to?(:available?) ? resource.available? : false
+        end
       end
 
       def apply_schema_change(data)
@@ -321,9 +340,23 @@ module RubyDB
       end
 
       def verify_consistency
-        # TODO: Implement consistency checker
-        # For now, just return true after successful redo/undo
-        true
+        # Recovery must not report success when the catalog points at pages
+        # that cannot be read. This is intentionally structural: row-level
+        # validation belongs to the storage engine, while recovery needs a
+        # cheap post-redo/post-undo sanity check.
+        metadata = @engine.respond_to?(:table_metadata) ? @engine.table_metadata : {}
+        table_pages = @engine.instance_variable_get(:@table_pages) || {}
+
+        metadata.all? do |_table_name, table_data|
+          required_pages = [table_data[:metadata_page], table_data[:data_page]]
+          listed_pages = table_pages.values.flatten
+          (required_pages + listed_pages).compact.all? do |page_number|
+            page = @engine.read_page(page_number)
+            page && page.respond_to?(:header)
+          rescue StandardError
+            false
+          end
+        end
       end
 
       def create_checkpoint_after_recovery

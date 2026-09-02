@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "optparse"
+
 module RubyDB
   module CLI
     module Commands
@@ -25,6 +27,8 @@ module RubyDB
             opts.on("--from BRANCH", "Create from branch") do |branch|
               options[:from] = branch
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
+            opts.on("--branch-dir DIR", "Branch metadata directory") { |path| options[:branch_dir] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -33,28 +37,34 @@ module RubyDB
 
           parser.parse!(args)
 
+          database = RubyDB::Database.new(options[:database] || "data/rubydb.rdb", auto_connect: false).connect
+          manager = RubyDB::Branching::BranchManager.new(
+            database.engine,
+            branch_dir: options[:branch_dir] || "branches"
+          )
+
           if options[:list] || (args.empty? && !options[:create] && !options[:delete])
-            @formatter.format_branches([
-              { name: "main", state: "active", commit_count: 10, created_at: "2024-01-01", parent_branch: nil },
-              { name: "feature-auth", state: "active", commit_count: 5, created_at: "2024-01-02", parent_branch: "main" },
-              { name: "feature-payments", state: "merged", commit_count: 3, created_at: "2024-01-03", parent_branch: "main" }
-            ])
-            return
+            @formatter.format_branches(manager.list_branches)
+            return 0
           end
 
           if options[:create]
             from = options[:from] || "main"
-            @output.spinner("Creating branch #{options[:create]} from #{from}...") do
-              @output.success("Branch #{options[:create]} created")
-            end
-            return
+            result = manager.create_branch(options[:create], from: from)
+            raise result[:error] unless result[:success]
+            @output.success("Branch #{options[:create]} created")
+            return 0
           end
 
           if options[:delete]
-            @output.spinner("Deleting branch #{options[:delete]}...") do
-              @output.success("Branch #{options[:delete]} deleted")
-            end
+            result = manager.delete_branch(options[:delete])
+            raise result[:error] unless result[:success]
+            @output.success("Branch #{options[:delete]} deleted")
+            return 0
           end
+          raise "Specify --list, --create, or --delete"
+        ensure
+          database&.close
         end
       end
     end

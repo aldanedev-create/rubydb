@@ -48,7 +48,7 @@ module RubyDB
         data = @file.read(@page_size)
 
         if data.nil? || data.bytesize != @page_size
-          raise CorruptError, "Failed to read page #{page_number}"
+          raise CorruptionError, "Failed to read page #{page_number}"
         end
 
         data
@@ -137,18 +137,21 @@ module RubyDB
       def validate_file
         # Check file size is multiple of page size
         if @file_size % @page_size != 0
-          raise CorruptError, "File size is not a multiple of page size"
+          raise CorruptionError, "File size is not a multiple of page size"
         end
 
-        # Read and validate superblock
+        # Read and validate the first page header before interpreting the file.
+        # Refuse unknown format versions instead of silently opening a database
+        # written by an incompatible release.
         begin
           data = read_page(0)
-          # Quick validation - check first few bytes
-          if data[0, 8] != [0].pack("Q>")
-            raise CorruptError, "Invalid superblock"
-          end
+          header = PageHeader.deserialize(data[0, PageHeader::SIZE])
+          raise CorruptionError, "Invalid superblock" unless header.page_number == 0
+          raise CorruptionError, "Storage page size mismatch" unless header.page_size == @page_size
+          raise CorruptionError, "Unsupported storage page format version: #{header.version}" unless header.version == 1
+          raise CorruptionError, "Invalid page header size" unless header.header_size == PageHeader::SIZE
         rescue => e
-          raise CorruptError, "File validation failed: #{e.message}"
+          raise CorruptionError, "File validation failed: #{e.message}"
         end
       end
     end

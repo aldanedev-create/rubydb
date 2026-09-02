@@ -27,6 +27,8 @@ module RubyDB
             opts.on("-f", "--force", "Force restore") do
               options[:force] = true
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
+            opts.on("--dir DIR", "Backup directory") { |path| options[:backup_dir] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -37,8 +39,26 @@ module RubyDB
 
           # Get real config
           config = RubyDB::Configuration::Config.instance
-          db_path = config.get("storage.data_dir") || "data/rubydb.rdb"
-          backup_dir = config.get("backup.backup_dir") || "backups"
+          db_path = options[:database] || config.get("storage.data_dir") || "data/rubydb.rdb"
+          backup_dir = options[:backup_dir] || config.get("backup.backup_dir") || "backups"
+
+          selected_path = if options[:backup]
+                            File.join(backup_dir, options[:backup])
+                          elsif options[:latest]
+                            nil
+                          end
+
+          if options[:dry_run]
+            available = RubyDB::Backup::Restore.new(nil, backup_dir: backup_dir).list_available_backups
+            selected = if selected_path
+                         available.find { |backup| backup[:path] == selected_path }
+                       else
+                         available.first
+                       end
+            raise "No matching backup available" unless selected
+            @output.info("Would restore #{selected[:name]} from #{selected[:path]}")
+            return 0
+          end
 
           unless options[:force]
             @output.warn("This will overwrite the current database")
@@ -63,7 +83,7 @@ module RubyDB
               end
             end
           elsif options[:backup]
-            backup_path = File.join(backup_dir, options[:backup])
+          backup_path = File.join(backup_dir, options[:backup])
             @output.spinner("Restoring backup #{options[:backup]}...") do
               result = restore.restore(backup_path)
 
@@ -92,6 +112,8 @@ module RubyDB
           end
 
           0
+        ensure
+          engine&.close if engine&.open?
         end
       end
     end

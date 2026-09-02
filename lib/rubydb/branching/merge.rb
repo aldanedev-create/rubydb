@@ -20,6 +20,7 @@ module RubyDB
         @config = config
         @strategy = config[:strategy] || STRATEGY_FAST_FORWARD
         @merge_history = []
+        @last_merge = nil
         @stats = {
           merges: 0,
           successful_merges: 0,
@@ -38,7 +39,11 @@ module RubyDB
           start_time = Time.now
           @stats[:merges] += 1
 
-          target_branch ||= @branch_manager.current_branch
+          target_branch ||= if @branch_manager.respond_to?(:current_branch_name)
+                              @branch_manager.current_branch_name
+                            else
+                              @branch_manager.current_branch&.name
+                            end
           unless target_branch
             @stats[:failed_merges] += 1
             return { success: false, error: "No target branch specified" }
@@ -83,6 +88,10 @@ module RubyDB
                 resolved = resolve_conflicts(conflicts, options)
                 conflicts = resolved[:remaining] if resolved[:remaining]
               end
+              if conflicts.any?
+                @stats[:failed_merges] += 1
+                return { success: false, conflicts: conflicts, message: "Unresolved conflicts" }
+              end
             end
 
             # Perform merge based on strategy
@@ -100,8 +109,29 @@ module RubyDB
             end
 
             if result[:success]
+              previous_changes = target.logical_changes
+              merge_changes = Array(result[:changes])
+              merged_changes = previous_changes + merge_changes
+              if @engine && @branch_manager.respond_to?(:current_branch_name) &&
+                  @branch_manager.current_branch_name == target_branch &&
+                  @engine.respond_to?(:apply_branch_state)
+                begin
+                  @engine.apply_branch_state(base: target.state_snapshot, changes: merged_changes)
+                rescue => error
+                  @stats[:failed_merges] += 1
+                  return { success: false, error: "Unable to apply merged state: #{error.message}" }
+                end
+              end
+
               # Update branch manager
-              target.commit(result[:changes])
+              target.merge_changes(merge_changes)
+              @branch_manager.persist! if @branch_manager.respond_to?(:persist!)
+              @last_merge = {
+                source: source_branch,
+                target: target_branch,
+                previous_changes: previous_changes,
+                merged_count: merge_changes.size
+              }
 
               @stats[:successful_merges] += 1
 
@@ -127,8 +157,25 @@ module RubyDB
 
       def merge_abort
         @lock.synchronize do
-          # Abort ongoing merge
-          { success: true, message: "Merge aborted" }
+          merge = @last_merge
+          return { success: false, error: "No merge to abort" } unless merge
+
+          target = @branch_manager.get_branch(merge[:target])
+          unless target
+            return { success: false, error: "Target branch '#{merge[:target]}' not found" }
+          end
+
+          target.rollback(merge[:merged_count]) if merge[:merged_count].positive?
+          if @engine && @branch_manager.respond_to?(:current_branch_name) &&
+              @branch_manager.current_branch_name == merge[:target] &&
+              @engine.respond_to?(:apply_branch_state)
+            @engine.apply_branch_state(base: target.state_snapshot, changes: merge[:previous_changes])
+          end
+          @branch_manager.persist! if @branch_manager.respond_to?(:persist!)
+          @merge_history.pop
+          @last_merge = nil
+
+          { success: true, target: merge[:target], reverted_changes: merge[:merged_count] }
         end
       end
 
@@ -149,18 +196,30 @@ module RubyDB
       private
 
       def detect_conflicts(source, target)
-        # In production, would detect actual conflicts
-        []
+        target_changes = target.respond_to?(:logical_changes) ? target.logical_changes : target.changes
+        source_changes = source.respond_to?(:logical_changes) ? source.logical_changes : source.changes
+        target_keys = target_changes.map { |change| change_key(change) }
+        source_changes.filter_map do |change|
+          next unless target_keys.include?(change_key(change))
+          other = target_changes.find { |candidate| change_key(candidate) == change_key(change) }
+          { key: change_key(change), source: change, target: other } unless other == change
+        end
       end
 
       def resolve_conflicts(conflicts, options)
-        # In production, would resolve conflicts
-        { remaining: [], resolved: conflicts }
+        resolver = options[:conflict_resolver]
+        raise ArgumentError, "conflict_resolver is required" unless resolver.respond_to?(:call)
+        remaining = conflicts.filter_map { |conflict| resolver.call(conflict) ? nil : conflict }
+        { remaining: remaining }
+      end
+
+      def change_key(change)
+        [change[:table] || change["table"], change[:row_id] || change["row_id"], change[:column] || change["column"]]
       end
 
       def merge_fast_forward(source, target, options)
         # Fast-forward merge
-        changes = source.changes
+        changes = source.respond_to?(:logical_changes) ? source.logical_changes : source.changes
 
         {
           success: true,
@@ -172,7 +231,7 @@ module RubyDB
 
       def merge_recursive(source, target, options)
         # Recursive merge
-        changes = source.changes
+        changes = source.respond_to?(:logical_changes) ? source.logical_changes : source.changes
 
         {
           success: true,
@@ -184,7 +243,7 @@ module RubyDB
 
       def merge_octopus(source, target, options)
         # Octopus merge (for merging multiple branches)
-        changes = source.changes
+        changes = source.respond_to?(:logical_changes) ? source.logical_changes : source.changes
 
         {
           success: true,
@@ -196,7 +255,7 @@ module RubyDB
 
       def merge_squash(source, target, options)
         # Squash merge (combine all changes into one commit)
-        changes = source.changes
+        changes = source.respond_to?(:logical_changes) ? source.logical_changes : source.changes
 
         {
           success: true,

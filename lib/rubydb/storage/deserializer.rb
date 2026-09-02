@@ -24,8 +24,12 @@ module RubyDB
         return {} if data.nil? || data.empty?
         
         row = {}
-        offset = 0
+        null_bitmap = options[:null_bitmap]
+        bitmap_size = null_bitmap ? (columns.size + 7) / 8 : 0
+        bitmap = null_bitmap ? data.byteslice(0, bitmap_size).bytes : []
+        offset = bitmap_size
         fixed_sizes = { integer: 4, bigint: 8, smallint: 2, float: 8, boolean: 1, date: 8, time: 8, timestamp: 8 }
+        variable_length_prefixes = options[:variable_length_prefixes]
         
         columns.each_with_index do |col, idx|
           begin
@@ -39,15 +43,35 @@ module RubyDB
               if offset + length <= data.bytesize
                 value_data = data[offset, length]
                 offset += length
-                row[col_name] = deserialize(value_data, col_type)
+                row[col_name] = bitmap[col_index = idx / 8] && (bitmap[col_index] & (1 << (idx % 8))) != 0 ? nil : deserialize(value_data, col_type)
               else
                 row[col_name] = has_default ? col.default : nil
               end
             else
-              # Variable length - for last column, take remaining data
-              if idx == columns.size - 1
+              if variable_length_prefixes
+                raise CorruptionError, "Missing length prefix for column '#{col_name}'" if offset + 4 > data.bytesize
+
+                length = data.byteslice(offset, 4).unpack1("N")
+                offset += 4
+                raise CorruptionError, "Invalid length for column '#{col_name}'" if offset + length > data.bytesize
+
+                value_data = data.byteslice(offset, length)
+                offset += length
+                row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
+                                  nil
+                                else
+                                  deserialize(value_data, col_type)
+                                end
+                row[col_name] ||= (has_default ? col.default : nil)
+              # Legacy records did not store variable-length field sizes.
+              # Only the final variable-width column can be recovered safely.
+              elsif idx == columns.size - 1
                 value_data = data[offset..-1]
-                row[col_name] = deserialize(value_data, col_type) if value_data.bytesize > 0
+                row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
+                                  nil
+                                elsif value_data.bytesize > 0
+                                  deserialize(value_data, col_type)
+                                end
                 row[col_name] ||= (has_default ? col.default : nil)
               else
                 row[col_name] = has_default ? col.default : nil
@@ -63,6 +87,10 @@ module RubyDB
         end
         
         row
+      end
+
+      def self.variable_length_type?(type)
+        !%i[integer bigint smallint float boolean date time timestamp].include?(type.to_sym)
       end
 
       # Deserialize a row with a header
@@ -298,7 +326,8 @@ module RubyDB
           return fixed_sizes[col_type]
         else
           # Variable length (text, json, etc.) - read until end of data or next field boundary
-          # For now, consume remaining data if this is the last column
+          # A final variable-width column consumes the remaining record bytes
+          # for compatibility with records that omit a trailing length prefix.
           if idx == columns.size - 1
             return data.bytesize - offset
           else

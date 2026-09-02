@@ -73,24 +73,30 @@ module RubyDB
       end
 
       def check_reference_exists(row)
-        # Build reference lookup query
+        lookup = @options[:reference_lookup]
+        return false unless lookup.respond_to?(:call)
+
         conditions = {}
         @columns.each_with_index do |col, idx|
           ref_col = @reference_columns[idx] || @reference_columns[0]
-          conditions[ref_col.to_s] = row[col]
+          value = row.key?(col) ? row[col] : row[col.to_sym]
+          conditions[ref_col] = value
         end
 
-        # Check if referenced row exists in the reference table
-        # This would use the engine to query the reference table
-        # For now, return true as a placeholder - production would actually query
-        true
+        !!lookup.call(@reference_table, conditions)
       end
 
       def check_referential_integrity(table_name, row_id)
-        # Check if any rows reference this row
-        # In production, this would query the table for references
-        # Returns true if no references exist, false if references exist
-        true
+        return false unless table_name.to_s == @table_name.to_s
+
+        lookup = @options[:reference_lookup]
+        return false unless lookup.respond_to?(:call)
+
+        # This API is used for a referenced-row delete check. The lookup is
+        # intentionally authoritative: inability to query the referencing
+        # table fails closed instead of allowing an orphaned row.
+        conditions = { @reference_columns.first => row_id }
+        !lookup.call(@reference_table, conditions)
       end
 
       def to_sql

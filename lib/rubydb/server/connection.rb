@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
 require "time"
+require "monitor"
 
 module RubyDB
   module Server
     # Connection - Represents a client connection
     class Connection
+      RequestTooLarge = Class.new(StandardError)
+      RequestTimeout = Class.new(StandardError)
+
       attr_reader :id, :client, :remote_addr, :remote_port
       attr_reader :created_at, :last_activity, :state, :session
       attr_reader :bytes_received, :bytes_sent, :requests_processed
@@ -31,7 +35,7 @@ module RubyDB
         @bytes_received = 0
         @bytes_sent = 0
         @requests_processed = 0
-        @session = nil
+        @session = Session.new(self, config) if config[:engine]
         @session_id = nil
         @authenticated = false
         @username = nil
@@ -39,7 +43,7 @@ module RubyDB
         @write_timeout = config[:write_timeout] || 30
         @idle_timeout = config[:idle_timeout] || 300
         @buffer = ""
-        @lock = Mutex.new
+        @lock = Monitor.new
         @closed = false
         @pending_requests = []
       end
@@ -143,6 +147,11 @@ module RubyDB
         end
       end
 
+      def start(protocol)
+        @thread = Thread.new { serve(protocol) }
+        true
+      end
+
       def close
         @lock.synchronize do
           return if @closed
@@ -182,6 +191,80 @@ module RubyDB
       end
 
       private
+
+      def serve(protocol)
+        first = protocol.decoder.decode(read_frame, protocol.encoder.format)
+        handshake = protocol.handshake.start(first.payload)
+        write_data(protocol, Protocol::Message.new(Protocol::Message::TYPE_HANDSHAKE_RESPONSE, handshake))
+        return close unless handshake[:success]
+
+        auth = protocol.decoder.decode(read_frame, protocol.encoder.format)
+        authenticated = protocol.handshake.authenticate(auth.payload)
+        @session&.authenticate(auth.payload)
+        write_data(protocol, Protocol::Message.new(Protocol::Message::TYPE_AUTHENTICATION, authenticated.merge(session_id: @session&.id)))
+        return close unless authenticated[:success]
+
+        sync = protocol.decoder.decode(read_frame, protocol.encoder.format)
+        negotiated = protocol.handshake.negotiate(sync.payload[:capabilities] || {})
+        @state = STATE_READY
+        write_data(protocol, Protocol::Message.new(Protocol::Message::TYPE_READY_FOR_QUERY, negotiated))
+
+        while !@closed && (line = read_frame)
+          begin
+            message = protocol.decoder.decode(line, protocol.encoder.format)
+          rescue StandardError => e
+            write_data(protocol, Protocol::Message.new(
+              Protocol::Message::TYPE_ERROR,
+              { success: false, error: "Invalid protocol frame: #{e.message}" }
+            ))
+            next
+          end
+          break if message.type.to_s == "terminate"
+          request = message.payload.merge(type: message.type.to_s)
+          response = begin
+            @session.process(request)
+          rescue StandardError => e
+            { success: false, error: e.message, timestamp: Time.now.iso8601 }
+          end
+          @config[:connection_pool]&.record_request(response[:success] != false)
+          response_type = response[:type] || "#{message.type}_response"
+          write_data(protocol, Protocol::Message.new(response_type.to_sym, response))
+        end
+      rescue RequestTooLarge => e
+        write_data(protocol, Protocol::Message.new(
+          Protocol::Message::TYPE_ERROR,
+          { success: false, error: e.message }
+        )) rescue nil
+        close unless @closed
+      rescue RequestTimeout => e
+        write_data(protocol, Protocol::Message.new(
+          Protocol::Message::TYPE_ERROR,
+          { success: false, error: e.message }
+        )) rescue nil
+        close unless @closed
+      rescue StandardError => e
+        warn "RubyDB connection #{@id} failed: #{e.class}: #{e.message}" if ENV["RUBYDB_DEBUG"]
+        close unless @closed
+      end
+
+      def read_frame
+        limit = Integer(@config[:max_request_size] || 10 * 1024 * 1024)
+        timeout = @read_timeout
+        if timeout && !IO.select([@client], nil, nil, timeout)
+          raise RequestTimeout, "Request timed out after #{timeout} seconds"
+        end
+        # Passing the separator explicitly keeps the byte limit compatible
+        # with both plain sockets and OpenSSL::SSL::SSLSocket.
+        line = @client.gets("\n", limit + 1)
+        return nil unless line
+
+        if line.bytesize > limit || !line.end_with?("\n")
+          raise RequestTooLarge, "Request frame exceeds maximum size of #{limit} bytes"
+        end
+
+        @bytes_received += line.bytesize
+        line
+      end
 
       def read_data(protocol)
         data = ""

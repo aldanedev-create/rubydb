@@ -4,6 +4,10 @@ require "fileutils"
 require "time"
 require "json"
 require "digest"
+require "monitor"
+require "tmpdir"
+require_relative "restore"
+require_relative "../storage/engine"
 
 module RubyDB
   module Backup
@@ -23,7 +27,7 @@ module RubyDB
           last_verification: nil,
           errors: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @cache = {}
 
         FileUtils.mkdir_p(@verification_dir)
@@ -120,7 +124,6 @@ module RubyDB
             end
 
             # Verify restored database
-            # In production, would connect to restored database and verify
             {
               success: true,
               restored_path: temp_dir,
@@ -196,7 +199,6 @@ module RubyDB
             next
           end
 
-          # Check file size (in production, would check more)
           if File.size(file_path) == 0
             corrupted << file
           end
@@ -212,13 +214,37 @@ module RubyDB
       end
 
       def verify_checksums(backup_path, expected_checksum)
-        # In production, would calculate checksum of all files
-        { valid: true, checksum: expected_checksum }
+        digest = Digest::SHA256.new
+        Dir.glob(File.join(backup_path, "**/*")).select { |path| File.file?(path) }.sort.each do |path|
+          relative = path.delete_prefix("#{backup_path}#{File::SEPARATOR}")
+          next if relative == "manifest.json"
+          digest.update(relative)
+          digest.update(File.binread(path))
+        end
+        actual = digest.hexdigest
+        { valid: actual == expected_checksum, expected: expected_checksum, actual: actual }
       end
 
       def verify_database(backup_path, metadata)
-        # In production, would restore to temp and verify
-        { valid: true, message: "Database verification successful" }
+        temp_dir = Dir.mktmpdir("rubydb_verify_")
+        begin
+          restore_result = Restore.new(nil, @config).restore(backup_path, destination: temp_dir)
+          return { valid: false, error: restore_result[:error] } unless restore_result[:success]
+
+          data_path = Dir.glob(File.join(temp_dir, "*.rdb")).first
+          return { valid: false, error: "Restored database file not found" } unless data_path
+
+          engine = Storage::Engine.new(data_path, auto_vacuum: false)
+          actual_tables = engine.list_tables.map(&:to_s).sort
+          expected_tables = Array(metadata[:tables]).map(&:to_s).sort
+          valid = actual_tables == expected_tables
+          { valid: valid, expected_tables: expected_tables, actual_tables: actual_tables }
+        rescue StandardError => e
+          { valid: false, error: e.message }
+        ensure
+          engine&.close
+          FileUtils.rm_rf(temp_dir) if Dir.exist?(temp_dir)
+        end
       end
 
       def save_verification_result(backup_path, results)

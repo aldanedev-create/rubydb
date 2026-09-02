@@ -27,8 +27,9 @@ module RubyDB
         @initialized = false
         @shutdown = false
 
-        # Pre-create connections
-        initialize_pool
+        # Pre-create only when auto-connect is requested. A disabled
+        # auto-connect pool remains lazy and creates connections on borrow.
+        initialize_pool if config.fetch(:auto_connect, true)
       end
 
       def get_connection(timeout = @config[:timeout] || 30)

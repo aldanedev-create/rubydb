@@ -16,6 +16,8 @@ require_relative "errors/storage_error"
 require_relative "errors/execution_error"
 require_relative "errors/parser_error"
 require_relative "errors/transaction_error"
+require_relative "errors/client_error"
+require_relative "errors/server_error"
 
 require_relative "storage/engine"
 require_relative "storage/storage_manager"
@@ -47,13 +49,22 @@ require_relative "sql/ast/insert"
 require_relative "sql/ast/update"
 require_relative "sql/ast/delete"
 require_relative "sql/ast/create_table"
+require_relative "sql/ast/constraint"
 require_relative "sql/ast/drop_table"
 require_relative "sql/ast/create_index"
 require_relative "sql/ast/drop_index"
 require_relative "sql/ast/alter_table"
+require_relative "sql/ast/create_database"
+require_relative "sql/ast/drop_database"
+require_relative "sql/ast/create_schema"
+require_relative "sql/ast/drop_schema"
+require_relative "sql/ast/view"
+require_relative "sql/ast/trigger"
+require_relative "sql/ast/vacuum"
 require_relative "sql/ast/begin_transaction"
 require_relative "sql/ast/commit"
 require_relative "sql/ast/rollback"
+require_relative "sql/ast/savepoint"
 require_relative "sql/ast/explain"
 require_relative "sql/planner/binder"
 require_relative "sql/planner/analyzer"
@@ -96,6 +107,7 @@ require_relative "transactions/lock_manager"
 require_relative "transactions/lock"
 require_relative "transactions/isolation"
 require_relative "transactions/savepoint"
+require_relative "errors/replication_error"
 require_relative "transactions/commit_manager"
 require_relative "transactions/transaction_log"
 
@@ -311,7 +323,9 @@ module RubyDB
           port: @config[:port] || 7432,
           username: @config[:username] || "rubydb",
           password: @config[:password] || "",
-          timeout: @config[:timeout] || 30
+          timeout: @config[:timeout] || 30,
+          pool_size: @config[:pool_size] || 1,
+          auto_connect: @config.fetch(:auto_connect, true)
         )
         @connection.connect if @config[:auto_connect] != false
 

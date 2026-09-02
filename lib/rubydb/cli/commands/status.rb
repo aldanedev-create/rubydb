@@ -30,7 +30,7 @@ module RubyDB
           status_data = {
             database: File.basename(db_path, ".rdb"),
             mode: "server",
-            status: "running",
+            status: "unavailable",
             version: RubyDB::VERSION,
             pid: Process.pid,
             uptime: Process.clock_gettime(Process::CLOCK_MONOTONIC).to_i,
@@ -39,24 +39,21 @@ module RubyDB
             storage_size: File.exist?(db_path) ? File.size(db_path) : 0,
             memory_usage: get_memory_usage,
             wal_enabled: true,
-            replication: {
-              role: "primary",
-              status: "healthy",
-              lag_ms: 0
-            },
-            branch: {
-              current: "main",
-              total: 1
-            }
+            replication: { role: "unknown", status: "not_configured", lag_ms: nil },
+            branch: { current: "unknown", total: nil }
           }
 
-          # Try to get real table count
+          engine = nil
           begin
             engine = RubyDB::Storage::Engine.new(db_path, {})
+            status_data[:status] = "running"
             status_data[:tables] = engine.list_tables.size
             status_data[:connections] = engine.connection_count rescue 0
-          rescue
-            # Use defaults if engine can't connect
+            status_data[:wal_enabled] = !engine.wal.nil?
+          rescue => error
+            status_data[:error] = error.message
+          ensure
+            engine&.close if engine&.open?
           end
 
           if options[:json]

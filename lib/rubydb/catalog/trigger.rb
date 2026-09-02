@@ -89,8 +89,8 @@ module RubyDB
           function_name: data[:function_name],
           enabled: data[:enabled] != false
         )
-        trigger.created_at = Time.parse(data[:created_at]) if data[:created_at]
-        trigger.modified_at = Time.parse(data[:modified_at]) if data[:modified_at]
+        trigger.send(:created_at=, Time.parse(data[:created_at])) if data[:created_at]
+        trigger.send(:modified_at=, Time.parse(data[:modified_at])) if data[:modified_at]
         trigger
       end
 

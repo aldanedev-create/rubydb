@@ -2,6 +2,9 @@
 
 require "socket"
 require "time"
+require "monitor"
+require "json"
+require "fileutils"
 
 module RubyDB
   module Replication
@@ -41,13 +44,15 @@ module RubyDB
           last_disconnect_time: nil,
           total_uptime_ms: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @running = false
         @replication_thread = nil
         @recovery = nil
         @retry_interval = config[:retry_interval] || 5
         @max_retry_attempts = config[:max_retry_attempts] || 10
         @retry_count = 0
+        @state_path = config[:state_path] || "#{@engine.path}.replica_state.json"
+        load_state
       end
 
       def start
@@ -78,26 +83,29 @@ module RubyDB
         end
       end
 
+      def running?
+        @lock.synchronize { @running }
+      end
+
       def promote_to_primary
         @lock.synchronize do
           # Stop replication
           stop
 
-          # Promote to primary
-          @engine.promote_to_primary
-
-          puts "Replica promoted to primary"
+          # The manager owns creation of the primary listener. The storage
+          # engine remains writable, so promotion only ends the stream here.
+          @state = STATE_SYNCED
           true
         end
       end
 
-      def replay_transaction(transaction_data)
+      def replay_transaction(transaction_data, lsn = nil)
         @lock.synchronize do
-          @stats[:transactions_replayed] += 1
-          @last_replayed_lsn = transaction_data[:lsn]
-
           # Apply transaction to engine
           @engine.apply_transaction(transaction_data)
+          @stats[:transactions_replayed] += 1
+          @last_replayed_lsn = lsn || transaction_data[:lsn]
+          persist_state
 
           true
         end
@@ -159,7 +167,7 @@ module RubyDB
               wal_position: @last_replayed_lsn || 0
             }
 
-            @connection.write(JSON.generate(handshake))
+            @connection.write(JSON.generate(handshake) + "\n")
             response = JSON.parse(@connection.readline)
 
             if response["success"]
@@ -204,19 +212,48 @@ module RubyDB
       end
 
       def process_replication_data(data)
-        # In production, would parse and apply replication data
-        # This would include WAL records, transaction data, etc.
+        data.to_s.each_line do |line|
+          message = JSON.parse(line, symbolize_names: true)
+          next unless message[:type].to_s == "replication_data"
 
-        # For each transaction received
-        # replay_transaction(transaction_data)
-
-        @last_received_lsn = Time.now.to_i
+          Array(message[:data]).each do |entry|
+            next if entry[:lsn] && @last_replayed_lsn && entry[:lsn] <= @last_replayed_lsn
+            replay_transaction(entry[:data] || entry, entry[:lsn])
+            @last_received_lsn = entry[:lsn]
+            persist_state
+            @connection&.write(JSON.generate(type: "ack", lsn: @last_received_lsn) + "\n")
+          end
+        end
       end
 
       def catch_up
-        # In production, would catch up on missed transactions
-        sleep(1)
-        @state = STATE_SYNCED if @last_received_lsn >= @last_replayed_lsn
+        @state = if @last_received_lsn && @last_received_lsn == @last_replayed_lsn
+                   STATE_SYNCED
+                 else
+                   STATE_STREAMING
+                 end
+      end
+
+      def load_state
+        return unless File.file?(@state_path)
+        state = JSON.parse(File.read(@state_path), symbolize_names: true)
+        @last_received_lsn = state[:last_received_lsn]
+        @last_replayed_lsn = state[:last_replayed_lsn]
+      rescue JSON::ParserError => error
+        raise RubyDB::ReplicationError, "Invalid replica state #{@state_path}: #{error.message}"
+      end
+
+      def persist_state
+        FileUtils.mkdir_p(File.dirname(@state_path))
+        temporary = "#{@state_path}.tmp-#{Process.pid}"
+        File.write(temporary, JSON.generate(
+          last_received_lsn: @last_received_lsn,
+          last_replayed_lsn: @last_replayed_lsn,
+          updated_at: Time.now.iso8601
+        ))
+        File.rename(temporary, @state_path)
+      ensure
+        File.delete(temporary) if defined?(temporary) && File.file?(temporary)
       end
 
       def reconnect

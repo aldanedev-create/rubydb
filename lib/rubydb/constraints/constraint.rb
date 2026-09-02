@@ -4,7 +4,7 @@ module RubyDB
   module Constraints
     # Constraint - Base class for all constraints
     class Constraint
-      attr_reader :name, :type, :table_name, :options, :created_at
+      attr_reader :name, :type, :table_name, :options, :created_at, :validation_errors
 
       # Constraint types
       TYPE_PRIMARY_KEY = :primary_key

@@ -6,6 +6,8 @@ require "time"
 
 module RubyDB
   module Branching
+    class BranchingError < StandardError; end unless const_defined?(:BranchingError)
+
     # BranchManager - Manages all database branches
     class BranchManager
       attr_reader :branches, :current_branch, :stats
@@ -37,6 +39,8 @@ module RubyDB
 
       def create_branch(name, options = {})
         @lock.synchronize do
+          return { success: false, error: "Invalid branch name" } unless valid_branch_name?(name)
+
           if @branches.key?(name)
             return { success: false, error: "Branch '#{name}' already exists" }
           end
@@ -59,6 +63,7 @@ module RubyDB
             default: options[:default] || false,
             metadata: options[:metadata] || {}
           )
+          branch.instance_variable_set(:@state_snapshot, @engine.export_state) if @engine.respond_to?(:export_state)
 
           @branches[name] = branch
           @stats[:branches_created] += 1
@@ -76,6 +81,8 @@ module RubyDB
 
       def delete_branch(name, force = false)
         @lock.synchronize do
+          return { success: false, error: "Invalid branch name" } unless valid_branch_name?(name)
+
           branch = @branches[name]
           return { success: false, error: "Branch '#{name}' not found" } unless branch
 
@@ -109,11 +116,17 @@ module RubyDB
             return { success: false, error: "Branch '#{name}' is locked" }
           end
 
-          # Switch to branch
-          @current_branch = branch
+          unless @engine.respond_to?(:apply_branch_state)
+            return { success: false, error: "Branch checkout requires an engine state-application hook" }
+          end
 
-          # Update engine to branch state
-          apply_branch_state(name)
+          # Apply the persisted state before publishing the branch switch. If
+          # state application fails, the manager and engine must continue to
+          # agree about the active branch.
+          applied = apply_branch_state(name)
+          return { success: false, error: "Unable to apply branch state" } if applied == false
+
+          @current_branch = branch
 
           { success: true, branch: branch }
         end
@@ -131,7 +144,7 @@ module RubyDB
             id: generate_commit_id,
             timestamp: Time.now.iso8601,
             data: change_data,
-            lsn: @engine.current_lsn
+            lsn: (@engine.current_lsn if @engine.respond_to?(:current_lsn))
           }
 
           branch.commit(commit)
@@ -176,6 +189,13 @@ module RubyDB
         @current_branch&.name
       end
 
+      # Persist branch metadata after an external operation (such as merge)
+      # has changed a branch object through the public branching API.
+      def persist!
+        @lock.synchronize { save_branches }
+        true
+      end
+
       def stats
         @lock.synchronize do
           @stats.merge({
@@ -188,6 +208,12 @@ module RubyDB
       end
 
       private
+
+      def valid_branch_name?(name)
+        value = name.to_s
+        !value.empty? && value == File.basename(value) && !value.include?(File::SEPARATOR) &&
+          (File::ALT_SEPARATOR.nil? || !value.include?(File::ALT_SEPARATOR))
+      end
 
       def load_branches
         branches_file = File.join(@branch_dir, "branches.json")
@@ -205,13 +231,15 @@ module RubyDB
               owner: branch_data[:owner],
               protected: branch_data[:is_protected] || false,
               default: branch_data[:is_default] || false,
-              metadata: branch_data[:metadata] || {}
+              metadata: branch_data[:metadata] || {},
+              state_snapshot: branch_data[:state_snapshot]
             )
             branch.instance_variable_set(:@head_lsn, branch_data[:head_lsn])
             branch.instance_variable_set(:@created_at, Time.parse(branch_data[:created_at]))
             branch.instance_variable_set(:@updated_at, Time.parse(branch_data[:updated_at]))
             branch.instance_variable_set(:@state, branch_data[:state].to_sym)
             branch.instance_variable_set(:@commit_count, branch_data[:commit_count] || 0)
+            branch.instance_variable_set(:@changes, branch_data[:changes] || [])
 
             @branches[branch_data[:name]] = branch
           end
@@ -223,10 +251,8 @@ module RubyDB
           @stats[:branches_created] = data[:stats][:branches_created] || 0
           @stats[:total_commits] = data[:stats][:total_commits] || 0
 
-        rescue => e
-          # If loading fails, start fresh
-          @branches = {}
-          @current_branch = nil
+        rescue StandardError => error
+          raise BranchingError, "Invalid branch catalog #{branches_file}: #{error.message}"
         end
       end
 
@@ -254,15 +280,20 @@ module RubyDB
       end
 
       def apply_branch_state(name)
-        # In production, would switch database to branch state
-        # For now, just update current branch reference
+        branch = @branches.fetch(name)
+        return false unless @engine.respond_to?(:apply_branch_state)
+
+        snapshot = branch.respond_to?(:state_snapshot) ? branch.state_snapshot : nil
+        changes = branch.respond_to?(:logical_changes) ? branch.logical_changes : branch.changes
+        @engine.apply_branch_state(base: snapshot, changes: changes)
       end
 
       def create_default_branch
         branch = Branch.new("main",
           default: true,
           description: "Default branch",
-          protected: true
+          protected: true,
+          state_snapshot: (@engine.export_state if @engine.respond_to?(:export_state))
         )
         @branches["main"] = branch
         @current_branch = branch

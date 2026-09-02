@@ -72,19 +72,15 @@ module RubyDB
       def commit
         @lock.synchronize do
           raise ClientError, "Transaction is not active" unless @active
-          @client.commit
-          @active = false
-          @committed = true
         end
+        @client.commit
       end
 
       def rollback
         @lock.synchronize do
           raise ClientError, "Transaction is not active" unless @active
-          @client.rollback
-          @active = false
-          @rolled_back = true
         end
+        @client.rollback
       end
 
       def active?
@@ -97,6 +93,21 @@ module RubyDB
 
       def rolled_back?
         @rolled_back
+      end
+
+      # Used by Client#commit/#rollback after the wire request has completed.
+      def mark_committed
+        @lock.synchronize do
+          @active = false
+          @committed = true
+        end
+      end
+
+      def mark_rolled_back
+        @lock.synchronize do
+          @active = false
+          @rolled_back = true
+        end
       end
 
       def to_hash

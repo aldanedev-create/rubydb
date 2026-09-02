@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "../errors/constraint_error"
+require_relative "../errors/configuration_error"
+
 module RubyDB
   module Types
     # Base class for all data types
@@ -68,7 +71,11 @@ module RubyDB
 
         def lookup(name, **kwargs)
           type_class = @types[name.to_sym] || resolve(name)
-          return type_class.new(**kwargs) if type_class
+          if type_class
+            return type_class.new(kwargs.fetch(:limit, 255)) if type_class == Varchar
+
+            return type_class.new(**kwargs)
+          end
 
           raise ConfigurationError, "Unknown type: #{name}"
         end

@@ -40,11 +40,6 @@ module RubyDB
             # Delete from engine
             @engine.delete_row(table_name, row_id, transaction_id: transaction_id)
 
-            # Remove from indexes
-            if @engine.respond_to?(:index_manager)
-              @engine.index_manager.delete_row(table_name, row)
-            end
-
             deleted_count += 1
             deleted_rows << row
           end
@@ -78,10 +73,6 @@ module RubyDB
             next unless row
 
             @engine.delete_row(table_name, row_id, transaction_id: transaction_id)
-
-            if @engine.respond_to?(:index_manager)
-              @engine.index_manager.delete_row(table_name, row)
-            end
 
             deleted_count += 1
             deleted_rows << row

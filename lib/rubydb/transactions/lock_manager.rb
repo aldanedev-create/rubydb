@@ -16,6 +16,7 @@ require_relative "transaction"
         @waiting = {}
         @lock_timeout = config[:lock_timeout] || 30
         @deadlock_detection = config[:deadlock_detection] != false
+        @transaction_manager = config[:transaction_manager]
         @stats = {
           locks_acquired: 0,
           locks_released: 0,
@@ -24,6 +25,7 @@ require_relative "transaction"
           deadlocks_detected: 0
         }
         @lock = Mutex.new
+        @condition = ConditionVariable.new
       end
 
       def acquire_lock(transaction, table_name, row_id, lock_type, timeout = @lock_timeout)
@@ -79,6 +81,7 @@ require_relative "transaction"
                 
                 # Wake up waiting transactions
                 wake_waiting_transactions(key)
+                @condition.broadcast
               end
             end
           end
@@ -143,8 +146,6 @@ require_relative "transaction"
       end
 
       def compatible_lock_types(type1, type2)
-        return true if type1 == type2
-        
         # Shared locks are compatible with shared locks
         if type1 == :shared && type2 == :shared
           return true
@@ -190,24 +191,29 @@ require_relative "transaction"
         }
         
         # Wait loop
-        while Time.now - start_time < timeout
+        while (remaining = timeout - (Time.now - start_time)) > 0
           # Check if lock is available
-          if compatible?(@locks[key], lock_type, transaction)
+          if @locks[key].nil? || compatible?(@locks[key], lock_type, transaction)
             # Remove from waiting
             @waiting[transaction.id].delete(key)
+            @waiting.delete(transaction.id) if @waiting[transaction.id].empty?
             
             # Acquire lock
+            @locks[key] ||= Lock.new(key, lock_type)
             @locks[key].add_holder(transaction, lock_type)
             @stats[:locks_acquired] += 1
             return true
           end
-          
-          sleep(0.01)  # Small sleep to avoid busy waiting
+
+          # ConditionVariable releases @lock while waiting, allowing the
+          # current holder to release its lock and wake this waiter.
+          @condition.wait(@lock, remaining)
         end
         
         # Timeout
         @stats[:lock_timeouts] += 1
         @waiting[transaction.id].delete(key)
+        @waiting.delete(transaction.id) if @waiting[transaction.id].empty?
         false
       end
 
@@ -250,37 +256,43 @@ require_relative "transaction"
       def detect_cycles(graph)
         cycles = []
         visited = Set.new
-        recursion_stack = Set.new
+        active = Set.new
+        path = []
         
         graph.each do |node, _|
-          if !visited.include?(node) && detect_cycle_dfs(node, graph, visited, recursion_stack)
-            cycles << [node]
-          end
+          detect_cycle_dfs(node, graph, visited, active, path, cycles) unless visited.include?(node)
         end
         
         cycles
       end
 
-      def detect_cycle_dfs(node, graph, visited, recursion_stack)
-        return false if visited.include?(node)
+      def detect_cycle_dfs(node, graph, visited, active, path, cycles)
+        if active.include?(node)
+          start = path.index(node)
+          cycle = path[start..] + [node]
+          cycles << cycle unless cycles.any? { |existing| existing == cycle }
+          return
+        end
+        return if visited.include?(node)
         
         visited.add(node)
-        recursion_stack.add(node)
+        active.add(node)
+        path << node
         
         graph[node]&.each do |neighbor|
-          if recursion_stack.include?(neighbor) ||
-             detect_cycle_dfs(neighbor, graph, visited, recursion_stack)
-            return true
-          end
+          detect_cycle_dfs(neighbor, graph, visited, active, path, cycles)
         end
         
-        recursion_stack.delete(node)
-        false
+        path.pop
+        active.delete(node)
       end
 
       def abort_transaction(transaction_id)
-        # Find and abort the transaction
-        # In production, this would use the transaction manager
+        if @transaction_manager.respond_to?(:get_transaction) &&
+            @transaction_manager.respond_to?(:rollback_transaction)
+          transaction = @transaction_manager.get_transaction(transaction_id)
+          @transaction_manager.rollback_transaction(transaction) if transaction
+        end
         @waiting.delete(transaction_id)
         release_locks(Transaction.new(id: transaction_id))
       end

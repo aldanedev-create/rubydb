@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "set"
+require "monitor"
 
 module RubyDB
   module Constraints
@@ -25,7 +26,9 @@ module RubyDB
           total_validation_time_ms: 0,
           avg_validation_time_ms: 0
         }
-        @lock = Mutex.new
+        # Validation calls get_constraints_for_table while holding the
+        # validator lock; use a re-entrant lock to avoid self-deadlock.
+        @lock = Monitor.new
         @constraint_cache = {}
         @deferred_constraints = []
       end
@@ -111,16 +114,20 @@ module RubyDB
             @deferred_constraints.each do |dc|
               next unless dc[:table] == table_name
 
-              if dc[:constraint].validate(row)
-                result[:constraints_passed] << dc[:constraint].name
-              else
-                result[:valid] = false
-                result[:constraints_failed] << dc[:constraint].name
-                result[:errors] << {
-                  constraint: dc[:constraint].name,
-                  type: dc[:constraint].type,
-                  message: "Deferred constraint violation"
-                }
+              if options[:defer] == false
+                if dc[:constraint].validate(row)
+                  result[:constraints_passed] << dc[:constraint].name
+                else
+                  result[:valid] = false
+                  result[:constraints_failed] << dc[:constraint].name
+                  result[:errors] << {
+                    constraint: dc[:constraint].name,
+                    type: dc[:constraint].type,
+                    message: "Deferred constraint violation"
+                  }
+                end
+              elsif dc[:row_provider].nil?
+                dc[:captured_rows] << row
               end
             end
           end
@@ -216,17 +223,20 @@ module RubyDB
         validate_rows(rows, table_name, options)
       end
 
-      def defer_constraint(constraint, table_name)
+      def defer_constraint(constraint, table_name, rows: nil, row_provider: nil)
         @lock.synchronize do
           @deferred_constraints << {
             constraint: constraint,
             table: table_name,
+            rows: rows,
+            row_provider: row_provider,
+            captured_rows: [],
             deferred_at: Time.now
           }
         end
       end
 
-      def validate_deferred(table_name = nil)
+      def validate_deferred(table_name = nil, rows: nil)
         @lock.synchronize do
           results = {
             valid: true,
@@ -241,13 +251,38 @@ module RubyDB
           end
 
           deferred.each do |dc|
-            # In production, we would re-validate the rows
-            # For now, mark as validated
-            dc[:constraint].instance_variable_set(:@validated, true)
+            candidate_rows = rows || dc[:rows] || (dc[:captured_rows] unless dc[:captured_rows].empty?)
+            candidate_rows = dc[:row_provider].call if candidate_rows.nil? && dc[:row_provider]
+            candidate_rows = Array(candidate_rows) if candidate_rows
+
+            if candidate_rows.nil?
+              results[:valid] = false
+              results[:errors] << {
+                constraint: dc[:constraint].name,
+                error: "Deferred constraint validation requires rows or a row provider"
+              }
+              next
+            end
+
+            invalid_rows = candidate_rows.reject { |row| dc[:constraint].validate(row) }
             results[:constraints_checked] << dc[:constraint].name
+            unless invalid_rows.empty?
+              results[:valid] = false
+              results[:errors] << {
+                constraint: dc[:constraint].name,
+                error: "Deferred constraint violation",
+                invalid_rows: invalid_rows
+              }
+            end
           end
 
-          @deferred_constraints.clear if table_name.nil?
+          if results[:valid]
+            if table_name
+              @deferred_constraints.reject! { |dc| deferred.include?(dc) }
+            else
+              @deferred_constraints.clear
+            end
+          end
           results
         end
       end

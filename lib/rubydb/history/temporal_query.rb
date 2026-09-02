@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "monitor"
+
 module RubyDB
   module History
     # TemporalQuery - Executes temporal queries against history
@@ -18,14 +20,14 @@ module RubyDB
           query_time_ms: 0,
           avg_query_time_ms: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @result_cache = {}
         @cache_size = config[:cache_size] || 1000
       end
 
       def query_as_of(table_name, time, columns = nil)
         @lock.synchronize do
-          start_time = Time.now
+          started_at = Time.now
           @stats[:queries] += 1
           @stats[:as_of_queries] += 1
 
@@ -45,7 +47,7 @@ module RubyDB
             @result_cache[cache_key] = result
           end
 
-          elapsed_ms = (Time.now - start_time) * 1000
+          elapsed_ms = (Time.now - started_at) * 1000
           @stats[:query_time_ms] += elapsed_ms
           @stats[:avg_query_time_ms] = @stats[:query_time_ms] / @stats[:queries]
 
@@ -55,7 +57,7 @@ module RubyDB
 
       def query_between(table_name, start_time, end_time, columns = nil)
         @lock.synchronize do
-          start_time = Time.now
+          started_at = Time.now
           @stats[:queries] += 1
           @stats[:between_queries] += 1
 
@@ -65,7 +67,7 @@ module RubyDB
           # Apply changes and return results
           results = apply_changes(changes, start_time, end_time, columns)
 
-          elapsed_ms = (Time.now - start_time) * 1000
+          elapsed_ms = (Time.now - started_at) * 1000
           @stats[:query_time_ms] += elapsed_ms
           @stats[:avg_query_time_ms] = @stats[:query_time_ms] / @stats[:queries]
 
@@ -79,6 +81,7 @@ module RubyDB
 
       def query_version(table_name, row_id, version_time)
         @lock.synchronize do
+          started_at = Time.now
           @stats[:queries] += 1
           @stats[:temporal_queries] += 1
 
@@ -87,7 +90,7 @@ module RubyDB
           # Find version at time
           version = find_version_at_time(changes, row_id, version_time)
 
-          elapsed_ms = (Time.now - start_time) * 1000
+          elapsed_ms = (Time.now - started_at) * 1000
           @stats[:query_time_ms] += elapsed_ms
           @stats[:avg_query_time_ms] = @stats[:query_time_ms] / @stats[:queries]
 

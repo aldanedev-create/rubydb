@@ -163,9 +163,9 @@ module RubyDB
 
         table.row_count = data[:row_count] if data[:row_count]
         table.storage_size = data[:storage_size] if data[:storage_size]
-        table.options = data[:options] if data[:options]
-        table.created_at = Time.parse(data[:created_at]) if data[:created_at]
-        table.modified_at = Time.parse(data[:modified_at]) if data[:modified_at]
+        table.send(:options=, data[:options]) if data[:options]
+        table.send(:created_at=, Time.parse(data[:created_at])) if data[:created_at]
+        table.send(:modified_at=, Time.parse(data[:modified_at])) if data[:modified_at]
 
         table
       end

@@ -5,9 +5,10 @@ module RubyDB
     # B-Tree node implementation
     class BTreeNode
       attr_reader :page_number, :is_leaf, :keys, :values, :children, :parent
+      attr_writer :parent
       attr_accessor :next_leaf, :prev_leaf
 
-      def initialize(page_number, is_leaf = true, order = 4)
+      def initialize(page_number, is_leaf = true, order = 4, page_allocator = nil)
         @page_number = page_number
         @is_leaf = is_leaf
         @order = order
@@ -20,6 +21,7 @@ module RubyDB
         @min_keys = (order / 2.0).ceil - 1
         @max_keys = order - 1
         @dirty = false
+        @page_allocator = page_allocator
       end
 
       def insert(key, value)
@@ -55,7 +57,7 @@ module RubyDB
         result = child.insert(key, value)
         
         # If child was split, handle the split
-        if result.is_a?(Array) && result.size == 2
+        if result.is_a?(Array) && result.size == 3
           left_child, right_child, split_key = result
           
           # Replace child with left child
@@ -82,7 +84,7 @@ module RubyDB
         mid = @keys.size / 2
         
         # Create new node
-        new_node = BTreeNode.new(allocate_page, @is_leaf, @order)
+        new_node = BTreeNode.new(allocate_page, @is_leaf, @order, @page_allocator)
         
         # Split keys and values
         if @is_leaf
@@ -149,9 +151,21 @@ module RubyDB
             results << { key: @keys[pos], value: @values[pos] }
           end
         else
-          # Find starting child
+          # Find the starting leaf and walk the linked leaf chain so ranges
+          # spanning multiple pages return every matching entry.
           pos = find_child_position(start_key)
-          results.concat(@children[pos].range_search(start_key, end_key))
+          leaf = @children[pos]
+          until leaf.is_leaf
+            leaf = leaf.children[leaf.find_child_position(start_key)]
+          end
+          while leaf
+            leaf.keys.each_with_index do |key, index|
+              next if key < start_key
+              return results if key > end_key
+              results << { key: key, value: leaf.values[index] }
+            end
+            leaf = leaf.next_leaf
+          end
         end
         
         results
@@ -320,8 +334,8 @@ module RubyDB
       end
 
       def allocate_page
-        # In production, this would allocate a new page from storage
-        @page_number + 1000
+        raise "B-tree page allocator is not configured" unless @page_allocator.respond_to?(:call)
+        @page_allocator.call
       end
 
       def serialize
@@ -346,8 +360,6 @@ module RubyDB
       def to_s
         "BTreeNode(page=#{@page_number}, leaf=#{@is_leaf}, keys=#{@keys.size})"
       end
-
-      protected
 
       attr_writer :keys, :values, :children
     end

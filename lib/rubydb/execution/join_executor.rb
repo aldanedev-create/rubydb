@@ -87,6 +87,12 @@ module RubyDB
         return [] if left_rows.empty? || right_rows.empty?
         return cross_join(left_rows, right_rows) if condition.nil?
 
+        return hash_join(left_rows, right_rows, condition) if infer_hash_keys(condition).all?
+
+        nested_loop_join(left_rows, right_rows, condition)
+      end
+
+      def nested_loop_join(left_rows, right_rows, condition)
         result = []
         left_rows.each do |left_row|
           right_rows.each do |right_row|
@@ -159,39 +165,19 @@ module RubyDB
         result
       end
 
-      def hash_join(left_rows, right_rows, condition)
-        # Build hash table on right side
-        hash_table = {}
-        right_rows.each do |right_row|
-          key = extract_join_key(right_row, condition)
-          hash_table[key] ||= []
-          hash_table[key] << right_row
-        end
+      def hash_join(left_rows, right_rows, condition, left_key: nil, right_key: nil)
+        left_key, right_key = infer_hash_keys(condition) if left_key.nil? || right_key.nil?
+        return nested_loop_join(left_rows, right_rows, condition) unless left_key && right_key
 
-        result = []
-        left_rows.each do |left_row|
-          key = extract_join_key(left_row, condition)
-          if hash_table.key?(key)
-            hash_table[key].each do |right_row|
-              if evaluate_join_condition(condition, left_row, right_row)
-                result << merge_rows(left_row, right_row)
-              end
-            end
+        hash_table = Hash.new { |hash, key| hash[key] = [] }
+        right_rows.each { |row| hash_table[right_key.call(row)] << row }
+
+        left_rows.flat_map do |left_row|
+          key = left_key.call(left_row)
+          hash_table[key].filter_map do |right_row|
+            merge_rows(left_row, right_row) if evaluate_join_condition(condition, left_row, right_row)
           end
         end
-        result
-      end
-
-      def nested_loop_join(left_rows, right_rows, condition)
-        result = []
-        left_rows.each do |left_row|
-          right_rows.each do |right_row|
-            if evaluate_join_condition(condition, left_row, right_row)
-              result << merge_rows(left_row, right_row)
-            end
-          end
-        end
-        result
       end
 
       private
@@ -200,14 +186,21 @@ module RubyDB
         return true if condition.nil?
         
         # Bind row context
+        # Include both original sides and the merged column namespace. The
+        # latter lets ordinary column expressions evaluate during joins while
+        # preserving explicit _left/_right access for join predicates.
         context = { "_left" => left_row, "_right" => right_row }
+        context.merge!(merge_rows(left_row, right_row))
         condition.evaluate(context)
       end
 
-      def extract_join_key(row, condition)
-        # Extract key from condition for hash join
-        # Simplified - in production would extract column references
-        row.object_id
+      def infer_hash_keys(condition)
+        return [nil, nil] unless condition.is_a?(Predicate::Comparison) && condition.operator == :eq
+        left = condition.left
+        right = condition.right
+        return [nil, nil] unless left.respond_to?(:evaluate) && right.respond_to?(:evaluate)
+
+        [->(row) { left.evaluate(row) }, ->(row) { right.evaluate(row) }]
       end
 
       def merge_rows(left_row, right_row)

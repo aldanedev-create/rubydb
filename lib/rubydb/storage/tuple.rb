@@ -110,7 +110,7 @@ module RubyDB
         @dirty = false
         self
       rescue => e
-        raise CorruptError, "Failed to deserialize tuple: #{e.message}"
+        raise CorruptionError, "Failed to deserialize tuple: #{e.message}"
       end
 
       def update_value(column_name, value)

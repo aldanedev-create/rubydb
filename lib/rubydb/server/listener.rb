@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "socket"
+require "openssl"
 
 module RubyDB
   module Server
@@ -15,6 +16,7 @@ module RubyDB
         @socket = nil
         @running = false
         @accept_thread = nil
+        @ssl_enabled = false
         @stats = {
           connections_accepted: 0,
           connections_rejected: 0,
@@ -30,8 +32,24 @@ module RubyDB
           return if @running
 
           begin
-            @socket = TCPServer.new(@config[:host], @config[:port])
-            @socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+            tcp_socket = TCPServer.new(@config[:host], @config[:port])
+            tcp_socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+
+            ssl = @config[:ssl] || {}
+            if ssl == true || ssl[:enabled] || ssl["enabled"]
+              ssl = {} if ssl == true
+              context = OpenSSL::SSL::SSLContext.new
+              context.cert = OpenSSL::X509::Certificate.new(File.binread(ssl[:cert_file] || ssl["cert_file"]))
+              context.key = OpenSSL::PKey.read(File.binread(ssl[:key_file] || ssl["key_file"]))
+              context.ca_file = ssl[:ca_file] || ssl["ca_file"] if ssl[:ca_file] || ssl["ca_file"]
+              context.verify_mode = (ssl[:verify_peer] || ssl["verify_peer"]) ? OpenSSL::SSL::VERIFY_PEER : OpenSSL::SSL::VERIFY_NONE
+              context.min_version = (ssl[:min_version] || ssl["min_version"] || :TLS1_2)
+              context.max_version = (ssl[:max_version] || ssl["max_version"]) if ssl[:max_version] || ssl["max_version"]
+              @socket = OpenSSL::SSL::SSLServer.new(tcp_socket, context)
+              @ssl_enabled = true
+            else
+              @socket = tcp_socket
+            end
 
             @running = true
             @accept_thread = Thread.new { accept_loop }
@@ -58,6 +76,7 @@ module RubyDB
             @socket.close rescue nil
             @socket = nil
           end
+          @ssl_enabled = false
 
           true
         end
@@ -74,8 +93,15 @@ module RubyDB
           begin
             start_time = Time.now
 
-            # Accept connection with timeout
-            client = @socket.accept_nonblock rescue nil
+            # SSLServer performs the TLS handshake while accepting. Keep that
+            # operation blocking so a non-blocking handshake is not discarded
+            # and left waiting forever on the client.
+            client = if @ssl_enabled
+              @socket.accept
+            else
+              candidate = @socket.accept_nonblock(exception: false)
+              candidate.is_a?(IO) ? candidate : nil
+            end
 
             if client
               # Check if we have capacity
@@ -96,6 +122,7 @@ module RubyDB
             sleep(0.01)
 
           rescue IO::WaitReadable, Errno::EAGAIN, Errno::EWOULDBLOCK
+            next if @ssl_enabled
             # No connection ready, continue
             sleep(0.01)
           rescue => e

@@ -2,6 +2,8 @@
 
 require "securerandom"
 require "digest"
+require "openssl"
+require "base64"
 
 module RubyDB
   module Protocol
@@ -18,6 +20,8 @@ module RubyDB
       def initialize(server_info = {})
         @state = STATE_INIT
         @client_info = {}
+        server_info = (server_info || {}).dup
+        @credentials = server_info.delete(:authentication_credentials) || {}
         @server_info = {
           version: ProtocolVersion.current_string,
           protocol_version: ProtocolVersion.current,
@@ -26,8 +30,12 @@ module RubyDB
           started_at: Time.now.iso8601,
           auth_methods: ["none", "password", "md5", "scram-sha-256"],
           default_auth: "none"
-        }.merge(server_info)
+        }.merge(server_info || {})
         @challenge = nil
+        @scram_salt = (@credentials[:scram_salt] || @credentials["scram_salt"])
+        @scram_salt = SecureRandom.random_bytes(16) unless @scram_salt
+        @scram_iterations = Integer(@credentials[:scram_iterations] || @credentials["scram_iterations"] || 120_000)
+        @scram_server_signature = nil
         @authenticated = false
         @capabilities = nil
         @start_time = Time.now
@@ -67,7 +75,9 @@ module RubyDB
 
           @state = STATE_AUTHENTICATING
 
-          auth_method = @client_info[:auth_method] || @server_info[:default_auth]
+          # The server selects the required mechanism; clients cannot lower
+          # the server's authentication policy by requesting "none".
+          auth_method = @server_info[:default_auth]
 
           case auth_method
           when "none"
@@ -154,12 +164,14 @@ module RubyDB
       private
 
       def success_response
-        {
+        response = {
           success: true,
           state: @state,
           server_info: @server_info,
           message: "Handshake successful"
         }
+        response[:server_signature] = @scram_server_signature if @scram_server_signature
+        response
       end
 
       def error_response(message)
@@ -172,12 +184,17 @@ module RubyDB
       end
 
       def authentication_response(client_info)
-        {
+        response = {
           success: true,
           auth_methods: @server_info[:auth_methods],
           default_auth: @server_info[:default_auth],
           challenge: generate_challenge
         }
+        if @server_info[:default_auth] == "scram-sha-256"
+          response[:scram_salt] = Base64.strict_encode64(@scram_salt)
+          response[:scram_iterations] = @scram_iterations
+        end
+        response
       end
 
       def negotiated_response(negotiated)
@@ -196,7 +213,29 @@ module RubyDB
       def authenticate_password(credentials)
         username = credentials[:username]
         password = credentials[:password]
-        !username.nil? && !password.nil?
+        return false if username.nil? || password.nil?
+
+        users = @credentials[:users] || @credentials["users"]
+        if users
+          expected = users[username] || users[username.to_s] || users[username.to_sym]
+          return secure_equal?(password.to_s, expected.to_s) unless expected.nil?
+          return false
+        end
+
+        expected_username = @credentials[:username] || @credentials["username"]
+        expected_password = @credentials[:password] || @credentials["password"]
+        return false if expected_username.nil? || expected_password.nil?
+
+        secure_equal?(username.to_s, expected_username.to_s) &&
+          secure_equal?(password.to_s, expected_password.to_s)
+      end
+
+      def secure_equal?(left, right)
+        return false unless left.bytesize == right.bytesize
+
+        result = 0
+        left.bytes.each_with_index { |byte, index| result |= byte ^ right.getbyte(index) }
+        result.zero?
       end
 
       def authenticate_md5(credentials)
@@ -212,13 +251,42 @@ module RubyDB
       end
 
       def authenticate_scram(credentials)
-        return false if credentials[:scram_data].nil?
-        verify_scram_response(credentials[:scram_data])
-      end
+        data = credentials[:scram_data]
+        return false unless data.is_a?(Hash)
 
-      def verify_scram_response(scram_data)
-        # In production, this would verify the SCRAM response
-        scram_data.is_a?(String) && scram_data.length > 0
+        username = credentials[:username].to_s
+        client_first_bare = data[:client_first_bare] || data["client_first_bare"]
+        client_final = data[:client_final_without_proof] || data["client_final_without_proof"]
+        proof = data[:proof] || data["proof"]
+        client_nonce = data[:client_nonce] || data["client_nonce"]
+        return false if [client_first_bare, client_final, proof, client_nonce].any?(&:nil?)
+        return false unless client_first_bare.include?("n=#{username},")
+        return false unless client_first_bare.include?("r=#{client_nonce}")
+
+        server_nonce = @challenge.to_s
+        expected_nonce = client_nonce.to_s + server_nonce
+        return false unless client_final == "c=biws,r=#{expected_nonce}"
+
+        password = @credentials[:password] || @credentials["password"]
+        stored_key = @credentials[:scram_stored_key] || @credentials["scram_stored_key"]
+        server_key = @credentials[:scram_server_key] || @credentials["scram_server_key"]
+        return false unless password || (stored_key && server_key)
+
+        salted = OpenSSL::PKCS5.pbkdf2_hmac(password.to_s, @scram_salt, @scram_iterations, 32, OpenSSL::Digest::SHA256.new) if password
+        stored_key ||= Digest::SHA256.digest(OpenSSL::HMAC.digest("SHA256", salted, "Client Key"))
+        server_key ||= OpenSSL::HMAC.digest("SHA256", salted, "Server Key")
+        stored_key = Base64.decode64(stored_key) if stored_key.is_a?(String) && stored_key.match?(/\A[A-Za-z0-9+\/=]+\z/) && stored_key.bytesize != 32
+        server_key = Base64.decode64(server_key) if server_key.is_a?(String) && server_key.match?(/\A[A-Za-z0-9+\/=]+\z/) && server_key.bytesize != 32
+
+        auth_message = [client_first_bare, "r=#{expected_nonce},s=#{Base64.strict_encode64(@scram_salt)},i=#{@scram_iterations}", client_final].join(",")
+        proof_bytes = Base64.decode64(proof.to_s)
+        client_signature = OpenSSL::HMAC.digest("SHA256", stored_key, auth_message)
+        client_key = proof_bytes.bytes.each_with_index.map { |byte, index| byte ^ client_signature.getbyte(index) }.pack("C*")
+        valid = secure_equal?(Digest::SHA256.digest(client_key), stored_key)
+        if valid
+          @scram_server_signature = Base64.strict_encode64(OpenSSL::HMAC.digest("SHA256", server_key, auth_message))
+        end
+        valid
       end
 
       def negotiate_capabilities(capabilities)

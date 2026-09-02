@@ -4,16 +4,19 @@ module RubyDB
   module Rails
     # Result - Query result adapter for Rails
     class Result
+      include Enumerable
+
       attr_reader :columns, :rows, :row_count, :affected_rows
-      attr_reader :command_tag, :statement_id
+      attr_reader :command_tag, :statement_id, :row_id
 
       def initialize(result)
-        @columns = result[:columns] || []
+        @columns = result[:columns] || result[:column_names] || []
         @rows = result[:rows] || []
         @row_count = result[:row_count] || @rows.size
         @affected_rows = result[:affected_rows] || 0
         @command_tag = result[:command_tag] || "SELECT"
         @statement_id = result[:statement_id]
+        @row_id = result[:row_id]
         @transaction_id = result[:transaction_id]
         @success = result[:success] != false
         @error = result[:error]

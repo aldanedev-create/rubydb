@@ -33,7 +33,7 @@ module RubyDB
           @stats[:messages_encoded] += 1
 
           begin
-            data = case @format
+          data = case @format
             when FORMAT_JSON
               encode_json(message)
             when FORMAT_MSGPACK
@@ -43,6 +43,10 @@ module RubyDB
             else
               encode_json(message)
             end
+
+            # JSON messages are transported as one line per frame so a
+            # persistent TCP connection can separate responses reliably.
+            data << "\n" if @format == FORMAT_JSON && !data.end_with?("\n")
 
             if @compression
               data = compress(data)

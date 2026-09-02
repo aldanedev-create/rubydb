@@ -17,6 +17,7 @@ module RubyDB
         @last_activity = Time.now
         @username = nil
         @database = nil
+        @permissions = nil
         @transaction = nil
         @prepared_statements = {}
         @cursors = {}
@@ -29,6 +30,7 @@ module RubyDB
         @lock.synchronize do
           @username = credentials[:username]
           @database = credentials[:database] || "rubydb"
+          @permissions = resolve_permissions(@username)
           @last_activity = Time.now
           true
         end
@@ -113,6 +115,9 @@ module RubyDB
       end
 
       def process_query(sql, params)
+        permission_error = authorize_sql(sql)
+        return permission_error if permission_error
+
         {
           success: true,
           type: "query_result",
@@ -122,6 +127,9 @@ module RubyDB
       end
 
       def process_prepare(sql)
+        permission_error = authorize_sql(sql)
+        return permission_error if permission_error
+
         stmt_id = "stmt_#{Time.now.to_i}_#{SecureRandom.hex(4)}"
         @prepared_statements[stmt_id] = {
           sql: sql,
@@ -172,11 +180,16 @@ module RubyDB
           }
         end
 
+        engine = @config[:engine]
+        transaction_id = engine&.begin_transaction || "txn_#{Time.now.to_i}"
         @transaction = {
-          id: "txn_#{Time.now.to_i}",
+          id: transaction_id,
           started_at: Time.now,
           active: true,
-          rollback: lambda { @transaction = nil }
+          rollback: lambda do
+            engine&.rollback_transaction
+            @transaction = nil
+          end
         }
 
         {
@@ -196,6 +209,7 @@ module RubyDB
         end
 
         @transaction[:active] = false
+        @config[:engine]&.commit_transaction
         @transaction = nil
 
         {
@@ -214,6 +228,7 @@ module RubyDB
         end
 
         @transaction[:active] = false
+        @config[:engine]&.rollback_transaction
         @transaction = nil
 
         {
@@ -233,11 +248,38 @@ module RubyDB
       end
 
       def execute_sql(sql, params)
-        # In production, this would use the engine to execute SQL
+        engine = @config[:engine]
+        raise RubyDB::ServerError, "Session has no database engine" unless engine
+
+        tokens = RubyDB::SQL::Lexer.new(sql).tokenize
+        statements = RubyDB::SQL::Parser.new(tokens).parse
+        results = statements.map do |statement|
+          plan = RubyDB::Execution::Planner.new(engine).plan(statement)
+          RubyDB::Execution::Executor.new(engine).execute(plan)
+        end
+        results.size == 1 ? results.first : results
+      end
+
+      def resolve_permissions(username)
+        policy = @config[:authorization] || @config["authorization"]
+        return %i[read write] unless policy
+
+        users = policy[:users] || policy["users"] || {}
+        symbol_username = username.respond_to?(:to_sym) ? username.to_sym : username
+        definition = users[username] || users[username.to_s] || users[symbol_username]
+        permissions = definition.is_a?(Hash) ? (definition[:permissions] || definition["permissions"]) : definition
+        Array(permissions).map(&:to_sym)
+      end
+
+      def authorize_sql(sql)
+        required = sql.to_s.strip.split(/\s+/, 2).first.to_s.downcase
+        permission = %w[select show explain].include?(required) ? :read : :write
+        return nil if @permissions&.include?(permission)
+
         {
-          rows: [],
-          row_count: 0,
-          columns: []
+          success: false,
+          error: "Permission denied: #{permission} access is required",
+          timestamp: Time.now.iso8601
         }
       end
     end

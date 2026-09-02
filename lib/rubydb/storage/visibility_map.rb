@@ -3,6 +3,7 @@
 require "json"
 require "set"
 require "fileutils"
+require "time"
 
 module RubyDB
   module Storage
@@ -17,7 +18,7 @@ module RubyDB
       ABORTED = :aborted
       IN_PROGRESS = :in_progress
 
-      attr_reader :visibility_info, :stats, :isolation_level, :active_transactions
+      attr_reader :visibility_info, :stats, :isolation_level, :active_transactions, :committed_transactions
 
       def initialize(page_manager, config = {})
         @page_manager = page_manager
@@ -30,6 +31,7 @@ module RubyDB
         @abort_log = []
         @max_snapshot_age = config[:max_snapshot_age] || 3600 # 1 hour default
         @isolation_level = config[:isolation_level] || :read_committed
+        @configured_visibility_path = config[:visibility_path]
         @vacuum_threshold = config[:vacuum_threshold] || 1000
         @vacuum_batch_size = config[:vacuum_batch_size] || 100
         @stats = {
@@ -51,6 +53,7 @@ module RubyDB
         @committed_transactions = Set.new
         @aborted_transactions = Set.new
         @row_version_chains = {}
+        @version_history = Hash.new { |hash, row_id| hash[row_id] = {} }
         @next_version_id = 1
         @is_loaded = false
         
@@ -77,7 +80,7 @@ module RubyDB
           @visibility_info[row_id] = {
             state: VISIBLE,
             visible_to: transaction_id,
-            commit_id: commit_id || transaction_id,
+            commit_id: commit_id || (transaction_id.to_i == 0 ? 0 : nil),
             created_at: Time.now,
             last_modified: Time.now,
             version: version_id,
@@ -85,6 +88,7 @@ module RubyDB
             row_id: row_id,
             deleted: false
           }
+          remember_version(row_id, @visibility_info[row_id])
           
           # Track version chain
           @row_version_chains[row_id] ||= []
@@ -113,7 +117,7 @@ module RubyDB
           @visibility_info[row_id] = {
             state: HIDDEN,
             hidden_from: transaction_id,
-            commit_id: commit_id || transaction_id,
+            commit_id: commit_id || (transaction_id.to_i == 0 ? 0 : nil),
             created_at: Time.now,
             last_modified: Time.now,
             version: version_id,
@@ -121,6 +125,7 @@ module RubyDB
             row_id: row_id,
             deleted: false
           }
+          remember_version(row_id, @visibility_info[row_id])
           
           @row_version_chains[row_id] ||= []
           @row_version_chains[row_id] << version_id
@@ -141,7 +146,7 @@ module RubyDB
           @visibility_info[row_id] = {
             state: DELETED,
             deleted_by: transaction_id,
-            commit_id: commit_id || transaction_id,
+            commit_id: commit_id || (transaction_id.to_i == 0 ? 0 : nil),
             created_at: Time.now,
             last_modified: Time.now,
             version: version_id,
@@ -149,6 +154,7 @@ module RubyDB
             row_id: row_id,
             deleted: true
           }
+          remember_version(row_id, @visibility_info[row_id])
           
           @row_version_chains[row_id] ||= []
           @row_version_chains[row_id] << version_id
@@ -164,8 +170,9 @@ module RubyDB
           
           info = @visibility_info[row_id]
           
-          # If no visibility info, row doesn't exist
-          return false if info.nil?
+          # Rows created before visibility tracking was introduced remain
+          # visible; newly written rows always receive visibility metadata.
+          return true if info.nil?
           
           # Check if row is deleted
           return false if info[:state] == DELETED && info[:deleted_by] != transaction_id
@@ -191,11 +198,9 @@ module RubyDB
                 return true
               end
               
-              if info[:commit_id] && info[:commit_id] <= transaction_id
-                # Committed before this transaction started
-                # Check if the transaction that committed it is still active
+              if info[:commit_id]
+                return true if info[:commit_id].to_i == 0
                 return true if @committed_transactions.include?(info[:commit_id])
-                return true if info[:commit_id] < transaction_id
               end
               
               return false
@@ -317,11 +322,9 @@ module RubyDB
             snapshot_id: nil
           }
           
-          # Create initial snapshot for this transaction if isolation level requires it
-          if @isolation_level == :repeatable_read || @isolation_level == :serializable
-            snapshot_id = create_snapshot(transaction_id)
-            @active_transactions[transaction_id][:snapshot_id] = snapshot_id
-          end
+          # Stronger isolation levels are rejected by Engine until historical
+          # row versions are persisted. Do not create a snapshot here while
+          # holding @lock; create_snapshot also takes this lock.
           
           true
         end
@@ -460,13 +463,11 @@ module RubyDB
 
       # Find a version by ID in the version chain
       def find_version_by_id(row_id, version_id)
-        # This would need to store full version history
-        # For now, check if current version matches
-        info = @visibility_info[row_id]
-        return info if info && info[:version] == version_id
-        
-        # In a real implementation, we would store version history in a separate structure
-        nil
+        history = @version_history[row_id]
+        history[version_id.to_i] || begin
+          info = @visibility_info[row_id]
+          info if info && info[:version].to_i == version_id.to_i
+        end
       end
 
       # Check if a transaction is active
@@ -554,9 +555,7 @@ module RubyDB
             
             break if current[:prev_version] == 0
             
-            # In a real implementation, we would fetch previous versions
-            # For now, just return the current version
-            break
+            current = find_version_by_id(row_id, current[:prev_version])
           end
           
           versions
@@ -657,6 +656,7 @@ module RubyDB
           @snapshot_cache.clear
           @snapshot_cache_lru.clear
           @row_version_chains.clear
+          @version_history.clear
           
           # Try to load from storage
           begin
@@ -666,12 +666,23 @@ module RubyDB
               
               if parsed[:visibility_info]
                 parsed[:visibility_info].each do |row_id_str, info|
-                  row_id = row_id_str.to_i
+                  row_id = row_id_str.to_s.to_i
                   symbolized_info = {}
                   info.each do |key, value|
+                    value = value.to_sym if %i[state].include?(key.to_sym) && value.respond_to?(:to_sym)
                     symbolized_info[key.to_sym] = value
                   end
                   @visibility_info[row_id] = symbolized_info
+                  remember_version(row_id, symbolized_info)
+                end
+              end
+
+              if parsed[:version_history]
+                parsed[:version_history].each do |row_id_str, versions|
+                  versions.each do |version_id, info|
+                    normalized = normalize_loaded_info(info)
+                    @version_history[row_id_str.to_s.to_i][version_id.to_s.to_i] = normalized
+                  end
                 end
               end
               
@@ -691,9 +702,9 @@ module RubyDB
               @is_loaded = true
             end
           rescue => e
-            # If loading fails, start fresh
-            @visibility_info.clear
-            @is_loaded = false
+            # Never discard persisted visibility state silently; a corrupt or
+            # incompatible MVCC map must fail closed so recovery can intervene.
+            raise RubyDB::CorruptionError, "Failed to load visibility map: #{e.message}"
           end
         end
       end
@@ -709,6 +720,7 @@ module RubyDB
               aborted_transactions: @aborted_transactions.to_a,
               next_version_id: @next_version_id,
               row_version_chains: @row_version_chains,
+              version_history: @version_history,
               timestamp: Time.now.iso8601,
               version: 2
             }
@@ -727,9 +739,23 @@ module RubyDB
 
       # Remove a row from disk storage
       def remove_row_from_disk(row_id)
-        # In production, this would also remove the row data from storage
-        # For now, we just remove it from the visibility map
         true
+      end
+
+      def remember_version(row_id, info)
+        @version_history[row_id][info[:version].to_i] = info.dup
+      end
+
+      def normalize_loaded_info(info)
+        info.each_with_object({}) do |(key, value), normalized|
+          normalized[key.to_sym] = if key.to_sym == :state && value.respond_to?(:to_sym)
+            value.to_sym
+          elsif %i[created_at last_modified].include?(key.to_sym) && value.is_a?(String)
+            Time.parse(value)
+          else
+            value
+          end
+        end
       end
 
       # Get visibility statistics
@@ -933,7 +959,10 @@ module RubyDB
       # Path for visibility data file
       def visibility_path
         @visibility_path ||= begin
-          if @page_manager && @page_manager.respond_to?(:path)
+          if @configured_visibility_path
+            FileUtils.mkdir_p(File.dirname(@configured_visibility_path))
+            @configured_visibility_path
+          elsif @page_manager && @page_manager.respond_to?(:path)
             base_path = @page_manager.path
             if base_path
               File.join(@data_dir, "#{File.basename(base_path)}.visibility")

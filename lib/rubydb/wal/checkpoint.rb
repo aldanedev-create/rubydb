@@ -161,9 +161,12 @@ module RubyDB
       end
 
       def estimate_checkpoint_size
-        # Estimate the size of the checkpoint
-        # In production, this would calculate actual size
-        1024 * 100  # 100KB estimate
+        segment = @wal_writer.current_segment
+        return 0 unless segment
+
+        # The checkpoint covers the flushed WAL through the current segment.
+        # Report the actual segment bytes instead of a fixed placeholder.
+        segment.size.to_i + @wal_writer.stats.fetch(:buffer_bytes, 0).to_i
       end
     end
   end

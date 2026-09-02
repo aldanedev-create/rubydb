@@ -3,6 +3,8 @@
 require "fileutils"
 require "time"
 require "json"
+require "digest"
+require "monitor"
 
 module RubyDB
   module Backup
@@ -13,8 +15,8 @@ module RubyDB
       def initialize(engine, config = {})
         @engine = engine
         @config = config
-        @incremental_dir = config[:incremental_dir] || "incremental"
         @backup_dir = config[:backup_dir] || "backups"
+        @incremental_dir = config[:incremental_dir] || File.join(@backup_dir, "incremental")
         @max_incrementals = config[:max_incrementals] || 10
         @stats = {
           incrementals_created: 0,
@@ -23,7 +25,7 @@ module RubyDB
           last_incremental: nil,
           chain_length: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @incrementals = {}
         @chains = {}
 
@@ -59,16 +61,19 @@ module RubyDB
           # Write metadata
           metadata = {
             name: incremental_name,
+            type: :incremental,
             base_backup: base_backup,
             created_at: Time.now.iso8601,
             last_lsn: last_lsn,
             new_lsn: changes[:new_lsn],
             change_count: changes[:changes].size,
-            size: calculate_size(incremental_path)
+            size: calculate_size(incremental_path),
+            checksum: Digest::SHA256.file(changes_path).hexdigest
           }
 
           metadata_path = File.join(incremental_path, "metadata.json")
           File.write(metadata_path, JSON.generate(metadata))
+          File.write(File.join(incremental_path, "manifest.json"), JSON.generate(metadata))
 
           # Update chain
           @chains[base_backup] ||= []
@@ -91,6 +96,18 @@ module RubyDB
             elapsed_ms: (Time.now - start_time) * 1000
           }
         end
+      end
+
+      def create_differential(base_backup = nil)
+        result = create_incremental(base_backup)
+        return result unless result[:success]
+
+        metadata = result[:metadata].merge(type: :differential)
+        path = File.join(@incremental_dir, result[:incremental_name])
+        File.write(File.join(path, "metadata.json"), JSON.generate(metadata))
+        File.write(File.join(path, "manifest.json"), JSON.generate(metadata))
+        @incrementals[result[:incremental_name]] = metadata
+        result.merge(metadata: metadata)
       end
 
       def restore_to_lsn(target_lsn, options = {})
@@ -203,13 +220,14 @@ module RubyDB
 
           begin
             metadata = JSON.parse(File.read(metadata_path), symbolize_names: true)
+            validate_incremental_metadata!(path, metadata)
             @incrementals[metadata[:name]] = metadata
 
             base = metadata[:base_backup]
             @chains[base] ||= []
             @chains[base] << metadata
-          rescue
-            # Skip corrupted incrementals
+          rescue StandardError => error
+            raise error
           end
         end
 
@@ -235,22 +253,33 @@ module RubyDB
       end
 
       def get_last_lsn(backup)
-        # In production, would get LSN from backup metadata
         backup_path = File.join(@backup_dir, backup)
         manifest_path = File.join(backup_path, "manifest.json")
-        return 0 unless File.exist?(manifest_path)
+        raise "Base backup manifest not found: #{backup}" unless File.exist?(manifest_path)
+
+        verification = Backup.new(@engine, @config.merge(backup_dir: @backup_dir)).verify_backup(backup_path)
+        raise "Base backup verification failed: #{verification[:error]}" unless verification[:success]
 
         manifest = JSON.parse(File.read(manifest_path), symbolize_names: true)
-        manifest[:lsn] || 0
+        (manifest[:lsn] || 0).to_i
       end
 
       def capture_changes_since(last_lsn)
-        # In production, would capture changes from WAL
+        wal = @engine.respond_to?(:wal) ? @engine.wal : nil
+        raise "Incremental backup requires an engine WAL" unless wal
+        records = wal.read_all.select do |record|
+          record.lsn && record.lsn.to_i > last_lsn.to_i
+        end
+        changes = records.filter_map do |record|
+          next unless %i[insert update delete].include?(record.type)
+          data = (record.data || {}).dup
+          data[:type] = record.type.to_s
+          data
+        end
+        new_lsn = records.map { |record| record.lsn.to_i }.max || last_lsn.to_i
         {
-          new_lsn: last_lsn + 1000,
-          changes: [
-            { type: "insert", table: "users", data: { id: 1, name: "John" } }
-          ]
+          new_lsn: new_lsn,
+          changes: changes
         }
       end
 
@@ -267,21 +296,39 @@ module RubyDB
       end
 
       def apply_incremental(inc)
-        # In production, would apply incremental changes
         inc_path = File.join(@incremental_dir, inc[:name])
         changes_path = File.join(inc_path, "changes.json")
-        return unless File.exist?(changes_path)
+        raise "Incremental changes not found: #{inc[:name]}" unless File.exist?(changes_path)
+        expected = inc[:checksum]
+        if expected && Digest::SHA256.file(changes_path).hexdigest != expected
+          raise "Incremental checksum mismatch: #{inc[:name]}"
+        end
 
         changes = JSON.parse(File.read(changes_path), symbolize_names: true)
         changes[:changes].each do |change|
-          case change[:type]
+          case change[:type].to_s
           when "insert"
-            @engine.insert_row(change[:table], change[:columns], change[:data])
+            columns = @engine.table_columns(change[:table])
+            @engine.insert_row(change[:table], columns, normalize_values(change[:values] || change[:data]))
           when "update"
-            @engine.update_row(change[:table], change[:row_id], change[:data])
+            @engine.update_row(change[:table], change[:row_id], normalize_values(change[:values] || change[:data]))
           when "delete"
             @engine.delete_row(change[:table], change[:row_id])
           end
+        end
+        true
+      end
+
+      def normalize_values(values)
+        return {} unless values
+        values.each_with_object({}) { |(key, value), result| result[key.to_s] = value }
+      end
+
+      def validate_incremental_metadata!(path, metadata)
+        changes_path = File.join(path, "changes.json")
+        raise "Incremental changes file missing: #{path}" unless File.file?(changes_path)
+        if metadata[:checksum] && Digest::SHA256.file(changes_path).hexdigest != metadata[:checksum]
+          raise "Incremental checksum mismatch: #{metadata[:name]}"
         end
       end
 

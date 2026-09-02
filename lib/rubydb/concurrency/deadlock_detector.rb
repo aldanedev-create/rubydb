@@ -13,6 +13,7 @@ module RubyDB
         @deadlock_resolution = config[:resolution] || :abort_victim
         @timeout = config[:timeout] || 30
         @max_attempts = config[:max_attempts] || 3
+        @transaction_manager = config[:transaction_manager]
         @stats = {
           deadlocks_detected: 0,
           deadlocks_resolved: 0,
@@ -91,12 +92,16 @@ module RubyDB
       end
 
       def abort_victim(victim)
-        # Abort the victim transaction
-        # In production, this would call the transaction manager
         victim[:aborted] = true
         victim[:abort_time] = Time.now
 
-        # Release all locks held by victim
+        if @transaction_manager.respond_to?(:get_transaction) &&
+            @transaction_manager.respond_to?(:rollback_transaction)
+          transaction = @transaction_manager.get_transaction(victim[:id])
+          @transaction_manager.rollback_transaction(transaction) if transaction
+        end
+
+        # Keep the graph in sync even when no transaction manager is attached.
         @lock_graph.release_locks(victim[:id])
       end
 

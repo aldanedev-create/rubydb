@@ -18,13 +18,13 @@ module RubyDB
         @type = type
         @description = options[:description] || ""
         @category = options[:category] || :general
-        @min_args = options[:min_args] || 0
-        @max_args = options[:max_args] || -1  # -1 means unlimited
+        @min_args = options.key?(:min_args) ? options[:min_args] : 0
+        @max_args = options.key?(:max_args) ? options[:max_args] : -1 # -1 means unlimited
         @return_type = options[:return_type] || :text
         @deterministic = options[:deterministic] != false
         @strict = options[:strict] || false
         @immutable = options[:immutable] || false
-        @parallel_safe = options[:parallel_safe] || true
+        @parallel_safe = options[:parallel_safe] != false
         @registered_at = Time.now
       end
 

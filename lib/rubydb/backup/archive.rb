@@ -4,6 +4,11 @@ require "fileutils"
 require "time"
 require "json"
 require "zlib"
+require "openssl"
+require "digest"
+require "monitor"
+require "open3"
+require "pathname"
 
 module RubyDB
   module Backup
@@ -28,7 +33,7 @@ module RubyDB
           last_archive: nil,
           errors: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
 
         FileUtils.mkdir_p(@archive_dir)
       end
@@ -106,6 +111,7 @@ module RubyDB
       def restore_archive(archive_path, destination = nil)
         @lock.synchronize do
           start_time = Time.now
+          temporary_paths = []
 
           unless File.exist?(archive_path)
             return { success: false, error: "Archive file does not exist" }
@@ -120,6 +126,7 @@ module RubyDB
             if archive_path.end_with?(".enc")
               decrypted_path = archive_path.gsub(/\.enc$/, "")
               decrypt_file(archive_path, decrypted_path)
+              temporary_paths << decrypted_path
               archive_path = decrypted_path
             end
 
@@ -127,6 +134,7 @@ module RubyDB
             if archive_path.end_with?(".gz")
               decompressed_path = archive_path.gsub(/\.gz$/, "")
               decompress_file(archive_path, decompressed_path)
+              temporary_paths << decompressed_path
               archive_path = decompressed_path
             end
 
@@ -145,8 +153,7 @@ module RubyDB
             @stats[:errors] += 1
             { success: false, error: e.message }
           ensure
-            # Clean up temporary files
-            File.delete(archive_path) if archive_path != File.join(@archive_dir, File.basename(archive_path))
+            temporary_paths.each { |path| File.delete(path) if File.file?(path) }
           end
         end
       end
@@ -172,7 +179,9 @@ module RubyDB
 
       def delete_archive(archive_name)
         @lock.synchronize do
-          archive_path = File.join(@archive_dir, archive_name)
+          archive_path = archive_path_for_name(archive_name)
+          return { success: false, error: "Invalid archive name" } unless archive_path
+
           unless File.exist?(archive_path)
             return { success: false, error: "Archive not found" }
           end
@@ -204,12 +213,21 @@ module RubyDB
 
       private
 
+      def archive_path_for_name(archive_name)
+        name = archive_name.to_s
+        return nil if name.empty? || name != File.basename(name)
+
+        root = File.expand_path(@archive_dir)
+        path = File.expand_path(File.join(root, name))
+        path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+      end
+
       def create_tar_archive(source, destination)
         require "archive/tar/minitar"
         Archive::Tar::Minitar.pack(source, File.open(destination, "wb"))
       rescue LoadError
         # Fallback to system tar command
-        system("tar", "-cf", destination, "-C", File.dirname(source), File.basename(source))
+        raise "tar utility is unavailable" unless system("tar", "-cf", destination, "-C", File.dirname(source), File.basename(source))
       end
 
       def extract_tar_archive(source, destination)
@@ -217,7 +235,22 @@ module RubyDB
         Archive::Tar::Minitar.unpack(source, destination)
       rescue LoadError
         # Fallback to system tar command
-        system("tar", "-xf", source, "-C", destination)
+        validate_tar_entries!(source, destination)
+        raise "tar utility is unavailable" unless system("tar", "-xf", source, "-C", destination)
+      end
+
+      def validate_tar_entries!(source, destination)
+        output, error, status = Open3.capture3("tar", "-tf", source)
+        raise "Unable to inspect tar archive: #{error}" unless status.success?
+
+        root = File.expand_path(destination)
+        invalid_entries = output.lines.map(&:strip).reject do |entry|
+          !entry.empty? && !Pathname.new(entry).absolute? && begin
+            path = File.expand_path(File.join(root, entry))
+            path.start_with?("#{root}#{File::SEPARATOR}")
+          end
+        end
+        raise "Archive contains unsafe paths: #{invalid_entries.join(', ')}" if invalid_entries.any?
       end
 
       def compress_file(file_path)
@@ -242,15 +275,29 @@ module RubyDB
       end
 
       def encrypt_file(file_path)
-        # In production, would implement encryption
-        # For now, just rename
-        File.rename(file_path, "#{file_path}.enc")
+        key = Digest::SHA256.digest(@encryption_key.to_s)
+        nonce = OpenSSL::Random.random_bytes(12)
+        cipher = OpenSSL::Cipher.new("aes-256-gcm")
+        cipher.encrypt
+        cipher.key = key
+        cipher.iv = nonce
+        ciphertext = cipher.update(File.binread(file_path)) + cipher.final
+        File.binwrite("#{file_path}.enc", nonce + cipher.auth_tag + ciphertext)
+        File.delete(file_path)
       end
 
       def decrypt_file(file_path, destination)
-        # In production, would implement decryption
-        # For now, just copy
-        FileUtils.cp(file_path, destination)
+        payload = File.binread(file_path)
+        raise "Encrypted archive is truncated" if payload.bytesize < 28
+
+        key = Digest::SHA256.digest(@encryption_key.to_s)
+        cipher = OpenSSL::Cipher.new("aes-256-gcm")
+        cipher.decrypt
+        cipher.key = key
+        cipher.iv = payload.byteslice(0, 12)
+        cipher.auth_tag = payload.byteslice(12, 16)
+        plaintext = cipher.update(payload.byteslice(28..-1)) + cipher.final
+        File.binwrite(destination, plaintext)
       end
 
       def calculate_checksum(file_path)

@@ -21,7 +21,7 @@ module RubyDB
           avg_wait_time_ms: 0,
           total_wait_time_ms: 0
         }
-        @lock = Mutex.new
+        @lock = ::Mutex.new
       end
 
       def synchronize

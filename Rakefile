@@ -2,6 +2,7 @@
 
 require 'bundler/gem_tasks'
 require 'rspec/core/rake_task'
+require 'rbconfig'
 
 RSpec::Core::RakeTask.new(:spec)
 
@@ -47,4 +48,9 @@ end
 desc 'Run benchmarks'
 task :benchmark do
   Dir['benchmarks/**/*.rb'].each { |f| load f }
+end
+
+desc 'Run the concurrent workload and durability verification'
+task :workload do
+  abort 'Concurrent workload failed' unless system(RbConfig.ruby, 'benchmarks/concurrent_workload.rb')
 end

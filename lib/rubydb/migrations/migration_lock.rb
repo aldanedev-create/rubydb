@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "time"
+require "fileutils"
+require "monitor"
 
 module RubyDB
   module Migrations
@@ -12,6 +14,7 @@ module RubyDB
         @engine = engine
         @config = config
         @lock_table = config[:lock_table] || "migration_lock"
+        @lock_path = config[:lock_path] || "#{engine.path}.migration.lock"
         @lock_timeout = config[:lock_timeout] || 300 # 5 minutes
         @lock_acquired = false
         @lock_id = nil
@@ -24,7 +27,8 @@ module RubyDB
           lock_contention: 0,
           lock_timeouts: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
+        @lock_file = nil
       end
 
       def acquire_lock
@@ -50,7 +54,13 @@ module RubyDB
           end
 
           # Acquire lock
-          acquire_lock_force
+          begin
+            acquire_lock_force
+          rescue Errno::EACCES, Errno::EAGAIN, Errno::EWOULDBLOCK
+            @stats[:lock_contention] += 1
+            @stats[:locks_failed] += 1
+            return false
+          end
           @lock_acquired = true
           @lock_acquired_at = Time.now
           @lock_id = generate_lock_id
@@ -104,21 +114,28 @@ module RubyDB
       private
 
       def lock_exists?
-        # In production, would check if lock table exists and has a record
-        false
+        !@lock_file.nil?
       end
 
       def get_lock_info
-        # In production, would read lock information from database
-        ["unknown", Time.now]
+        [@lock_id || "external", @lock_acquired_at || Time.now]
       end
 
       def acquire_lock_force
-        # In production, would insert lock record into database
+        FileUtils.mkdir_p(File.dirname(@lock_path))
+        file = File.open(@lock_path, "a+")
+        unless file.flock(File::LOCK_EX | File::LOCK_NB)
+          file.close
+          raise Errno::EWOULDBLOCK
+        end
+        @lock_file = file
       end
 
       def release_lock_force
-        # In production, would delete lock record from database
+        return unless @lock_file
+        @lock_file.flock(File::LOCK_UN)
+        @lock_file.close
+        @lock_file = nil
       end
 
       def generate_lock_id

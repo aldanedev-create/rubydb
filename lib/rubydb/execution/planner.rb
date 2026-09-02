@@ -31,6 +31,33 @@ module RubyDB
           plan_create_table(statement)
         when SQL::AST::DropTable
           plan_drop_table(statement)
+        when SQL::AST::CreateDatabase
+          Plan::CreateDatabase.new(statement.name, if_not_exists: statement.if_not_exists)
+        when SQL::AST::DropDatabase
+          Plan::DropDatabase.new(statement.name, if_exists: statement.if_exists)
+        when SQL::AST::CreateSchema
+          Plan::CreateSchema.new(statement.name, if_not_exists: statement.if_not_exists, authorization: statement.authorization)
+        when SQL::AST::DropSchema
+          Plan::DropSchema.new(statement.name, if_exists: statement.if_exists, cascade: statement.cascade)
+        when SQL::AST::CreateView
+          Plan::CreateView.new(statement.name, statement.query, if_not_exists: statement.if_not_exists)
+        when SQL::AST::DropView
+          Plan::DropView.new(statement.name, if_exists: statement.if_exists)
+        when SQL::AST::CreateTrigger
+          Plan::CreateTrigger.new(statement.name, statement.timing, statement.event, statement.table_name, statement.function_name)
+        when SQL::AST::DropTrigger
+          Plan::DropTrigger.new(statement.name, if_exists: statement.if_exists)
+        when SQL::AST::Vacuum
+          Plan::Vacuum.new
+        when SQL::AST::AlterTableAddColumn
+          options = statement.options.transform_values { |value| value.respond_to?(:value) ? value.value : value }
+          Plan::AlterTableAddColumn.new(statement.table_name, statement.column_name, statement.column_type, options)
+        when SQL::AST::AlterTableDropColumn
+          Plan::AlterTableDropColumn.new(statement.table_name, statement.column_name)
+        when SQL::AST::AlterTableAddConstraint
+          Plan::AlterTableAddConstraint.new(statement.table_name, statement.constraint)
+        when SQL::AST::AlterTableDropConstraint
+          Plan::AlterTableDropConstraint.new(statement.table_name, statement.constraint_name)
         when SQL::AST::CreateIndex
           plan_create_index(statement)
         when SQL::AST::DropIndex
@@ -41,6 +68,12 @@ module RubyDB
           plan_commit(statement)
         when SQL::AST::Rollback
           plan_rollback(statement)
+        when SQL::AST::Savepoint
+          Plan::Savepoint.new(statement.name)
+        when SQL::AST::RollbackToSavepoint
+          Plan::RollbackToSavepoint.new(statement.savepoint_name)
+        when SQL::AST::ReleaseSavepoint
+          Plan::ReleaseSavepoint.new(statement.name)
         when SQL::AST::Explain
           plan_explain(statement)
         else
@@ -136,10 +169,15 @@ module RubyDB
 
       def plan_create_table(statement)
         columns = statement.columns.map do |col|
-          Catalog::Column.new(col.name, col.type_class, col.options)
+          Catalog::Column.new(col.name, col.type_class, **col.options)
         end
 
-        Plan::CreateTable.new(statement.name, columns, if_not_exists: statement.if_not_exists)
+        Plan::CreateTable.new(
+          statement.name,
+          columns,
+          if_not_exists: statement.if_not_exists,
+          constraints: statement.constraints
+        )
       end
 
       def plan_drop_table(statement)
@@ -184,15 +222,21 @@ module RubyDB
           right = build_predicate(ast.right)
 
           case ast.operator
-          when :AND
+          when :AND, :and
             Predicate::And.new(left, right)
-          when :OR
+          when :OR, :or
             Predicate::Or.new(left, right)
           when :EQ, :NE, :LT, :LTE, :GT, :GTE
             Predicate::Comparison.new(
               build_expression(ast.left),
               build_expression(ast.right),
-              ast.operator
+              { EQ: :eq, NE: :ne, LT: :lt, LTE: :lte, GT: :gt, GTE: :gte }.fetch(ast.operator)
+            )
+          when :LIKE, :ILIKE
+            Predicate::Like.new(
+              build_expression(ast.left),
+              build_expression(ast.right),
+              ast.operator == :LIKE
             )
           else
             nil
@@ -211,17 +255,11 @@ module RubyDB
           Predicate::In.new(build_expression(ast.expression), values)
         when SQL::AST::IsNull
           Predicate::IsNull.new(build_expression(ast.expression), ast.negated)
-        when SQL::AST::Like
-          Predicate::Like.new(
-            build_expression(ast.expression),
-            build_expression(ast.pattern),
-            ast.case_sensitive
-          )
         else
           Predicate::Comparison.new(
             build_expression(ast),
             build_expression(SQL::AST::Literal.new(true, :TRUE)),
-            :EQ
+            :eq
           )
         end
       end
@@ -235,7 +273,11 @@ module RubyDB
         when SQL::AST::BinaryOp
           left = build_expression(ast.left)
           right = build_expression(ast.right)
-          Expression::BinaryOp.new(left, right, ast.operator)
+          operator = {
+            PLUS: :plus, MINUS: :minus, STAR: :multiply, SLASH: :divide,
+            PERCENT: :modulo, EQ: :eq
+          }[ast.operator] || ast.operator
+          Expression::BinaryOp.new(left, right, operator)
         when SQL::AST::UnaryOp
           operand = build_expression(ast.operand)
           Expression::UnaryOp.new(operand, ast.operator)
@@ -268,11 +310,9 @@ module RubyDB
             end
           end
 
-          # Use first index if no better option
-          if indexes.any? && plan.predicate.nil?
-            plan.set_scan_type(:index, indexes.first)
-            return
-          end
+          # A full index scan is not a substitute for a table scan: it can
+          # omit rows while an index is being maintained or rebuilt. Only use
+          # an index when the predicate specifically matches its columns.
         end
 
         # Default to sequential scan
@@ -285,7 +325,7 @@ module RubyDB
 
         indexes.each do |index|
           # Check if predicate columns match index columns
-          if index.columns.any? { |col| columns.include?(col) }
+          if index.columns.any? { |col| columns.map(&:to_s).include?(col.to_s) }
             return index
           end
         end

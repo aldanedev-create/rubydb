@@ -25,6 +25,7 @@ module RubyDB
             opts.on("--dry-run", "Show what would be vacuumed") do
               options[:dry_run] = true
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -33,21 +34,23 @@ module RubyDB
 
           parser.parse!(args)
 
+          database = RubyDB::Database.new(options[:database] || "data/rubydb.rdb", auto_connect: false).connect
+          engine = database.engine
+
           if options[:dry_run]
             @output.info("Would vacuum:")
-            @output.puts("  - Reclaiming 15MB of space")
-            @output.puts("  - Removing 150 dead rows")
-            @output.puts("  - 3 tables affected")
-            return
+            stats = engine.stats
+            @output.puts("  - Current rows: #{stats[:row_count]}")
+            @output.puts("  - Tables affected: #{stats[:table_count]}")
+            @output.puts("  - Cleanup will respect active transaction snapshots")
+            return 0
           end
 
-          @output.spinner("Vacuuming database...") do
-            if options[:full]
-              @output.success("Full vacuum completed. Reclaimed 15MB of space.")
-            else
-              @output.success("Vacuum completed. Reclaimed 5MB of space.")
-            end
-          end
+          result = engine.vacuum
+          @output.success("Vacuum completed. Removed #{result[:removed]} rows; #{result[:total_rows]} rows remain.")
+          0
+        ensure
+          database&.close
         end
       end
     end

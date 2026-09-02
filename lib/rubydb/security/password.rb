@@ -3,6 +3,7 @@
 require "digest"
 require "securerandom"
 require "base64"
+require "monitor"
 
 module RubyDB
   module Security
@@ -28,7 +29,7 @@ module RubyDB
           verifications_failed: 0,
           salts_generated: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
       end
 
       def hash(password, salt = nil)
@@ -48,7 +49,7 @@ module RubyDB
           when ALGORITHM_ARGON2
             hash_argon2(password, salt)
           else
-            hash_sha256(password, salt)
+            raise ArgumentError, "Unsupported password algorithm: #{@algorithm}"
           end
 
           {
@@ -150,7 +151,7 @@ module RubyDB
           require "bcrypt"
           BCrypt::Password.create(password, cost: @bcrypt_cost)
         rescue LoadError
-          hash_sha256(password, generate_salt)
+          raise ArgumentError, "bcrypt support requires the bcrypt gem"
         end
       end
 
@@ -193,13 +194,21 @@ module RubyDB
       end
 
       def hash_argon2(password, salt)
-        # Placeholder - would use argon2 gem in production
-        hash_sha256(password, salt)
+        begin
+          require "argon2"
+          Argon2::Password.create(password)
+        rescue LoadError
+          raise ArgumentError, "argon2 support requires the argon2 gem"
+        end
       end
 
       def verify_argon2(password, salt, stored_hash)
-        # Placeholder - would use argon2 gem in production
-        verify_sha256(password, salt, stored_hash)
+        begin
+          require "argon2"
+          Argon2::Password.verify_password(password, stored_hash)
+        rescue LoadError
+          false
+        end
       end
     end
   end

@@ -1,0 +1,38 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "rbconfig"
+
+root = File.expand_path("..", __dir__)
+Dir.chdir(root)
+
+release_descriptors = [
+  "rubydb.gemspec",
+  "adapters/activerecord/rubydb-activerecord.gemspec",
+  "packaging/homebrew/rubydb.rb"
+]
+placeholder_pattern = /yourusername|your name|you@example\.com|your\.email@example\.com/i
+placeholder_files = release_descriptors.select do |path|
+  File.exist?(path) && File.read(path).match?(placeholder_pattern)
+end
+unless placeholder_files.empty?
+  abort "Release metadata contains placeholders in: #{placeholder_files.join(', ')}. Set the real owner, contact, homepage, source, and changelog URLs before publishing."
+end
+abort "rake build:checksum failed" unless system("rake", "build:checksum")
+
+gem_path = Dir["pkg/rubydb-*.gem"].max_by { |path| File.mtime(path) }
+abort "No built gem found" unless gem_path
+checksum_path = File.join("checksums", "#{File.basename(gem_path)}.sha512")
+expected = File.read(checksum_path).split.first
+actual = Digest::SHA512.file(gem_path).hexdigest
+abort "Checksum verification failed" unless expected == actual
+
+if ENV["RUBYDB_PUBLISH"] == "1"
+  abort "Set GEM_HOST_API_KEY before publishing" if ENV.fetch("GEM_HOST_API_KEY", "").empty?
+  abort "gem push failed" unless system("gem", "push", gem_path)
+  puts "Published #{gem_path}"
+else
+  puts "Release artifact verified: #{gem_path}"
+  puts "To publish: RUBYDB_PUBLISH=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release"
+end

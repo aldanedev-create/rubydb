@@ -5,6 +5,8 @@ require "time"
 require "json"
 require "zlib"
 require "digest"
+require "monitor"
+require "pathname"
 
 module RubyDB
   module Backup
@@ -48,7 +50,7 @@ module RubyDB
           last_backup_size: 0,
           errors: 0
         }
-        @lock = Mutex.new
+        @lock = Monitor.new
         @running = false
 
         # Create backup directory
@@ -61,6 +63,25 @@ module RubyDB
           @stats[:backups_created] += 1
 
           backup_type = options[:type] || TYPE_FULL
+          if backup_type == TYPE_INCREMENTAL
+            begin
+              return Incremental.new(@engine, @config.merge(
+                incremental_dir: @config[:incremental_dir] || File.join(@config[:backup_dir], "incremental")
+              )).create_incremental(options[:base_backup])
+            rescue StandardError => error
+              @stats[:errors] += 1
+              return { success: false, error: error.message }
+            end
+          elsif backup_type == TYPE_DIFFERENTIAL
+            begin
+              return Incremental.new(@engine, @config.merge(
+                incremental_dir: @config[:incremental_dir] || File.join(@config[:backup_dir], "incremental")
+              )).create_differential(options[:base_backup])
+            rescue StandardError => error
+              @stats[:errors] += 1
+              return { success: false, error: error.message }
+            end
+          end
           backup_name = generate_backup_name(backup_type)
           backup_path = File.join(@config[:backup_dir], backup_name)
 
@@ -81,15 +102,16 @@ module RubyDB
               format: @config[:format],
               options: options
             }
+            if @engine.respond_to?(:wal) && @engine.wal.respond_to?(:current_lsn)
+              metadata[:lsn] = @engine.wal.current_lsn.to_i
+            end
 
             # Perform backup based on type
             case backup_type
             when TYPE_FULL
               backup_full(backup_path, metadata)
-            when TYPE_INCREMENTAL
-              backup_incremental(backup_path, metadata, options[:base_backup])
-            when TYPE_DIFFERENTIAL
-              backup_differential(backup_path, metadata, options[:base_backup])
+            when TYPE_INCREMENTAL, TYPE_DIFFERENTIAL
+              raise ArgumentError, "Backup type dispatch error"
             else
               backup_full(backup_path, metadata)
             end
@@ -143,7 +165,7 @@ module RubyDB
 
             begin
               metadata = JSON.parse(File.read(manifest_path), symbolize_names: true)
-              size = Dir.glob(File.join(path, "**/*")).sum { |f| File.size(f) if File.file?(f) } || 0
+              size = Dir.glob(File.join(path, "**/*")).select { |f| File.file?(f) }.sum { |f| File.size(f) }
               backups << metadata.merge(
                 path: path,
                 size: size,
@@ -161,7 +183,9 @@ module RubyDB
 
       def delete_backup(backup_name)
         @lock.synchronize do
-          backup_path = File.join(@config[:backup_dir], backup_name)
+          backup_path = backup_path_for_name(backup_name)
+          return { success: false, error: "Invalid backup name" } unless backup_path
+
           unless Dir.exist?(backup_path)
             return { success: false, error: "Backup not found" }
           end
@@ -183,7 +207,10 @@ module RubyDB
 
             # Verify all files exist
             expected_files = metadata[:files] || []
-            missing_files = expected_files.reject { |f| File.exist?(File.join(backup_path, f)) }
+            invalid_files = expected_files.reject { |file| manifest_file_path(backup_path, file) }
+            return { success: false, error: "Invalid manifest file path", invalid: invalid_files } if invalid_files.any?
+
+            missing_files = expected_files.reject { |file| File.exist?(manifest_file_path(backup_path, file)) }
 
             if missing_files.any?
               return { success: false, error: "Missing files", missing: missing_files }
@@ -191,7 +218,8 @@ module RubyDB
 
             # Verify checksums
             if metadata[:checksum]
-              # In production, would verify checksum of all files
+              actual_checksum = calculate_checksum(backup_path)
+              return { success: false, error: "Checksum mismatch", expected: metadata[:checksum], actual: actual_checksum } unless actual_checksum == metadata[:checksum]
             end
 
             { success: true }
@@ -238,34 +266,58 @@ module RubyDB
 
       private
 
+      def backup_path_for_name(backup_name)
+        name = backup_name.to_s
+        return nil if name.empty? || name != File.basename(name)
+
+        root = File.expand_path(@config[:backup_dir])
+        path = File.expand_path(File.join(root, name))
+        path == root || path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+      end
+
+      def manifest_file_path(root_path, relative_path)
+        relative = relative_path.to_s
+        return nil if relative.empty? || Pathname.new(relative).absolute?
+
+        root = File.expand_path(root_path)
+        path = File.expand_path(File.join(root, relative))
+        path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+      end
+
       def generate_backup_name(type)
         timestamp = Time.now.strftime("%Y%m%d_%H%M%S")
         "backup_#{type}_#{timestamp}_#{rand(10000)}"
       end
 
       def list_tables
-        @engine.list_tables rescue []
+        return [] unless @engine.respond_to?(:list_tables)
+
+        @engine.list_tables
       end
 
       def backup_full(backup_path, metadata)
         files = []
 
         # Backup data files
-        data_files = @engine.data_files rescue []
+        data_files = @engine.respond_to?(:data_files) ? @engine.data_files : []
         data_files.each do |file|
-          dest = File.join(backup_path, File.basename(file))
+          name = File.basename(file)
+          name = "#{name}.gz" if @config[:format] == FORMAT_COMPRESSED
+          dest = File.join(backup_path, name)
           copy_file(file, dest)
-          files << File.basename(file)
+          files << name
         end
 
         # Backup WAL
         if @config[:include_wal]
-          wal_files = @engine.wal_files rescue []
+          wal_files = @engine.respond_to?(:wal_files) ? @engine.wal_files : []
           wal_files.each do |file|
-            dest = File.join(backup_path, "wal", File.basename(file))
+            name = File.basename(file)
+            name = "#{name}.gz" if @config[:format] == FORMAT_COMPRESSED
+            dest = File.join(backup_path, "wal", name)
             FileUtils.mkdir_p(File.dirname(dest))
             copy_file(file, dest)
-            files << "wal/#{File.basename(file)}"
+            files << "wal/#{name}"
           end
         end
 
@@ -279,18 +331,6 @@ module RubyDB
         metadata[:files] = files
         metadata[:size] = calculate_backup_size(backup_path)
         metadata[:checksum] = calculate_checksum(backup_path)
-      end
-
-      def backup_incremental(backup_path, metadata, base_backup)
-        # In production, would backup changes since base backup
-        metadata[:base_backup] = base_backup
-        backup_full(backup_path, metadata)
-      end
-
-      def backup_differential(backup_path, metadata, base_backup)
-        # In production, would backup changes since base backup
-        metadata[:base_backup] = base_backup
-        backup_full(backup_path, metadata)
       end
 
       def copy_file(src, dest)
@@ -312,14 +352,18 @@ module RubyDB
       end
 
       def calculate_backup_size(backup_path)
-        Dir.glob(File.join(backup_path, "**/*")).sum do |f|
-          File.size(f) if File.file?(f)
-        end || 0
+        Dir.glob(File.join(backup_path, "**/*")).select { |f| File.file?(f) }.sum { |f| File.size(f) }
       end
 
       def calculate_checksum(backup_path)
-        # In production, would calculate checksum of all files
-        nil
+        digest = Digest::SHA256.new
+        Dir.glob(File.join(backup_path, "**/*")).select { |path| File.file?(path) }.sort.each do |path|
+          relative = path.delete_prefix("#{backup_path}#{File::SEPARATOR}")
+          next if relative == "manifest.json"
+          digest.update(relative)
+          digest.update(File.binread(path))
+        end
+        digest.hexdigest
       end
 
       def format_size(bytes)

@@ -22,6 +22,8 @@ module RubyDB
             opts.on("--no-commit", "Don't commit after merge") do
               options[:no_commit] = true
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
+            opts.on("--branch-dir DIR", "Branch metadata directory") { |path| options[:branch_dir] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -38,10 +40,22 @@ module RubyDB
           end
 
           target = options[:into] || "main"
-
+          database = RubyDB::Database.new(options[:database] || "data/rubydb.rdb", auto_connect: false).connect
+          manager = RubyDB::Branching::BranchManager.new(
+            database.engine,
+            branch_dir: options[:branch_dir] || "branches"
+          )
+          merger = RubyDB::Branching::Merge.new(database.engine, manager,
+                                                strategy: (options[:strategy] || :fast_forward))
+          result = nil
           @output.spinner("Merging #{source} into #{target}...") do
-            @output.success("Merge completed successfully")
+            result = merger.merge(source, target, abort_on_conflict: true)
           end
+          raise result[:error] || result[:message] unless result[:success]
+          @output.success(result[:message] || "Merge completed successfully")
+          0
+        ensure
+          database&.close
         end
       end
     end

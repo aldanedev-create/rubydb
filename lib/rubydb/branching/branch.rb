@@ -7,7 +7,7 @@ module RubyDB
   module Branching
     # Branch - Represents a database branch
     class Branch
-      attr_reader :name, :id, :created_at, :updated_at, :metadata
+      attr_reader :name, :id, :created_at, :updated_at, :metadata, :changes, :state_snapshot
       attr_accessor :parent_branch, :head_lsn, :base_lsn, :state
 
       # Branch states
@@ -32,6 +32,7 @@ module RubyDB
         @is_protected = options[:protected] || false
         @is_default = options[:default] || false
         @changes = []
+        @state_snapshot = options[:state_snapshot]
         @commit_count = 0
         @last_commit = nil
         @lock = Mutex.new
@@ -44,6 +45,19 @@ module RubyDB
           @head_lsn = change[:lsn] if change[:lsn]
           @last_commit = Time.now
           @updated_at = Time.now
+        end
+      end
+
+      def changes
+        @lock.synchronize { @changes.map(&:dup) }
+      end
+
+      def logical_changes
+        @lock.synchronize do
+          @changes.map do |change|
+            payload = change[:data] || change["data"]
+            (payload.is_a?(Hash) ? payload : change).dup
+          end
         end
       end
 
@@ -147,7 +161,9 @@ module RubyDB
           is_default: @is_default,
           owner: @owner,
           description: @description,
-          metadata: @metadata
+          metadata: @metadata,
+          changes: @changes,
+          state_snapshot: @state_snapshot
         }
       end
 

@@ -28,6 +28,7 @@ module RubyDB
             opts.on("--wal", "Show WAL information") do
               options[:wal] = true
             end
+            opts.on("--database PATH", "Database path") { |path| options[:database] = path }
             opts.on("-h", "--help", "Show help") do
               @output.puts opts
               exit(0)
@@ -36,53 +37,57 @@ module RubyDB
 
           parser.parse!(args)
 
+          database = RubyDB::Database.new(options[:database] || "data/rubydb.rdb", auto_connect: false).connect
+          engine = database.engine
+          stats = engine.stats
+
           if options[:table]
-            @output.heading("Table: #{options[:table]}", 2)
+            table = options[:table]
+            raise "Table '#{table}' does not exist" unless engine.table_exists?(table)
+            columns = engine.table_columns(table)
+            @output.heading("Table: #{table}", 2)
             @output.puts "Columns:"
-            @output.puts "  id: integer PRIMARY KEY"
-            @output.puts "  name: text NOT NULL"
-            @output.puts "  created_at: timestamp"
-            @output.puts "\nRows: 10"
-            @output.puts "Size: 4KB"
+            columns.each { |column| @output.puts "  #{column.name}: #{column.type_class}" }
+            @output.puts "\nRows: #{engine.select_rows(table, columns).size}"
           end
 
           if options[:pages]
             @output.heading("Pages", 2)
-            @output.puts "Total pages: 100"
-            @output.puts "Used pages: 80"
-            @output.puts "Free pages: 20"
-            @output.puts "Page size: 8KB"
+            @output.puts "Total pages: #{stats[:page_count]}"
+            @output.puts "Used pages: #{stats[:used_pages]}"
+            @output.puts "Free pages: #{stats[:free_pages]}"
           end
 
           if options[:indexes]
             @output.heading("Indexes", 2)
-            @output.puts "idx_users_email: B-Tree on users(email)"
-            @output.puts "idx_users_name: B-Tree on users(name)"
+            @output.puts "Index statistics: #{engine.index_manager.stats.inspect}"
           end
 
           if options[:stats]
             @output.heading("Statistics", 2)
-            @output.puts "Total tables: 12"
-            @output.puts "Total rows: 1,234"
-            @output.puts "Database size: 100MB"
-            @output.puts "Cache hit rate: 95.2%"
+            stats.each { |key, value| @output.puts "#{key}: #{value}" }
           end
 
           if options[:wal]
             @output.heading("WAL Information", 2)
-            @output.puts "WAL enabled: true"
-            @output.puts "WAL size: 16MB"
-            @output.puts "Checkpoint age: 5 minutes"
+            wal_files = engine.wal_files
+            wal_size = wal_files.sum { |file| File.size(file) }
+            @output.puts "WAL enabled: #{!wal_files.empty?}"
+            @output.puts "WAL files: #{wal_files.size}"
+            @output.puts "WAL size: #{wal_size} bytes"
           end
 
           if !options[:table] && !options[:pages] && !options[:indexes] && !options[:stats] && !options[:wal]
             @output.heading("Database Inspection", 1)
             @output.puts "Version: #{RubyDB::VERSION}"
-            @output.puts "Tables: 12"
-            @output.puts "Total pages: 100"
-            @output.puts "Database size: 100MB"
-            @output.puts "Cache hit rate: 95.2%"
+            @output.puts "Tables: #{stats[:table_count]}"
+            @output.puts "Total pages: #{stats[:page_count]}"
+            @output.puts "Database size: #{File.size(engine.path)} bytes"
+            @output.puts "Cache hit rate: #{stats[:cache_hit_rate]}"
           end
+          0
+        ensure
+          database&.close
         end
       end
     end

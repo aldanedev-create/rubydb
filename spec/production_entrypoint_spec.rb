@@ -9,6 +9,14 @@ RSpec.describe "RubyDB entrypoint" do
     expect(RubyDB::Storage::PageHeader::SIZE).to be > 0
   end
 
+  it "does not open network connections when auto-connect is disabled" do
+    Dir.mktmpdir do |dir|
+      database = RubyDB::Database.new(File.join(dir, "offline.rdb"), auto_connect: false)
+      expect { database.connect }.not_to raise_error
+      database.close
+    end
+  end
+
   it "keeps the storage page header round-trippable" do
     header = RubyDB::Storage::PageHeader.new
     round_tripped = RubyDB::Storage::PageHeader.deserialize(header.serialize)

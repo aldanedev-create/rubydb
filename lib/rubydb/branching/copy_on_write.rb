@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "pathname"
 
 module RubyDB
   module Branching
@@ -29,16 +30,18 @@ module RubyDB
 
       def create_cow(branch_name, base_path)
         @lock.synchronize do
-          cow_path = File.join(@cow_dir, branch_name)
+          cow_path = branch_path(branch_name)
+          return { success: false, error: "Invalid branch name" } unless cow_path
+          base_root = File.expand_path(base_path)
+          return { success: false, error: "Base path does not exist" } unless Dir.exist?(base_root)
           FileUtils.mkdir_p(cow_path)
 
           # Create COW for each file
-          files = Dir.glob(File.join(base_path, "**/*"))
+          files = Dir.glob(File.join(base_root, "**/*")).select { |file| File.file?(file) }
           files.each do |file|
-            next unless File.file?(file)
-
-            relative_path = file.sub(base_path + "/", "")
-            cow_file = File.join(cow_path, relative_path)
+            relative_path = Pathname.new(file).relative_path_from(Pathname.new(base_root)).to_s
+            cow_file = nested_path(cow_path, relative_path)
+            raise "Invalid source path for copy-on-write" unless cow_file
             FileUtils.mkdir_p(File.dirname(cow_file))
 
             # Create hard link or copy
@@ -53,10 +56,10 @@ module RubyDB
           end
 
           @branch_data[branch_name] = {
-            base_path: base_path,
+            base_path: base_root,
             cow_path: cow_path,
             created_at: Time.now.iso8601,
-            files: files.map { |f| f.sub(base_path + "/", "") }
+            files: files.map { |file| Pathname.new(file).relative_path_from(Pathname.new(base_root)).to_s }
           }
 
           save_cow_data
@@ -67,8 +70,9 @@ module RubyDB
 
       def read_file(branch_name, file_path)
         @lock.synchronize do
-          cow_path = File.join(@cow_dir, branch_name)
-          cow_file = File.join(cow_path, file_path)
+          cow_path = branch_path(branch_name)
+          cow_file = cow_path && nested_path(cow_path, file_path)
+          return nil unless cow_file
 
           if File.exist?(cow_file)
             @stats[:cow_files_accessed] += 1
@@ -79,7 +83,7 @@ module RubyDB
           branch_data = @branch_data[branch_name]
           return nil unless branch_data
 
-          base_file = File.join(branch_data[:base_path], file_path)
+          base_file = nested_path(branch_data[:base_path], file_path)
           return nil unless File.exist?(base_file)
 
           File.read(base_file)
@@ -88,8 +92,9 @@ module RubyDB
 
       def write_file(branch_name, file_path, content)
         @lock.synchronize do
-          cow_path = File.join(@cow_dir, branch_name)
-          cow_file = File.join(cow_path, file_path)
+          cow_path = branch_path(branch_name)
+          cow_file = cow_path && nested_path(cow_path, file_path)
+          return { success: false, error: "Invalid branch name or file path" } unless cow_file
           FileUtils.mkdir_p(File.dirname(cow_file))
 
           File.write(cow_file, content)
@@ -109,8 +114,9 @@ module RubyDB
 
       def delete_file(branch_name, file_path)
         @lock.synchronize do
-          cow_path = File.join(@cow_dir, branch_name)
-          cow_file = File.join(cow_path, file_path)
+          cow_path = branch_path(branch_name)
+          cow_file = cow_path && nested_path(cow_path, file_path)
+          return { success: false, error: "Invalid branch name or file path" } unless cow_file
 
           if File.exist?(cow_file)
             File.delete(cow_file)
@@ -131,7 +137,8 @@ module RubyDB
 
       def list_cow_files(branch_name)
         @lock.synchronize do
-          cow_path = File.join(@cow_dir, branch_name)
+          cow_path = branch_path(branch_name)
+          return [] unless cow_path
           return [] unless Dir.exist?(cow_path)
 
           Dir.glob(File.join(cow_path, "**/*")).select do |f|
@@ -142,7 +149,8 @@ module RubyDB
 
       def delete_branch_cow(branch_name)
         @lock.synchronize do
-          cow_path = File.join(@cow_dir, branch_name)
+          cow_path = branch_path(branch_name)
+          return { success: false, error: "Invalid branch name" } unless cow_path
           if Dir.exist?(cow_path)
             size = calculate_dir_size(cow_path)
             FileUtils.rm_rf(cow_path)
@@ -159,10 +167,12 @@ module RubyDB
 
       def snapshot(branch_name, snapshot_name)
         @lock.synchronize do
-          cow_path = File.join(@cow_dir, branch_name)
+          cow_path = branch_path(branch_name)
+          return { success: false, error: "Invalid branch name" } unless cow_path
           return { success: false, error: "Branch COW not found" } unless Dir.exist?(cow_path)
 
-          snapshot_path = File.join(@cow_dir, "snapshots", snapshot_name)
+          snapshot_path = snapshot_path(snapshot_name)
+          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
           FileUtils.mkdir_p(File.dirname(snapshot_path))
 
           # Copy all COW files
@@ -174,10 +184,12 @@ module RubyDB
 
       def restore_snapshot(snapshot_name, branch_name)
         @lock.synchronize do
-          snapshot_path = File.join(@cow_dir, "snapshots", snapshot_name)
+          snapshot_path = snapshot_path(snapshot_name)
+          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
           return { success: false, error: "Snapshot not found" } unless Dir.exist?(snapshot_path)
 
-          cow_path = File.join(@cow_dir, branch_name)
+          cow_path = branch_path(branch_name)
+          return { success: false, error: "Invalid branch name" } unless cow_path
           FileUtils.rm_rf(cow_path) if Dir.exist?(cow_path)
           FileUtils.cp_r(snapshot_path, cow_path)
 
@@ -196,6 +208,33 @@ module RubyDB
       end
 
       private
+
+      def branch_path(branch_name)
+        name = branch_name.to_s
+        return nil unless safe_name?(name)
+
+        nested_path(@cow_dir, name)
+      end
+
+      def snapshot_path(snapshot_name)
+        name = snapshot_name.to_s
+        return nil unless safe_name?(name)
+
+        nested_path(File.join(@cow_dir, "snapshots"), name)
+      end
+
+      def safe_name?(name)
+        !name.empty? && name == File.basename(name) && !Pathname.new(name).absolute?
+      end
+
+      def nested_path(root_path, relative_path)
+        relative = relative_path.to_s
+        return nil if relative.empty? || Pathname.new(relative).absolute?
+
+        root = File.expand_path(root_path)
+        path = File.expand_path(File.join(root, relative))
+        path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+      end
 
       def load_cow_data
         data_file = File.join(@cow_dir, "cow_data.json")

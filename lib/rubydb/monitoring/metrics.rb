@@ -3,6 +3,7 @@
 require "time"
 require "thread"
 require "json"
+require "monitor"
 
 module RubyDB
   module Monitoring
@@ -19,7 +20,10 @@ module RubyDB
       def initialize(config = {})
         @config = config
         @metrics = {}
-        @lock = Mutex.new
+        # Mutating helpers call counter/gauge/histogram, which also acquire
+        # the lock. A reentrant monitor prevents self-deadlock while keeping
+        # metric updates atomic across threads.
+        @lock = Monitor.new
         @collectors = []
         @flush_interval = config[:flush_interval] || 60
         @retention_period = config[:retention_period] || 3600
@@ -274,14 +278,66 @@ module RubyDB
         end
       end
 
+      # Render the current metrics using the Prometheus text exposition
+      # format. Labels are escaped and metric names are normalized so this
+      # output can be scraped without trusting caller-provided names.
+      def to_prometheus
+        @lock.synchronize do
+          lines = []
+          @metrics.each_value do |metric|
+            name = prometheus_name(metric[:name])
+            labels = prometheus_labels(metric[:labels])
+            case metric[:type]
+            when TYPE_COUNTER, TYPE_GAUGE
+              lines << "#{name}#{labels} #{metric[:value]}"
+            when TYPE_HISTOGRAM
+              values = metric[:values]
+              metric[:buckets].each do |bucket|
+                count = values.count { |value| value <= bucket }
+                lines << "#{name}_bucket#{prometheus_labels(metric[:labels].merge(le: bucket))} #{count}"
+              end
+              inf_label = "+Inf"
+              lines << "#{name}_bucket#{prometheus_labels(metric[:labels].merge(le: inf_label))} #{values.size}"
+              lines << "#{name}_count#{labels} #{values.size}"
+              lines << "#{name}_sum#{labels} #{values.sum}"
+            when TYPE_SUMMARY
+              sorted = metric[:values].sort
+              [0.5, 0.9, 0.99].each do |quantile|
+                index = [(sorted.size * quantile).ceil - 1, 0].max
+                value = sorted.empty? ? 0 : sorted[index]
+                lines << "#{name}#{prometheus_labels(metric[:labels].merge(quantile: quantile))} #{value}"
+              end
+              lines << "#{name}_count#{labels} #{sorted.size}"
+              lines << "#{name}_sum#{labels} #{sorted.sum}"
+            end
+          end
+          lines.join("\n") + (lines.empty? ? "" : "\n")
+        end
+      end
+
       private
 
       def metric_key(name, labels)
-        key = name.to_s
+        key = name.to_s.dup
         labels.each do |k, v|
           key << "_#{k}_#{v}"
         end
         key
+      end
+
+      def prometheus_name(name)
+        normalized = name.to_s.gsub(/[^a-zA-Z0-9_:]/, "_")
+        normalized = "rubydb_#{normalized}" unless normalized.start_with?("rubydb_")
+        normalized
+      end
+
+      def prometheus_labels(labels)
+        return "" if labels.empty?
+        encoded = labels.sort_by { |key, _| key.to_s }.map do |key, value|
+          escaped = value.to_s.gsub(/\\/, "\\\\").gsub('"', '\\"').gsub("\n", "\\n")
+          "#{key}=\"#{escaped}\""
+        end
+        "{#{encoded.join(',')}}"
       end
 
       def start_flush_thread

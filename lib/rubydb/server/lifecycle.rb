@@ -131,8 +131,10 @@ module RubyDB
             # Check connection pool
             pool = @server.connection_pool
             if pool && pool.total_connections > 0
-              # Check if connections are responsive
-              # In production, would ping a connection
+              if pool.respond_to?(:healthy?) && !pool.healthy?
+                @stats[:health_check_failures] += 1
+                return false
+              end
             end
 
             true
@@ -211,9 +213,14 @@ module RubyDB
         end
 
         # SIGHUP - Restart
-        trap("HUP") do
-          puts "Received SIGHUP, restarting..."
-          restart
+        begin
+          trap("HUP") do
+            puts "Received SIGHUP, restarting..."
+            restart
+          end
+        rescue ArgumentError
+          # Windows does not expose SIGHUP; restart remains available via
+          # the explicit server API.
         end
       end
     end

@@ -52,9 +52,9 @@ module RubyDB
 
       def self.deserialize(data)
         view = new(data[:name], data[:query], materialized: data[:materialized] || false)
-        view.columns = data[:columns] if data[:columns]
-        view.created_at = Time.parse(data[:created_at]) if data[:created_at]
-        view.modified_at = Time.parse(data[:modified_at]) if data[:modified_at]
+        view.send(:columns=, data[:columns]) if data[:columns]
+        view.send(:created_at=, Time.parse(data[:created_at])) if data[:created_at]
+        view.send(:modified_at=, Time.parse(data[:modified_at])) if data[:modified_at]
         view
       end
 
