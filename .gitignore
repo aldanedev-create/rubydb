@@ -15,6 +15,10 @@
 *.rdb
 *.rdb-wal
 *.rdb-shm
+*.rdb.metadata
+*.rdb.mvcc
+*.rdb.visibility
+*.rdb.wal/
 /data/
 /log/
 *.log
