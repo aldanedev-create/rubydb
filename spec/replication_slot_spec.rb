@@ -16,6 +16,9 @@ RSpec.describe RubyDB::Replication::Primary do
       restarted = described_class.new(engine, log_dir: File.join(dir, "log-restarted"))
       restored = restarted.replication_slots.fetch("replica_a")
       expect(restored.confirmed_lsn).to eq(42)
+    ensure
+      primary&.stop
+      restarted&.stop
     end
   end
 end

@@ -29,6 +29,7 @@ module RubyDB
           replication_timeout: config[:replication_timeout] || 60,
           heartbeat_interval: config[:heartbeat_interval] || 10,
           enable_slots: config[:enable_slots] != false,
+          log_dir: config[:log_dir] || "#{@engine.path}.replication_log",
           fence_path: config[:fence_path] || "#{@engine.path}.fence",
           node_id: config[:node_id] || "primary_#{Process.pid}"
         }
@@ -65,6 +66,7 @@ module RubyDB
           return if @running
 
           @fencing_lease.assert_valid!
+          @replication_log = ReplicationLog.new(@engine, @config) if @replication_log.closed?
 
           @running = true
 
@@ -81,7 +83,10 @@ module RubyDB
 
       def stop
         @lock.synchronize do
-          return unless @running
+          unless @running
+            @replication_log.close unless @replication_log.closed?
+            return true
+          end
 
           @running = false
 
@@ -90,6 +95,7 @@ module RubyDB
 
           @heartbeat_thread&.kill
           @heartbeat_thread = nil
+          @replication_log.close
 
           puts "Primary replication stopped"
           true

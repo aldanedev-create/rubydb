@@ -36,4 +36,47 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
 
     expect(loaded.attributes).to include("id" => 1, "email" => "ada@example.test", "active" => true)
   end
+
+  it "runs a Rails migration that creates a table, adds a column, and adds an index" do
+    migration = Class.new(ActiveRecord::Migration[7.2]) do
+      def change
+        create_table :projects do |table|
+          table.string :name, null: false
+        end
+        add_column :projects, :active, :boolean, default: true, null: false
+        add_index :projects, :name, unique: true
+      end
+    end
+
+    migration.new.migrate(:up)
+    connection = ActiveRecord::Base.connection
+
+    expect(connection.table_exists?(:projects)).to be(true)
+    expect(connection.columns(:projects).map(&:name)).to include("id", "name", "active")
+    expect(connection.indexes(:projects)).to include(an_object_having_attributes(name: "idx_projects_name", unique: true))
+
+    migration.new.migrate(:down)
+    expect(connection.table_exists?(:projects)).to be(false)
+  end
+
+  it "executes an ActiveRecord association join with qualified filtering" do
+    stub_const("RubydbAccount", Class.new(ActiveRecord::Base) do
+      self.table_name = "accounts"
+      has_many :rubydb_projects, class_name: "RubydbProject", foreign_key: :account_id
+    end)
+    stub_const("RubydbProject", Class.new(ActiveRecord::Base) do
+      self.table_name = "projects"
+      belongs_to :rubydb_account, class_name: "RubydbAccount", foreign_key: :account_id
+    end)
+
+    connection = ActiveRecord::Base.connection
+    connection.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY, email VARCHAR(255) NOT NULL)")
+    connection.execute("CREATE TABLE projects (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL, name VARCHAR(255) NOT NULL)")
+    account = RubydbAccount.create!(id: 1, email: "ada@example.test")
+    RubydbProject.create!(id: 10, account_id: account.id, name: "RubyDB")
+
+    projects = RubydbProject.joins(:rubydb_account).where(accounts: { email: "ada@example.test" }).to_a
+
+    expect(projects.map(&:attributes)).to include(hash_including("id" => 10, "name" => "RubyDB", "account_id" => 1))
+  end
 end

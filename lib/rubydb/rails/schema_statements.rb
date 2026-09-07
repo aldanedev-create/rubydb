@@ -49,10 +49,19 @@ module RubyDB
         columns = []
         constraints = []
 
+        # Rails creates an integer primary key unless a migration explicitly
+        # requests id: false. Keep the same default for both the standalone
+        # RubyDB adapter and ActiveRecord's migration DSL.
+        unless options[:id] == false
+          primary_key_name = options[:primary_key] || :id
+          primary_key_type = options[:id].is_a?(Symbol) ? options[:id] : :integer
+          columns << RubyDB::Catalog::Column.new(primary_key_name, primary_key_type, primary_key: true, null: false)
+        end
+
         if block_given?
           table_definition = TableDefinition.new(self, table_name, options)
           yield table_definition
-          columns = table_definition.columns
+          columns.concat(table_definition.columns)
           constraints = table_definition.constraints
         end
 

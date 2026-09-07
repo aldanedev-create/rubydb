@@ -76,6 +76,7 @@ module RubyDB
         columns = parse_select_columns
         expect(Token::Type::FROM)
         from = parse_table_reference
+        joins = parse_joins
 
         where = nil
         if current_token&.type == Token::Type::WHERE
@@ -102,13 +103,18 @@ module RubyDB
           offset = parse_expression
         end
 
-        AST::Select.new(columns, from, where, order_by, limit, offset, distinct)
+        AST::Select.new(columns, from, where, order_by, limit, offset, distinct, joins: joins)
       end
 
       def parse_select_columns
         columns = []
         while true
-          if current_token&.type == Token::Type::STAR
+          if qualified_star?
+            table = expect(Token::Type::IDENTIFIER).value
+            expect(Token::Type::DOT)
+            expect(Token::Type::STAR)
+            columns << AST::SelectColumn.new(AST::Star.new(table: table))
+          elsif current_token&.type == Token::Type::STAR
             columns << AST::Star.new
             advance
           else
@@ -132,6 +138,12 @@ module RubyDB
         columns
       end
 
+      def qualified_star?
+        current_token&.type == Token::Type::IDENTIFIER &&
+          @tokens[@position + 1]&.type == Token::Type::DOT &&
+          @tokens[@position + 2]&.type == Token::Type::STAR
+      end
+
       def parse_table_reference
         table = expect(Token::Type::IDENTIFIER).value
         alias_name = nil
@@ -143,6 +155,44 @@ module RubyDB
           advance
         end
         AST::TableRef.new(table, alias_name)
+      end
+
+      def parse_joins
+        joins = []
+        while join_start?
+          join_type = parse_join_type
+          table = parse_table_reference
+          condition = nil
+          if current_token&.type == Token::Type::ON
+            advance
+            condition = parse_expression
+          elsif join_type != :cross
+            raise ParserError, "Expected ON clause for #{join_type.to_s.upcase} JOIN"
+          end
+          joins << AST::Join.new(join_type, table, condition)
+        end
+        joins
+      end
+
+      def join_start?
+        [Token::Type::JOIN, Token::Type::INNER, Token::Type::LEFT].include?(current_token&.type)
+      end
+
+      def parse_join_type
+        case current_token&.type
+        when Token::Type::JOIN
+          advance
+          :inner
+        when Token::Type::INNER
+          advance
+          expect(Token::Type::JOIN)
+          :inner
+        when Token::Type::LEFT
+          advance
+          advance if current_token&.type == Token::Type::OUTER
+          expect(Token::Type::JOIN)
+          :left
+        end
       end
 
       def parse_expression
@@ -254,7 +304,11 @@ module RubyDB
         when Token::Type::IDENTIFIER
           ident = current_token.value
           advance
-          if current_token&.type == Token::Type::LPAREN
+          if current_token&.type == Token::Type::DOT
+            advance
+            column = expect(Token::Type::IDENTIFIER).value
+            AST::Identifier.new(column, table: ident)
+          elsif current_token&.type == Token::Type::LPAREN
             # Function call
             advance
             args = []
@@ -807,6 +861,7 @@ module RubyDB
         case current_token&.type
         when Token::Type::ADD
           advance
+          skip_optional_column_keyword
           if current_token&.type == Token::Type::CONSTRAINT
             advance
             constraint_name = expect(Token::Type::IDENTIFIER).value
@@ -820,6 +875,7 @@ module RubyDB
           end
         when Token::Type::DROP
           advance
+          skip_optional_column_keyword
           if current_token&.type == Token::Type::CONSTRAINT
             advance
             constraint_name = expect(Token::Type::IDENTIFIER).value
@@ -839,6 +895,13 @@ module RubyDB
           advance
         end
         AST::BeginTransaction.new
+      end
+
+      def skip_optional_column_keyword
+        return unless current_token&.type == Token::Type::IDENTIFIER
+        return unless current_token.value.to_s.casecmp("COLUMN").zero?
+
+        advance
       end
 
       def parse_commit

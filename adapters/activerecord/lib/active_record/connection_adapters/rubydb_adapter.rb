@@ -104,7 +104,7 @@ module ActiveRecord
       end
 
       def supports_bulk_alter?
-        true
+        false
       end
 
       def native_database_types
@@ -154,6 +154,17 @@ module ActiveRecord
       end
 
       def indexes(table_name)
+        if embedded?
+          return @connection.engine.index_manager.get_indexes_for_table(table_name.to_s).map do |index|
+            ActiveRecord::ConnectionAdapters::IndexDefinition.new(
+              table_name.to_s,
+              index.name.to_s,
+              index.unique,
+              index.columns.map(&:to_s)
+            )
+          end
+        end
+
         result = execute("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=?", [table_name])
         result.map do |row|
           {
@@ -197,7 +208,6 @@ module ActiveRecord
 
       def exec_query(sql, name = nil, binds = [])
         sql = sql_for_execution(sql)
-        warn "RubyDB ActiveRecord query: #{sql}" if ENV["RUBYDB_DEBUG_SQL"] == "1"
         log(sql, name) do
           params = binds.map { |bind| bind.value }
           active_record_result(@connection.execute(sql, params))
@@ -251,6 +261,7 @@ module ActiveRecord
       end
 
       def select_all(sql, name = nil, binds = [], preparable: nil, async: false, allow_retry: false)
+        sql, binds = to_sql_and_binds(sql, binds)
         exec_query(sql, name, binds)
       end
 
@@ -323,11 +334,11 @@ module ActiveRecord
       # ==================== SCHEMA STATEMENT METHODS ====================
 
       def create_table(table_name, **options, &block)
-        super
+        RubyDB::Rails::SchemaStatements.instance_method(:create_table).bind_call(self, table_name, options, &block)
       end
 
       def drop_table(table_name, **options)
-        sql = "DROP TABLE"
+        sql = +"DROP TABLE"
         sql << " IF EXISTS" if options[:if_exists]
         sql << " #{quote_table_name(table_name)}"
         sql << " CASCADE" if options[:cascade]
@@ -403,7 +414,7 @@ module ActiveRecord
 
       def add_index(table_name, column_name, **options)
         index_name = options[:name] || "idx_#{table_name}_#{Array(column_name).join('_')}"
-        sql = "CREATE"
+        sql = +"CREATE"
         sql << " UNIQUE" if options[:unique]
         sql << " INDEX #{quote_column_name(index_name)}"
         sql << " ON #{quote_table_name(table_name)}"
@@ -412,15 +423,14 @@ module ActiveRecord
         execute(sql)
       end
 
-      def remove_index(table_name, **options)
+      def remove_index(table_name, column_name = nil, **options)
         index_name = options[:name]
         if index_name.nil?
-          column_name = options[:column] || options[:columns]
+          column_name ||= options[:column] || options[:columns]
           index_name = "idx_#{table_name}_#{Array(column_name).join('_')}"
         end
 
         sql = "DROP INDEX #{quote_column_name(index_name)}"
-        sql << " ON #{quote_table_name(table_name)}"
         execute(sql)
       end
 
@@ -634,7 +644,7 @@ module ActiveRecord
       end
 
       def supports_common_table_expressions?
-        true
+        false
       end
 
       # ==================== PRIVATE METHODS ====================
@@ -649,7 +659,7 @@ module ActiveRecord
         @connection.engine.table_columns(table_name).map do |column|
           ActiveRecord::ConnectionAdapters::Column.new(
             column.name.to_s,
-            column.has_default? ? column.default : nil,
+            column.has_default? ? rails_default_value(column.default) : nil,
             ActiveRecord::ConnectionAdapters::SqlTypeMetadata.new(
               sql_type: column.type.to_s.upcase,
               type: rails_type_for(column.type),
@@ -675,21 +685,27 @@ module ActiveRecord
         end
       end
 
+      # ActiveRecord's generic Column deduplication is string-oriented. RubyDB
+      # persists typed defaults, so serialize scalar defaults at this boundary
+      # and let ActiveRecord cast them through the column type map.
+      def rails_default_value(value)
+        value.is_a?(String) ? value : value.to_s
+      end
+
       def sql_for_execution(sql)
         sql = sql.to_sql if sql.respond_to?(:to_sql)
-        # RubyDB's SQL parser currently accepts unqualified column names.
-        # ActiveRecord emits quoted table-qualified names for even the simplest
-        # model lookup, so strip only the qualifier from generated identifiers.
-        sql = sql.gsub(/(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\.\*/, "*")
-        sql.gsub(/(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\.(?="[^"]+"|[A-Za-z_][A-Za-z0-9_]*)/, "")
+        sql
       end
 
       def active_record_result(result)
         rows = result.to_a
-        columns = result.columns.map do |column|
-          column.is_a?(Hash) ? (column[:name] || column["name"] || column) : column
-        end.map(&:to_s)
-        columns = rows.first.keys.map(&:to_s) if columns.empty? && rows.first.respond_to?(:keys)
+        columns = if rows.first.respond_to?(:keys)
+          rows.first.keys.map(&:to_s)
+        else
+          result.columns.map do |column|
+            column.is_a?(Hash) ? (column[:name] || column["name"] || column) : column
+          end.map(&:to_s)
+        end
         values = rows.map do |row|
           columns.map { |column| row[column] || row[column.to_sym] }
         end

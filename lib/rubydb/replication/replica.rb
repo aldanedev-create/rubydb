@@ -42,7 +42,8 @@ module RubyDB
           reconnect_attempts: 0,
           last_connect_time: nil,
           last_disconnect_time: nil,
-          total_uptime_ms: 0
+          total_uptime_ms: 0,
+          last_error: nil
         }
         @lock = Monitor.new
         @running = false
@@ -145,6 +146,7 @@ module RubyDB
               reconnect
             end
           rescue => e
+            @stats[:last_error] = "#{e.class}: #{e.message}"
             @state = STATE_FAILED
             @stats[:reconnect_attempts] += 1
             sleep(@retry_interval)
@@ -180,6 +182,7 @@ module RubyDB
             end
 
           rescue => e
+            @stats[:last_error] = "#{e.class}: #{e.message}"
             @state = STATE_FAILED
             @stats[:reconnect_attempts] += 1
             raise

@@ -385,8 +385,11 @@ module RubyDB
 
       # Star (*) in SELECT
       class Star < Expression
-        def initialize(location: nil)
+        attr_reader :table
+
+        def initialize(table: nil, location: nil)
           super(location: location)
+          @table = table
         end
 
         def accept(visitor)
@@ -394,15 +397,15 @@ module RubyDB
         end
 
         def clone
-          Star.new(location: @location)
+          Star.new(table: @table, location: @location)
         end
 
         def to_sql
-          "*"
+          @table ? "#{@table}.*" : "*"
         end
 
         def inspect
-          "Star"
+          @table ? "Star(#{@table}.*)" : "Star"
         end
       end
 
@@ -473,6 +476,39 @@ module RubyDB
           else
             "TableRef(#{@name})"
           end
+        end
+      end
+
+      # A joined table and its ON predicate. JOIN support is intentionally
+      # represented in the regular SELECT AST so parser, planner and executor
+      # all agree on table aliases and qualified identifiers.
+      class Join < Node
+        attr_reader :type, :table, :condition
+
+        def initialize(type, table, condition = nil, location: nil)
+          super(location: location)
+          @type = type
+          @table = table
+          @condition = condition
+        end
+
+        def accept(visitor)
+          visitor.visit_join(self)
+        end
+
+        def clone
+          Join.new(@type, @table.clone, @condition&.clone, location: @location)
+        end
+
+        def to_sql
+          keyword = @type == :left ? "LEFT JOIN" : "INNER JOIN"
+          sql = "#{keyword} #{@table.to_sql}"
+          sql << " ON #{@condition.to_sql}" if @condition
+          sql
+        end
+
+        def inspect
+          "Join(#{@type}, #{@table.inspect}, #{@condition.inspect})"
         end
       end
 

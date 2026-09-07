@@ -14,7 +14,9 @@ module RubyDB
       def initialize(engine, config = {})
         @engine = engine
         @config = config
-        @log_dir = config[:log_dir] || "replication_log"
+        # A replication log belongs to one database. A process-wide relative
+        # directory can mix records from unrelated clusters after restart.
+        @log_dir = config[:log_dir] || "#{@engine.path}.replication_log"
         @max_segment_size = config[:max_segment_size] || 16 * 1024 * 1024
         @keep_segments = config[:keep_segments] || 100
         @current_segment = nil
@@ -155,6 +157,10 @@ module RubyDB
           @current_segment = nil
           true
         end
+      end
+
+      def closed?
+        @current_segment.nil? || @current_segment.closed?
       end
 
       private

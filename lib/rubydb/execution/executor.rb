@@ -104,8 +104,17 @@ module RubyDB
         @stats[:sequential_scans] += 1 if plan.scan_type == :sequential
         @stats[:index_scans] += 1 if plan.scan_type == :index
 
-        # Get the table data
-        rows = scan_table(plan)
+        # Qualify source rows before evaluating predicates. This preserves
+        # SQL's table/alias namespace while retaining unqualified keys for
+        # existing single-table callers.
+        rows = qualify_rows(scan_table(plan), plan.source_reference || plan.table_name)
+        plan.joins.each do |join|
+          right_rows = qualify_rows(
+            @engine.select_rows(join[:table].name, @engine.table_columns(join[:table].name)),
+            join[:table]
+          )
+          rows = execute_join(rows, right_rows, join)
+        end
 
         # Apply filters (WHERE clause)
         if plan.predicate
@@ -451,6 +460,36 @@ module RubyDB
         end
       end
 
+      def qualify_rows(rows, table_reference)
+        table_name = table_reference.respond_to?(:name) ? table_reference.name : table_reference
+        alias_name = table_reference.respond_to?(:alias_name) ? table_reference.alias_name : nil
+        rows.map do |row|
+          row.each_with_object({}) do |(key, value), qualified|
+            key = key.to_s
+            qualified[key] = value
+            qualified["#{table_name}.#{key}"] = value
+            qualified["#{alias_name}.#{key}"] = value if alias_name
+          end
+        end
+      end
+
+      def execute_join(left_rows, right_rows, join)
+        result = []
+        left_rows.each do |left_row|
+          matches = right_rows.select { |right_row| evaluate_predicate(join[:predicate], merge_join_rows(left_row, right_row)) }
+          if matches.empty?
+            result << merge_join_rows(left_row, nil) if join[:type] == :left
+          else
+            matches.each { |right_row| result << merge_join_rows(left_row, right_row) }
+          end
+        end
+        result
+      end
+
+      def merge_join_rows(left_row, right_row)
+        (left_row || {}).merge(right_row || {}) { |_key, left_value, _right_value| left_value }
+      end
+
       # Predicate evaluation
       def evaluate_predicate(predicate, row)
         case predicate
@@ -489,7 +528,10 @@ module RubyDB
         when SQL::AST::Literal
           expr.value
         when SQL::AST::Identifier
-          row ? (row[expr.name] || row[expr.name.to_sym]) : nil
+          return nil unless row
+
+          qualified_name = expr.table && "#{expr.table}.#{expr.name}"
+          row[qualified_name] || row[expr.name] || row[expr.name.to_sym]
         when SQL::AST::UnaryOp
           apply_ast_unary_op(expr.operator, evaluate_expression(expr.operand, row))
         when SQL::AST::BinaryOp
@@ -503,7 +545,10 @@ module RubyDB
         when Expression::Literal
           expr.value
         when Expression::Column
-          row ? row[expr.name] : nil
+          return nil unless row
+
+          qualified_name = expr.table && "#{expr.table}.#{expr.name}"
+          row[qualified_name] || row[expr.name] || row[expr.name.to_sym]
         when Expression::BinaryOp
           left = evaluate_expression(expr.left, row)
           right = evaluate_expression(expr.right, row)
@@ -641,7 +686,21 @@ module RubyDB
           expression = proj.respond_to?(:expression) ? proj.expression : proj
 
           if expression.is_a?(SQL::AST::Star)
-            result.merge!(row)
+            if expression.table
+              prefix = "#{expression.table}."
+              row.each do |key, value|
+                key = key.to_s
+                next unless key.start_with?(prefix)
+
+                column = key.delete_prefix(prefix)
+                result[column] = value unless column.start_with?("_")
+              end
+            else
+              row.each do |key, value|
+                key = key.to_s
+                result[key] = value unless key.include?(".") || key.start_with?("_")
+              end
+            end
           elsif expression.is_a?(String) || expression.is_a?(Symbol)
             result[expression.to_s] = row[expression.to_s]
           else

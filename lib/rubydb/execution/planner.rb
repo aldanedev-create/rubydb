@@ -91,9 +91,16 @@ module RubyDB
         columns = statement.columns.map { |col| col.expression.name rescue col.to_s }
 
         plan = Plan::Select.new(table_name, columns)
+        plan.set_source_reference(statement.from)
+
+        if statement.joins&.any?
+          plan.set_joins(statement.joins.map do |join|
+            { type: join.type, table: join.table, predicate: build_predicate(join.condition) }
+          end)
+        end
 
         # Handle projections
-        if statement.columns.any? && !statement.has_star?
+        if statement.columns.any?
           plan.set_projections(statement.columns)
         end
 
@@ -106,7 +113,9 @@ module RubyDB
         # Handle ORDER BY
         if statement.order_by&.any?
           order_by = statement.order_by.map do |order|
-            { column: order.expression.name, direction: order.direction }
+            column = order.expression.respond_to?(:name) ? order.expression.name : order.expression.to_s
+            table = order.expression.respond_to?(:table) ? order.expression.table : nil
+            { column: table ? "#{table}.#{column}" : column, direction: order.direction }
           end
           plan.set_order_by(order_by)
         end

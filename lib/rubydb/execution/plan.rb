@@ -7,7 +7,7 @@ module RubyDB
       attr_reader :type, :table_name, :columns, :projections, :predicate,
                   :order_by, :group_by, :aggregates, :limit, :offset,
                   :distinct, :scan_type, :index, :estimated_cost,
-                  :estimated_rows
+                  :estimated_rows, :joins, :source_reference
 
       def initialize(type, table_name = nil, columns = [])
         @type = type
@@ -25,6 +25,8 @@ module RubyDB
         @index = nil
         @estimated_cost = 0
         @estimated_rows = 0
+        @joins = []
+        @source_reference = nil
       end
 
       def set_projections(projections)
@@ -56,6 +58,16 @@ module RubyDB
 
       def set_distinct(distinct = true)
         @distinct = distinct
+        self
+      end
+
+      def set_joins(joins)
+        @joins = joins
+        self
+      end
+
+      def set_source_reference(reference)
+        @source_reference = reference
         self
       end
 

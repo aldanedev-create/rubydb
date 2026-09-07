@@ -5,9 +5,9 @@ module RubyDB
     module AST
       # SELECT statement AST node
       class Select < Node
-        attr_reader :columns, :from, :where, :order_by, :limit, :offset, :distinct, :group_by
+        attr_reader :columns, :from, :where, :order_by, :limit, :offset, :distinct, :group_by, :joins
 
-        def initialize(columns, from, where = nil, order_by = nil, limit = nil, offset = nil, distinct = false, location: nil)
+        def initialize(columns, from, where = nil, order_by = nil, limit = nil, offset = nil, distinct = false, joins: [], location: nil)
           super(location: location)
           @columns = columns
           @from = from
@@ -17,6 +17,7 @@ module RubyDB
           @offset = offset
           @distinct = distinct
           @group_by = []
+          @joins = joins
         end
 
         def accept(visitor)
@@ -32,6 +33,7 @@ module RubyDB
             @limit&.clone,
             @offset&.clone,
             @distinct,
+            joins: @joins.map(&:clone),
             location: @location
           )
         end
@@ -42,6 +44,7 @@ module RubyDB
           parts << "DISTINCT" if @distinct
           parts << @columns.map(&:to_sql).join(", ")
           parts << "FROM #{@from.to_sql}"
+          parts.concat(@joins.map(&:to_sql))
           parts << "WHERE #{@where.to_sql}" if @where
           parts << "ORDER BY #{@order_by.map(&:to_sql).join(", ")}" if @order_by.any?
           parts << "LIMIT #{@limit.to_sql}" if @limit
@@ -52,6 +55,7 @@ module RubyDB
         def inspect
           cols = @columns.map(&:inspect).join(", ")
           str = "Select(columns: [#{cols}], from: #{@from.inspect}"
+          str << ", joins: #{@joins.map(&:inspect).join(', ')}" if @joins.any?
           str << ", where: #{@where.inspect}" if @where
           str << ", order_by: #{@order_by.map(&:inspect).join(", ")}" if @order_by.any?
           str << ", limit: #{@limit.inspect}" if @limit
