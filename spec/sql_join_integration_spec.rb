@@ -53,6 +53,9 @@ RSpec.describe "SQL joins" do
         { "account_email" => "grace@example.test", "project_name" => nil },
         { "account_email" => nil, "project_name" => "Unassigned" }
       )
+
+      cross = connection.execute("SELECT accounts.id AS account_id, projects.id AS project_id FROM accounts CROSS JOIN projects").to_a
+      expect(cross.size).to eq(4)
     ensure
       connection&.disconnect
       engine&.close if engine&.open?

@@ -30,6 +30,7 @@ module RubyDB
         "RIGHT" => Token::Type::RIGHT,
         "OUTER" => Token::Type::OUTER,
         "FULL" => Token::Type::FULL,
+        "CROSS" => Token::Type::CROSS,
         "ON" => Token::Type::ON,
         "AS" => Token::Type::AS,
         "DISTINCT" => Token::Type::DISTINCT,

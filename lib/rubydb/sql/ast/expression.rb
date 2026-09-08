@@ -504,7 +504,8 @@ module RubyDB
           keyword = {
             left: "LEFT JOIN",
             right: "RIGHT JOIN",
-            full: "FULL JOIN"
+            full: "FULL JOIN",
+            cross: "CROSS JOIN"
           }.fetch(@type, "INNER JOIN")
           sql = "#{keyword} #{@table.to_sql}"
           sql << " ON #{@condition.to_sql}" if @condition

@@ -474,6 +474,8 @@ module RubyDB
       end
 
       def execute_join(left_rows, right_rows, join)
+        return left_rows.flat_map { |left_row| right_rows.map { |right_row| merge_join_rows(left_row, right_row) } } if join[:type] == :cross
+
         result = []
         matched_right = Array.new(right_rows.length, false)
         left_rows.each do |left_row|

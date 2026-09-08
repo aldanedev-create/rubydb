@@ -189,7 +189,7 @@ module RubyDB
       end
 
       def join_start?
-        [Token::Type::JOIN, Token::Type::INNER, Token::Type::LEFT, Token::Type::RIGHT, Token::Type::FULL].include?(current_token&.type)
+        [Token::Type::JOIN, Token::Type::INNER, Token::Type::LEFT, Token::Type::RIGHT, Token::Type::FULL, Token::Type::CROSS].include?(current_token&.type)
       end
 
       def parse_join_type
@@ -216,6 +216,10 @@ module RubyDB
           advance if current_token&.type == Token::Type::OUTER
           expect(Token::Type::JOIN)
           :full
+        when Token::Type::CROSS
+          advance
+          expect(Token::Type::JOIN)
+          :cross
         end
       end
 

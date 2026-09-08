@@ -31,6 +31,7 @@ module RubyDB
         RIGHT = :RIGHT
         OUTER = :OUTER
         FULL = :FULL
+        CROSS = :CROSS
         ON = :ON
         AS = :AS
         DISTINCT = :DISTINCT
