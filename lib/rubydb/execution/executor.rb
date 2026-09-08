@@ -123,12 +123,16 @@ module RubyDB
 
         # ORDER BY is evaluated against the source rows, so a column used
         # solely for ordering remains available even when it is not selected.
-        if plan.order_by && !plan.order_by.empty? && (!plan.group_by || plan.group_by.empty?)
+        aggregating = plan.aggregates && !plan.aggregates.empty?
+        if plan.order_by && !plan.order_by.empty? && !aggregating
           rows = sort_rows(rows, plan.order_by)
         end
 
-        # Apply projections (SELECT columns)
-        if plan.projections
+        if aggregating
+          rows = aggregate_rows(rows, plan.group_by || [], plan.projections)
+          rows = rows.select { |row| evaluate_predicate(plan.having, row) } if plan.having
+        elsif plan.projections
+          # Apply projections (SELECT columns)
           rows = rows.map { |row| project_row(row, plan.projections) }
         end
 
@@ -138,12 +142,8 @@ module RubyDB
         end
 
         # Apply GROUP BY
-        if plan.group_by && !plan.group_by.empty?
-          rows = group_rows(rows, plan.group_by, plan.aggregates)
-        end
-
         # Apply ORDER BY
-        if plan.order_by && !plan.order_by.empty? && plan.group_by && !plan.group_by.empty?
+        if plan.order_by && !plan.order_by.empty? && aggregating
           rows = sort_rows(rows, plan.order_by)
         end
 
@@ -745,6 +745,52 @@ module RubyDB
           result << result_row
         end
         result
+      end
+
+      def aggregate_rows(rows, group_by, projections)
+        groups = {}
+        if group_by.empty?
+          groups[[]] = rows
+        else
+          rows.each do |row|
+            key = group_by.map { |expression| evaluate_expression(expression, row) }
+            (groups[key] ||= []) << row
+          end
+        end
+
+        groups.map do |_key, group|
+          representative = group.first || {}
+          projections.each_with_object({}) do |projection, result|
+            expression = projection.respond_to?(:expression) ? projection.expression : projection
+            name = projection_name(projection)
+            result[name] = if aggregate_function?(expression)
+              apply_aggregate_function(expression, group)
+            else
+              evaluate_expression(expression, representative)
+            end
+          end
+        end
+      end
+
+      def aggregate_function?(expression)
+        expression.is_a?(SQL::AST::FunctionCall) && %w[COUNT SUM AVG MIN MAX].include?(expression.name.to_s.upcase)
+      end
+
+      def apply_aggregate_function(expression, rows)
+        argument = expression.arguments.first
+        values = if argument.is_a?(SQL::AST::Star)
+          rows
+        else
+          rows.map { |row| evaluate_expression(argument, row) }.compact
+        end
+
+        case expression.name.to_s.upcase
+        when "COUNT" then values.size
+        when "SUM" then values.sum
+        when "AVG" then values.empty? ? nil : values.sum / values.size.to_f
+        when "MIN" then values.min
+        when "MAX" then values.max
+        end
       end
 
       def apply_aggregate(agg, rows)

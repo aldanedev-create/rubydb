@@ -1,0 +1,30 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+require "tmpdir"
+
+RSpec.describe "SQL aggregates" do
+  it "executes grouped and global aggregates with HAVING through the normal SQL pipeline" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "aggregates.rdb"), auto_cleanup: false, auto_vacuum: false)
+      connection = RubyDB::Rails::Connection.new(engine: engine)
+      connection.connect
+      connection.execute("CREATE TABLE sales (id INTEGER PRIMARY KEY, region VARCHAR(32), amount INTEGER)")
+      connection.execute("INSERT INTO sales (id, region, amount) VALUES (1, 'east', 10)")
+      connection.execute("INSERT INTO sales (id, region, amount) VALUES (2, 'east', 15)")
+      connection.execute("INSERT INTO sales (id, region, amount) VALUES (3, 'west', 7)")
+
+      grouped = connection.execute(<<~SQL).to_a
+        SELECT region, COUNT(*) AS orders, SUM(amount) AS total
+        FROM sales GROUP BY region HAVING total >= 20 ORDER BY total DESC
+      SQL
+      global = connection.execute("SELECT COUNT(*) AS orders, AVG(amount) AS average_amount FROM sales").to_a
+
+      expect(grouped).to eq([{ "region" => "east", "orders" => 2, "total" => 25 }])
+      expect(global).to eq([{ "orders" => 3, "average_amount" => (32.0 / 3) }])
+    ensure
+      connection&.disconnect
+      engine&.close if engine&.open?
+    end
+  end
+end

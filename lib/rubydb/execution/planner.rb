@@ -121,11 +121,14 @@ module RubyDB
         end
 
         # Handle GROUP BY
-        if statement.group_by&.any?
-          group_by = statement.group_by.map { |g| g.expression.name rescue g.to_s }
-          aggregates = statement.columns.select { |c| c.expression.is_a?(SQL::AST::FunctionCall) }
-          plan.set_group_by(group_by, aggregates)
+        aggregates = statement.columns.select do |column|
+          expression = column.respond_to?(:expression) ? column.expression : column
+          expression.is_a?(SQL::AST::FunctionCall) && %w[COUNT SUM AVG MIN MAX].include?(expression.name.to_s.upcase)
         end
+        if statement.group_by&.any? || aggregates.any?
+          plan.set_group_by(statement.group_by || [], aggregates)
+        end
+        plan.set_having(build_predicate(statement.having)) if statement.having
 
         # Handle LIMIT and OFFSET
         if statement.limit

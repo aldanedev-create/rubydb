@@ -15,8 +15,9 @@ these capabilities.
    checkpoints and schema changes; add a durable write-ack protocol so callers
    cannot observe a failed metadata publication as a committed schema change.
 3. SQL correctness: ambiguous identifiers, outer-join NULL handling, boolean
-   preservation, aggregate semantics, and schema changes on populated tables.
-   Follow with subqueries, CTEs, set operations, window functions and upserts.
+   preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
+   schema changes on populated tables. Follow with subqueries, CTEs, set
+   operations, window functions and upserts.
 4. Replication: TCP frame buffering, durable replay positions, synchronized
    acknowledgements, bootstrap, transaction/WAL integration, read-only replicas,
    and promotion with an explicit recovery point. Validate partitions and stale

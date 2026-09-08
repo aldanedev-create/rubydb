@@ -5,8 +5,9 @@ a claim of PostgreSQL or SQLite compatibility.
 
 Supported and tested statements include:
 
-- `SELECT` with projections, `WHERE`, ordering, grouping, limits, offsets, and
-  built-in expressions
+- `SELECT` with projections, `WHERE`, ordering, limits, offsets, built-in
+  expressions, and `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` aggregates with
+  `GROUP BY` and `HAVING`
 - `INSERT`, `UPDATE`, and `DELETE`
 - `CREATE TABLE` and `DROP TABLE`, including primary keys, unique constraints,
   checks, foreign keys, and referential actions

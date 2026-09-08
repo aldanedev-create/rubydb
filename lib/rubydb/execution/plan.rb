@@ -6,7 +6,7 @@ module RubyDB
     class Plan
       attr_reader :type, :table_name, :columns, :projections, :predicate,
                   :order_by, :group_by, :aggregates, :limit, :offset,
-                  :distinct, :scan_type, :index, :estimated_cost,
+                  :distinct, :having, :scan_type, :index, :estimated_cost,
                   :estimated_rows, :joins, :source_reference
 
       def initialize(type, table_name = nil, columns = [])
@@ -21,6 +21,7 @@ module RubyDB
         @limit = nil
         @offset = nil
         @distinct = false
+        @having = nil
         @scan_type = :sequential
         @index = nil
         @estimated_cost = 0
@@ -47,6 +48,11 @@ module RubyDB
       def set_group_by(group_by, aggregates = [])
         @group_by = group_by
         @aggregates = aggregates
+        self
+      end
+
+      def set_having(having)
+        @having = having
         self
       end
 

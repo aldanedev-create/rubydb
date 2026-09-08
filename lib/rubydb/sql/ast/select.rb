@@ -5,9 +5,9 @@ module RubyDB
     module AST
       # SELECT statement AST node
       class Select < Node
-        attr_reader :columns, :from, :where, :order_by, :limit, :offset, :distinct, :group_by, :joins
+        attr_reader :columns, :from, :where, :order_by, :limit, :offset, :distinct, :group_by, :having, :joins
 
-        def initialize(columns, from, where = nil, order_by = nil, limit = nil, offset = nil, distinct = false, joins: [], location: nil)
+        def initialize(columns, from, where = nil, order_by = nil, limit = nil, offset = nil, distinct = false, joins: [], group_by: [], having: nil, location: nil)
           super(location: location)
           @columns = columns
           @from = from
@@ -16,7 +16,8 @@ module RubyDB
           @limit = limit
           @offset = offset
           @distinct = distinct
-          @group_by = []
+          @group_by = group_by
+          @having = having
           @joins = joins
         end
 
@@ -33,7 +34,7 @@ module RubyDB
             @limit&.clone,
             @offset&.clone,
             @distinct,
-            joins: @joins.map(&:clone),
+            joins: @joins.map(&:clone), group_by: @group_by.map(&:clone), having: @having&.clone,
             location: @location
           )
         end
@@ -46,6 +47,8 @@ module RubyDB
           parts << "FROM #{@from.to_sql}"
           parts.concat(@joins.map(&:to_sql))
           parts << "WHERE #{@where.to_sql}" if @where
+          parts << "GROUP BY #{@group_by.map(&:to_sql).join(', ')}" if @group_by.any?
+          parts << "HAVING #{@having.to_sql}" if @having
           parts << "ORDER BY #{@order_by.map(&:to_sql).join(", ")}" if @order_by.any?
           parts << "LIMIT #{@limit.to_sql}" if @limit
           parts << "OFFSET #{@offset.to_sql}" if @offset

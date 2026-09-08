@@ -84,6 +84,19 @@ module RubyDB
           where = parse_expression
         end
 
+        group_by = []
+        if current_token&.type == Token::Type::GROUP
+          advance
+          expect(Token::Type::BY)
+          group_by = parse_expression_list
+        end
+
+        having = nil
+        if current_token&.type == Token::Type::HAVING
+          advance
+          having = parse_expression
+        end
+
         order_by = nil
         if current_token&.type == Token::Type::ORDER
           advance
@@ -103,7 +116,8 @@ module RubyDB
           offset = parse_expression
         end
 
-        AST::Select.new(columns, from, where, order_by, limit, offset, distinct, joins: joins)
+        AST::Select.new(columns, from, where, order_by, limit, offset, distinct,
+                        joins: joins, group_by: group_by, having: having)
       end
 
       def parse_select_columns
@@ -296,6 +310,9 @@ module RubyDB
 
       def parse_primary
         case current_token&.type
+        when Token::Type::STAR
+          advance
+          AST::Star.new
         when Token::Type::LPAREN
           advance
           expr = parse_expression
@@ -361,6 +378,17 @@ module RubyDB
           advance
         end
         order_items
+      end
+
+      def parse_expression_list
+        expressions = []
+        loop do
+          expressions << parse_expression
+          break unless current_token&.type == Token::Type::COMMA
+
+          advance
+        end
+        expressions
       end
 
       def parse_insert
