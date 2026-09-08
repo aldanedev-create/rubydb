@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "securerandom"
+require "time"
 
 module RubyDB
   module Server
@@ -39,6 +40,9 @@ module RubyDB
       def process(request)
         @lock.synchronize do
           @last_activity = Time.now
+          if request[:deadline_at] && Time.now >= Time.parse(request[:deadline_at].to_s)
+            return { success: false, error: "Request deadline exceeded before execution", code: "deadline_exceeded" }
+          end
 
           case request[:type]
           when "query"

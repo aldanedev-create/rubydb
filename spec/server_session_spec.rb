@@ -49,4 +49,19 @@ RSpec.describe "server session execution" do
       engine&.close
     end
   end
+
+  it "rejects an expired deadline before a statement can mutate the engine" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "deadline.rdb"), auto_vacuum: false)
+      columns = [RubyDB::Catalog::Column.new("id", :integer, primary_key: true, null: false)]
+      engine.create_table("users", columns)
+      session = RubyDB::Server::Session.new(nil, engine: engine)
+
+      response = session.process(type: "query", sql: "INSERT INTO users (id) VALUES (1)", deadline_at: (Time.now - 1).iso8601)
+      expect(response).to include(success: false, code: "deadline_exceeded")
+      expect(engine.select_rows("users", columns)).to be_empty
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
 end
