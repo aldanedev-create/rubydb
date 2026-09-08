@@ -27,7 +27,10 @@ The current suite verifies storage reopen, subprocess crash recovery, MVCC isola
 
 ## Known limitations
 
-- The concurrent workload verifies parallel writes and durable reopen reads. Immediate point reads interleaved with simultaneous inserts still need a dedicated race fix and regression coverage before RubyDB can claim general concurrent read/write workload certification.
+- The concurrent workload and regression suite verify parallel appends, point
+  reads, scans, and durable reopen reads within one embedded-engine process.
+  This does not certify multi-process writers or server capacity; embedded
+  ownership remains exclusive and multi-process clients must use the server.
 
 - incremental backups capture WAL mutations after a verified base LSN; differential backups capture the verified base-relative WAL delta and restore through the same validated delta path
 - replication is limited to the explicit logical row-mutation envelope API
@@ -77,7 +80,8 @@ The repository includes a deterministic storage benchmark (`RUBYDB_BENCHMARK_ITE
 The project currently needs:
 
 - a validated Ruby support matrix
-- a release-hosted gem/package source (the repository currently uses placeholder project URLs)
+- RubyGems publication credentials (`RUBYGEMS_API_KEY`) configured as a protected
+  GitHub Actions secret before pushing a release tag
 - a documented operator runbook for backups, upgrades, rollback, and incident preservation
 - explicit durability and crash-recovery validation
 - secure-by-default configuration development

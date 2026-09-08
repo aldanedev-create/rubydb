@@ -1,0 +1,39 @@
+name: Release gem
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Verify tag matches gem version
+        shell: bash
+        run: test "${GITHUB_REF_NAME#v}" = "$(ruby -Ilib -rrubydb/version -e 'puts RubyDB::VERSION')"
+      - name: Test and build release artifact
+        run: |
+          bundle exec rspec
+          ruby scripts/release
+      - name: Publish to RubyGems
+        if: ${{ secrets.RUBYGEMS_API_KEY != '' }}
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+          RUBYDB_PUBLISH: "1"
+        run: ruby scripts/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rubydb-gem-${{ github.ref_name }}
+          path: |
+            pkg/*.gem
+            checksums/*.sha512

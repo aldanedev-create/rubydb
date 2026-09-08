@@ -5,8 +5,8 @@ require_relative 'lib/rubydb/version'
 Gem::Specification.new do |spec|
   spec.name = 'rubydb'
   spec.version = RubyDB::VERSION
-  spec.authors = ['Your Name']
-  spec.email = ['you@example.com']
+  spec.authors = ['Aldane Hutchinson']
+  spec.email = ['aldanehutchinson5@gmail.com']
 
   spec.summary = 'A developer-first relational database for Ruby'
   spec.description = <<~DESC
@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     written in Ruby. It combines SQLite-like simplicity with PostgreSQL-like 
     production capabilities, with first-class Ruby and Rails integration.
   DESC
-  spec.homepage = 'https://github.com/yourusername/rubydb'
+  spec.homepage = 'https://github.com/aldanedev-create/rubydb'
   spec.license = 'MIT'
   # The implementation is currently compatible with the workspace Ruby runtime used for
   # local development and CI. This is a practical compatibility target until the
@@ -22,8 +22,8 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = '>= 3.3.0'
 
   spec.metadata['homepage_uri'] = spec.homepage
-  spec.metadata['source_code_uri'] = 'https://github.com/yourusername/rubydb'
-  spec.metadata['changelog_uri'] = 'https://github.com/yourusername/rubydb/blob/main/CHANGELOG.md'
+  spec.metadata['source_code_uri'] = 'https://github.com/aldanedev-create/rubydb/tree/main'
+  spec.metadata['changelog_uri'] = 'https://github.com/aldanedev-create/rubydb/blob/main/CHANGELOG.md'
 
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.

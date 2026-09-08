@@ -3,10 +3,25 @@
 require 'bundler/gem_tasks'
 require 'rspec/core/rake_task'
 require 'rbconfig'
+require 'digest'
+require 'fileutils'
 
 RSpec::Core::RakeTask.new(:spec)
 
 task default: %i[spec rubocop]
+
+namespace :build do
+  desc 'Build the gem and write a SHA-512 checksum for the exact artifact'
+  task checksum: :build do
+    gem_path = Dir['pkg/rubydb-*.gem'].max_by { |path| File.mtime(path) }
+    abort 'No built gem found in pkg/' unless gem_path
+
+    FileUtils.mkdir_p('checksums')
+    checksum_path = File.join('checksums', "#{File.basename(gem_path)}.sha512")
+    File.write(checksum_path, "#{Digest::SHA512.file(gem_path).hexdigest}  #{File.basename(gem_path)}\n")
+    puts "Wrote #{checksum_path}"
+  end
+end
 
 desc 'Run all tests'
 task test: :spec
