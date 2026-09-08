@@ -855,7 +855,7 @@ module RubyDB
 
         case expression.name.to_s.upcase
         when "COUNT" then values.size
-        when "SUM" then values.sum
+        when "SUM" then values.empty? ? nil : values.sum
         when "AVG" then values.empty? ? nil : values.sum / values.size.to_f
         when "MIN" then values.min
         when "MAX" then values.max

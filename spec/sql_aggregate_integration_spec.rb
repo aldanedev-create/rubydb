@@ -19,6 +19,20 @@ RSpec.describe "SQL aggregates" do
     end
   end
 
+  it "returns NULL for SUM and AVG over an empty input" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "empty-aggregate.rdb"), auto_cleanup: false, auto_vacuum: false)
+      columns = [RubyDB::Catalog::Column.new(:value, :integer)]
+      engine.create_table(:metrics, columns)
+      statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new("SELECT COUNT(*) AS count, SUM(value) AS sum, AVG(value) AS average FROM metrics").tokenize).parse.first
+
+      result = RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(statement))
+      expect(result[:rows]).to eq([{ "count" => 0, "sum" => nil, "average" => nil }])
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
+
   it "executes grouped and global aggregates with HAVING through the normal SQL pipeline" do
     Dir.mktmpdir do |dir|
       engine = RubyDB::Storage::Engine.new(File.join(dir, "aggregates.rdb"), auto_cleanup: false, auto_vacuum: false)
