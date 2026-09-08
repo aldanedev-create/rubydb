@@ -32,6 +32,8 @@ module RubyDB
         @state = STATE_INIT
         @connection = nil
         @replication_stream = nil
+        @receive_buffer = +""
+        @max_frame_size = config[:max_replication_frame_bytes] || 1_048_576
         @last_received_lsn = nil
         @last_replayed_lsn = nil
         @catchup_start_time = nil
@@ -217,7 +219,15 @@ module RubyDB
       end
 
       def process_replication_data(data)
-        data.to_s.each_line do |line|
+        @receive_buffer << data.to_s
+        if @receive_buffer.bytesize > @max_frame_size
+          raise RubyDB::ReplicationError, "Replication frame exceeds #{@max_frame_size} bytes"
+        end
+
+        while (newline = @receive_buffer.index("\n"))
+          line = @receive_buffer.slice!(0, newline + 1).strip
+          next if line.empty?
+
           message = JSON.parse(line, symbolize_names: true)
           next unless message[:type].to_s == "replication_data"
 
@@ -251,11 +261,16 @@ module RubyDB
       def persist_state
         FileUtils.mkdir_p(File.dirname(@state_path))
         temporary = "#{@state_path}.tmp-#{Process.pid}"
-        File.write(temporary, JSON.generate(
+        payload = JSON.generate(
           last_received_lsn: @last_received_lsn,
           last_replayed_lsn: @last_replayed_lsn,
           updated_at: Time.now.iso8601
-        ))
+        )
+        File.open(temporary, "wb") do |file|
+          file.write(payload)
+          file.flush
+          file.fsync
+        end
         File.rename(temporary, @state_path)
       ensure
         File.delete(temporary) if defined?(temporary) && File.file?(temporary)

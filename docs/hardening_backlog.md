@@ -18,11 +18,11 @@ these capabilities.
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
    schema changes on populated tables. Follow with subqueries, CTEs, set
    operations, window functions and upserts.
-4. Replication: TCP frame buffering, durable replay positions, synchronized
-   acknowledgements, bootstrap, transaction/WAL integration, and promotion with
-   an explicit recovery point. Replica engine mutation entry points are now
-   read-only except for the internal replay path; validate partitions and stale
-   writers before adding automatic election.
+4. Replication: synchronized acknowledgements, bootstrap, transaction/WAL
+   integration, and promotion with an explicit recovery point. TCP input now
+   uses bounded newline framing and replay positions are fsynced before ack;
+   replica engine mutation entry points are read-only except for internal replay.
+   Validate partitions and stale writers before adding automatic election.
 5. Rails: populated migration round trips, schema dump/load, eager loading,
    nested associations, connection pools and a supported-version CI matrix.
 6. Operations: complete backup manifests, automated restore drills, upgrade

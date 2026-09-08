@@ -19,7 +19,8 @@ compatibility.
   promotion of the synchronized replica. Promotion retains the replicated row
   and starts a fenced primary listener. Replicas reject local engine mutations
   while allowing the internal logical replay path; explicit promotion restores
-  local writes.
+  local writes. Replication TCP input is newline-frame buffered, rejects
+  oversized incomplete frames, and persists the replay position before ack.
 - Persistence safety at the engine boundary: malformed metadata and failed WAL
   recovery abort startup, metadata publishes are fsynced before atomic rename,
   and the maintenance worker is joined before storage closes.
