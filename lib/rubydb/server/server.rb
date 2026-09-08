@@ -68,6 +68,7 @@ module RubyDB
 
         validate_authentication_config!
         validate_ssl_config!
+        validate_resource_limits!
 
         # Setup directories
         setup_directories
@@ -274,6 +275,32 @@ module RubyDB
         min_version = ssl[:min_version] || ssl["min_version"] || :TLS1_2
         unless %i[TLS1_2 TLS1_3].include?(min_version.to_s.to_sym)
           raise ServerError, "SSL min_version must be TLS1_2 or TLS1_3"
+        end
+      end
+
+      def validate_resource_limits!
+        integer_limits = {
+          max_connections: 1..10_000,
+          min_workers: 1..1_024,
+          max_workers: 1..1_024,
+          worker_queue_size: 1..100_000,
+          max_request_size: 1_024..(64 * 1024 * 1024)
+        }
+        integer_limits.each do |name, allowed|
+          value = Integer(@config[name])
+          raise ServerError, "#{name} must be between #{allowed.begin} and #{allowed.end}" unless allowed.cover?(value)
+          @config[name] = value
+        rescue ArgumentError, TypeError
+          raise ServerError, "#{name} must be an integer"
+        end
+        raise ServerError, "min_workers cannot exceed max_workers" if @config[:min_workers] > @config[:max_workers]
+
+        %i[read_timeout write_timeout idle_timeout].each do |name|
+          value = Float(@config[name])
+          raise ServerError, "#{name} must be greater than zero" unless value.positive?
+          @config[name] = value
+        rescue ArgumentError, TypeError
+          raise ServerError, "#{name} must be a number"
         end
       end
 

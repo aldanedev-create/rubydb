@@ -5,6 +5,15 @@ require "socket"
 require "tmpdir"
 
 RSpec.describe "RubyDB live server protocol" do
+  it "rejects unsafe resource-limit configurations before opening a listener" do
+    expect { RubyDB::Server::Server.new(max_connections: 0) }
+      .to raise_error(RubyDB::ServerError, /max_connections must be between/)
+    expect { RubyDB::Server::Server.new(min_workers: 3, max_workers: 2) }
+      .to raise_error(RubyDB::ServerError, /min_workers cannot exceed/)
+    expect { RubyDB::Server::Server.new(max_request_size: 512) }
+      .to raise_error(RubyDB::ServerError, /max_request_size must be between/)
+  end
+
   it "completes handshake and executes queries, prepared statements, and rollback" do
     Dir.mktmpdir do |dir|
       port_probe = TCPServer.new("127.0.0.1", 0)
