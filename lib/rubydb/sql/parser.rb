@@ -29,6 +29,8 @@ module RubyDB
 
       def parse_statement
         case current_token&.type
+        when Token::Type::WITH
+          parse_with
         when Token::Type::SELECT
           parse_select
         when Token::Type::INSERT
@@ -125,6 +127,24 @@ module RubyDB
         all = current_token&.type == Token::Type::ALL
         advance if all
         AST::SetOperation.new(select, parse_select, operator, all: all)
+      end
+
+      def parse_with
+        expect(Token::Type::WITH)
+        raise ParserError, "Recursive CTEs are not supported" if current_token&.type == Token::Type::RECURSIVE
+
+        ctes = []
+        loop do
+          name = expect(Token::Type::IDENTIFIER).value
+          expect(Token::Type::AS)
+          expect(Token::Type::LPAREN)
+          query = parse_select
+          expect(Token::Type::RPAREN)
+          ctes << [name, query]
+          break unless current_token&.type == Token::Type::COMMA
+          advance
+        end
+        AST::With.new(ctes, parse_select)
       end
 
       def parse_select_columns

@@ -89,6 +89,8 @@ module RubyDB
         "EXPLAIN" => Token::Type::EXPLAIN,
         "ANALYZE" => Token::Type::ANALYZE,
         "VACUUM" => Token::Type::VACUUM,
+        "WITH" => Token::Type::WITH,
+        "RECURSIVE" => Token::Type::RECURSIVE,
         "INTEGER" => Token::Type::INTEGER,
         "BIGINT" => Token::Type::BIGINT,
         "SMALLINT" => Token::Type::SMALLINT,

@@ -19,6 +19,8 @@ module RubyDB
         @stats[:plans_created] += 1
 
         plan = case statement
+        when SQL::AST::With
+          Plan::With.new(statement.ctes.map { |name, query| [name, plan(query)] }, plan(statement.query))
         when SQL::AST::Select
           plan_select(statement)
         when SQL::AST::SetOperation

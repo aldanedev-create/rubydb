@@ -16,8 +16,9 @@ these capabilities.
    cannot observe a failed metadata publication as a committed schema change.
 3. SQL correctness: ambiguous identifiers, outer-join NULL handling, boolean
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
-   schema changes on populated tables. Follow with subqueries, CTEs, set
-   operations, window functions and upserts.
+   schema changes on populated tables. Non-recursive CTEs, subqueries, set
+   operations, and `ON CONFLICT DO NOTHING` are implemented; recursive CTEs,
+   window functions, and broader upsert forms remain open.
 4. Replication: synchronized acknowledgements, bootstrap, transaction/WAL
    integration, and promotion with an explicit recovery point. TCP input now
    uses bounded newline framing and replay positions are fsynced before ack;

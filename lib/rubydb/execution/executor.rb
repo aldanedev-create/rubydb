@@ -8,8 +8,9 @@ module RubyDB
     class Executor
       attr_reader :engine, :stats
 
-      def initialize(engine)
+      def initialize(engine, cte_rows: {})
         @engine = engine
+        @cte_rows = cte_rows
         @stats = {
           queries_executed: 0,
           rows_returned: 0,
@@ -32,6 +33,8 @@ module RubyDB
           @current_transaction = transaction_id
 
           result = case plan
+          when Plan::With
+            execute_with(plan)
           when Plan::Select
             execute_select(plan)
           when Plan::SetOperation
@@ -120,6 +123,15 @@ module RubyDB
         { rows: rows, row_count: rows.size, column_names: rows.first&.keys || [] }
       end
 
+      def execute_with(plan)
+        available_ctes = @cte_rows.dup
+        plan.ctes.each do |name, cte_plan|
+          result = self.class.new(@engine, cte_rows: available_ctes).execute(cte_plan)
+          available_ctes[name.to_s] = result[:rows]
+        end
+        self.class.new(@engine, cte_rows: available_ctes).execute(plan.query_plan)
+      end
+
       def execute_select(plan)
         @stats[:sequential_scans] += 1 if plan.scan_type == :sequential
         @stats[:index_scans] += 1 if plan.scan_type == :index
@@ -129,10 +141,7 @@ module RubyDB
         # existing single-table callers.
         rows = qualify_rows(scan_table(plan), plan.source_reference || plan.table_name)
         plan.joins.each do |join|
-          right_rows = qualify_rows(
-            @engine.select_rows(join[:table].name, @engine.table_columns(join[:table].name)),
-            join[:table]
-          )
+          right_rows = qualify_rows(scan_table(Plan::Select.new(join[:table].name, [])), join[:table])
           rows = execute_join(rows, right_rows, join)
         end
 
@@ -459,6 +468,7 @@ module RubyDB
       # Scan operations
       def scan_table(plan)
         table_name = plan.table_name
+        return @cte_rows.fetch(table_name.to_s) if @cte_rows.key?(table_name.to_s)
         if @engine.catalog.respond_to?(:find_view) && (view = @engine.catalog.find_view(table_name))
           statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(view.query).tokenize).parse.first
           return scan_table(Planner.new(@engine).plan(statement))

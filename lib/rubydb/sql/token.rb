@@ -90,6 +90,8 @@ module RubyDB
         EXPLAIN = :EXPLAIN
         ANALYZE = :ANALYZE
         VACUUM = :VACUUM
+        WITH = :WITH
+        RECURSIVE = :RECURSIVE
 
         # Data types
         INTEGER = :INTEGER

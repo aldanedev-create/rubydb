@@ -11,6 +11,8 @@ Supported and tested statements include:
 - `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT` for compatible SELECT
   projections
 - non-correlated scalar subqueries and `IN (SELECT ...)` predicates
+- materialized non-recursive `WITH` common table expressions; recursive CTEs
+  are rejected explicitly
 - `INSERT`, `UPDATE`, and `DELETE`
 - `CREATE TABLE` and `DROP TABLE`, including primary keys, unique constraints,
   checks, foreign keys, and referential actions

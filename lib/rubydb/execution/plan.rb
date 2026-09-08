@@ -112,6 +112,16 @@ module RubyDB
         end
       end
 
+      class With < Plan
+        attr_reader :ctes, :query_plan
+
+        def initialize(ctes, query_plan)
+          super(:with)
+          @ctes = ctes
+          @query_plan = query_plan
+        end
+      end
+
       class Insert < Plan
         attr_reader :values, :on_conflict
 
