@@ -30,6 +30,7 @@ module RubyDB
         @write_thread = nil
         @running = false
         @shutdown = false
+        @background_error = nil
 
         # Create WAL directory
         FileUtils.mkdir_p(@wal_dir)
@@ -45,6 +46,7 @@ module RubyDB
 
       def write_record(record)
         @lock.synchronize do
+          raise @background_error if @background_error
           # Assign LSN
           lsn = next_lsn
           record.instance_variable_set(:@lsn, lsn)
@@ -88,6 +90,7 @@ module RubyDB
 
       def flush
         @lock.synchronize do
+          raise @background_error if @background_error
           flush_buffer
           _sync if @sync_on_write
         end
@@ -124,7 +127,8 @@ module RubyDB
             buffer_bytes: @buffer_current_size,
             current_segment: @current_segment&.segment_id,
             current_lsn: @current_lsn.to_s,
-            async: @running
+            async: @running,
+            last_background_error: @background_error&.message
           })
         end
       end
@@ -207,7 +211,11 @@ module RubyDB
                 flush
               end
             rescue => e
-              # Log error but continue
+              @lock.synchronize do
+                @background_error ||= e
+                @running = false
+              end
+              break
             end
           end
         end
