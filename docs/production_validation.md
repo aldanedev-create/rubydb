@@ -13,6 +13,8 @@ compatibility.
   `add_column` with a default, unique `add_index`, and their `down` operations.
 - Repeated threaded insert workloads with row-count and close/reopen durability
   verification.
+- Four independent network clients concurrently inserting through the live
+  server, with request metrics and post-restart durable-row verification.
 - Two-engine logical replication of an insert followed by explicit, manual
   promotion of the synchronized replica. Promotion retains the replicated row
   and starts a fenced primary listener.
