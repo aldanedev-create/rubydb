@@ -17,7 +17,9 @@ compatibility.
   server, with request metrics and post-restart durable-row verification.
 - Two-engine logical replication of an insert followed by explicit, manual
   promotion of the synchronized replica. Promotion retains the replicated row
-  and starts a fenced primary listener.
+  and starts a fenced primary listener. Replicas reject local engine mutations
+  while allowing the internal logical replay path; explicit promotion restores
+  local writes.
 - Persistence safety at the engine boundary: malformed metadata and failed WAL
   recovery abort startup, metadata publishes are fsynced before atomic rename,
   and the maintenance worker is joined before storage closes.
@@ -74,6 +76,9 @@ database for every round and fails if any round loses durable rows.
 - Failover is manual and requires an operator to confirm the replica is caught
   up and that the old primary is fenced. Automatic leader election is not
   enabled.
+- The replica fence covers engine schema, row, branch, vacuum, and compaction
+  mutation entry points. It is not a substitute for partition testing, durable
+  bootstrap validation, or transaction-integrated replication.
 
 RubyDB reports unsupported features as unsupported rather than advertising CTE
 or bulk-alter capability to ActiveRecord.

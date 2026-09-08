@@ -54,6 +54,7 @@ module RubyDB
         @retry_count = 0
         @state_path = config[:state_path] || "#{@engine.path}.replica_state.json"
         load_state
+        @engine.set_replication_read_only(true) if @engine.respond_to?(:set_replication_read_only)
       end
 
       def start
@@ -93,8 +94,9 @@ module RubyDB
           # Stop replication
           stop
 
-          # The manager owns creation of the primary listener. The storage
-          # engine remains writable, so promotion only ends the stream here.
+          # Promotion is an explicit operator action. Re-enable ordinary
+          # mutations only after the replication stream has been stopped.
+          @engine.set_replication_read_only(false) if @engine.respond_to?(:set_replication_read_only)
           @state = STATE_SYNCED
           true
         end

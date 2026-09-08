@@ -91,6 +91,9 @@ module RubyDB
         @transaction_manager = nil
         @current_transaction_id = 0
         @recovery_in_progress = false
+        # A replica must never accept an accidental local mutation. Replay uses
+        # the narrowly-scoped with_replication_apply escape hatch below.
+        @replication_read_only = false
         @stats = {
           table_creates: 0,
           row_inserts: 0,
@@ -169,6 +172,7 @@ module RubyDB
 
       # Table operations
       def create_table(table_name, columns = nil, options = {}, &block)
+        ensure_writable!
         if columns.is_a?(Hash) && options.empty?
           options = columns
           columns = nil
@@ -263,6 +267,7 @@ module RubyDB
       end
 
       def drop_table(table_name, options = {})
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           metadata = @table_metadata[table_name]
@@ -292,6 +297,7 @@ module RubyDB
       end
 
       def add_column(table_name, column_name, type, options = {})
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
@@ -315,6 +321,7 @@ module RubyDB
       end
 
       def drop_column(table_name, column_name)
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
@@ -335,6 +342,7 @@ module RubyDB
       end
 
       def add_constraint(table_name, constraint)
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
@@ -376,6 +384,7 @@ module RubyDB
       end
 
       def drop_constraint(table_name, constraint_name)
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
@@ -446,23 +455,41 @@ module RubyDB
       # Apply a logical replication envelope. Only explicit row mutations are
       # accepted; unknown envelopes fail closed instead of being ignored.
       def apply_transaction(transaction_data)
-        data = transaction_data.transform_keys { |key| key.to_sym rescue key }
-        operation = (data[:operation] || data[:type]).to_s.downcase
-        table = data[:table_name] || data[:table]
-        table = table.to_sym if table && !@table_metadata.key?(table) && @table_metadata.key?(table.to_sym)
+        with_replication_apply do
+          data = transaction_data.transform_keys { |key| key.to_sym rescue key }
+          operation = (data[:operation] || data[:type]).to_s.downcase
+          table = data[:table_name] || data[:table]
+          table = table.to_sym if table && !@table_metadata.key?(table) && @table_metadata.key?(table.to_sym)
 
-        case operation
-        when "insert"
-          columns = table_columns(table)
-          values = data[:values] || data[:row]
-          insert_row(table, columns, values)
-        when "update"
-          update_row(table, data[:row_id], data[:values] || data[:row], data[:conditions] || {})
-        when "delete"
-          delete_row(table, data[:row_id], data[:conditions] || {})
-        else
-          raise ReplicationError, "Unsupported logical replication operation: #{operation}"
+          case operation
+          when "insert"
+            columns = table_columns(table)
+            values = data[:values] || data[:row]
+            insert_row(table, columns, values)
+          when "update"
+            update_row(table, data[:row_id], data[:values] || data[:row], data[:conditions] || {})
+          when "delete"
+            delete_row(table, data[:row_id], data[:conditions] || {})
+          else
+            raise ReplicationError, "Unsupported logical replication operation: #{operation}"
+          end
         end
+      end
+
+      def replication_read_only?
+        @lock.synchronize { @replication_read_only }
+      end
+
+      def set_replication_read_only(value)
+        @lock.synchronize { @replication_read_only = !!value }
+      end
+
+      def with_replication_apply
+        key = :rubydb_replication_apply_depth
+        Thread.current[key] = Thread.current[key].to_i + 1
+        yield
+      ensure
+        Thread.current[key] = Thread.current[key].to_i - 1
       end
 
       # Files belonging to this database, including persisted metadata used by
@@ -491,6 +518,7 @@ module RubyDB
       # replay its committed logical changes. Unknown change operations fail
       # before mutating the database.
       def apply_branch_state(state)
+        ensure_writable!
         state = state.transform_keys(&:to_sym) if state.respond_to?(:transform_keys)
         base = state[:base]
         changes = Array(state[:changes])
@@ -536,6 +564,7 @@ module RubyDB
       end
 
       def apply_branch_change(change)
+        ensure_writable!
         data = change.transform_keys(&:to_sym)
         table = data[:table_name] || data[:table]
         case (data[:operation] || data[:type]).to_s.downcase
@@ -579,6 +608,7 @@ module RubyDB
 
       # Row operations
       def insert_row(table_name, columns, values)
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           @stats[:row_inserts] += 1
@@ -843,6 +873,7 @@ module RubyDB
       end
 
       def update_row(table_name, row_id, values, conditions = {})
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           @stats[:row_updates] += 1
@@ -981,6 +1012,7 @@ module RubyDB
       end
 
       def delete_row(table_name, row_id, conditions = {})
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           @stats[:row_deletes] += 1
@@ -1455,12 +1487,14 @@ module RubyDB
       end
 
       def vacuum
+        ensure_writable!
         result = @visibility_map.vacuum
         save_table_metadata
         result
       end
 
       def compact_table(table_name)
+        ensure_writable!
         table_name = resolve_table_name(table_name)
         @lock.synchronize do
           metadata = @table_metadata[table_name]
@@ -1510,6 +1544,13 @@ module RubyDB
       end
 
       private
+
+      def ensure_writable!
+        return unless @replication_read_only
+        return if Thread.current[:rubydb_replication_apply_depth].to_i.positive?
+
+        raise ReplicationError, "Replica is read-only; promote it before accepting local writes"
+      end
 
       def fire_triggers(event, table_name, row, row_id, old_row: nil)
         database = @catalog&.current_database

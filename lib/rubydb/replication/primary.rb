@@ -18,6 +18,7 @@ module RubyDB
 
       def initialize(engine, config = {})
         @engine = engine
+        @engine.set_replication_read_only(false) if @engine.respond_to?(:set_replication_read_only)
         @config = {
           host: config[:host] || "localhost",
           port: config[:port] || 7433,
