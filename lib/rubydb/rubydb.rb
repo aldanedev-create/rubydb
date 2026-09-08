@@ -19,6 +19,7 @@ require_relative "errors/transaction_error"
 require_relative "errors/client_error"
 require_relative "errors/server_error"
 
+require_relative "storage/database_lock"
 require_relative "storage/engine"
 require_relative "storage/storage_manager"
 require_relative "storage/file_manager"

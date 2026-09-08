@@ -9,6 +9,7 @@ require "fileutils"
 require "monitor"
 
 # Storage components
+require_relative "database_lock"
 require_relative "storage_manager"
 require_relative "page"
 require_relative "page_header"
@@ -62,6 +63,8 @@ module RubyDB
       def initialize(path, config = {})
         @path = path
         @config = config
+        @database_lock = DatabaseLock.new(path)
+        @database_lock.acquire!
         @catalog = config[:catalog] || Catalog::Catalog.new
         @storage_manager = StorageManager.new(path, config)
         @storage_manager.open
@@ -123,6 +126,18 @@ module RubyDB
         
         # Start cleanup thread if configured
         start_cleanup_thread if config[:auto_cleanup] != false
+      rescue Exception
+        # Startup must never flush partially loaded catalog/page state.
+        begin
+          @wal&.shutdown
+        ensure
+          begin
+            @storage_manager&.file_manager&.close
+          ensure
+            @database_lock&.release
+          end
+        end
+        raise
       end
 
       # Page operations
@@ -1396,6 +1411,7 @@ module RubyDB
         @version_store&.persist
         @storage_manager.close
         @is_open = false
+        @database_lock.release
         true
       end
 

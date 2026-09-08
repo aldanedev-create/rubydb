@@ -19,6 +19,7 @@
 *.rdb.mvcc
 *.rdb.visibility
 *.rdb.wal/
+*.rdb.lock
 /data/
 /log/
 *.log

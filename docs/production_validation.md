@@ -42,6 +42,14 @@ database for every round and fails if any round loses durable rows.
 
 ## Current boundaries
 
+- Embedded databases now require exclusive ownership by one engine. A second
+  engine or process opening the same path receives an error. Multiple application
+  processes should connect through the server. The adjacent `.lock` file is
+  intentionally retained after close; the operating system releases ownership
+  on close or process exit. Never delete it while the database is open. This
+  requires a filesystem that implements file locking correctly. Hard-linked
+  database aliases and shared custom WAL/metadata paths are unsupported.
+
 - Join support currently covers qualified `INNER JOIN` and `LEFT [OUTER] JOIN`
   with `ON` predicates. `RIGHT`, `FULL`, cross joins, join reordering, CTEs,
   subqueries, and set operations are not release-validated.
