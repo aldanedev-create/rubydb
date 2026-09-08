@@ -105,6 +105,11 @@ module RubyDB
       def execute_set_operation(plan)
         left = self.class.new(@engine).execute(plan.left_plan)[:rows]
         right = self.class.new(@engine).execute(plan.right_plan)[:rows]
+        left_width = left.first&.size || plan.left_plan.columns.size
+        right_width = right.first&.size || plan.right_plan.columns.size
+        if left_width != right_width
+          raise ExecutionError, "Set operation requires the same number of columns on both sides"
+        end
         key = ->(row) { row.to_a }
         rows = case plan.operator
         when :union then plan.all ? left + right : (left + right).uniq { |row| key.call(row) }
