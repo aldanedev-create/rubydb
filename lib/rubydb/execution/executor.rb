@@ -213,9 +213,25 @@ module RubyDB
           message: "INSERT 1"
         }
       rescue DatabaseError => error
-        raise unless plan.on_conflict == :nothing && error.message.match?(/duplicate|unique|primary key/i)
+        raise unless error.message.match?(/duplicate|unique|primary key/i)
+        return { row_count: 0, affected_rows: 0, message: "INSERT 0 (conflict ignored)" } if plan.on_conflict == :nothing
+        raise unless plan.on_conflict.is_a?(Hash) && plan.on_conflict[:action] == :update
 
-        { row_count: 0, affected_rows: 0, message: "INSERT 0 (conflict ignored)" }
+        target = plan.on_conflict[:target]
+        target = @engine.table_columns(table_name).select(&:primary_key?).map(&:name) if target.empty?
+        raise ExecutionError, "ON CONFLICT DO UPDATE requires a conflict target or primary key" if target.empty?
+        existing = @engine.select_rows(table_name, @engine.table_columns(table_name)).find do |row|
+          target.all? { |column| (row[column] || row[column.to_sym]) == (row_data[column] || row_data[column.to_sym]) }
+        end
+        raise error unless existing
+
+        context = existing.merge(row_data.transform_keys(&:to_s).transform_keys { |key| "excluded.#{key}" })
+        values = plan.on_conflict[:assignments].each_with_object({}) do |assignment, updates|
+          updates[assignment.column] = evaluate_expression(assignment.value, context)
+        end
+        row_id = existing[:_row_id] || existing["_row_id"]
+        @engine.update_row(table_name, row_id, values)
+        { row_count: 1, affected_rows: 1, row_id: row_id, message: "INSERT 0 UPDATE 1" }
       end
 
       def execute_update(plan)

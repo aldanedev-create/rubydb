@@ -13,7 +13,8 @@ Supported and tested statements include:
 - non-correlated scalar subqueries and `IN (SELECT ...)` predicates
 - materialized non-recursive `WITH` common table expressions; recursive CTEs
   are rejected explicitly
-- `INSERT`, `UPDATE`, and `DELETE`
+- `INSERT`, `UPDATE`, and `DELETE`, including `ON CONFLICT DO NOTHING` and
+  targeted `ON CONFLICT (...) DO UPDATE SET ...` with `excluded.column`
 - `CREATE TABLE` and `DROP TABLE`, including primary keys, unique constraints,
   checks, foreign keys, and referential actions
 - `CREATE INDEX`/`CREATE UNIQUE INDEX` and `DROP INDEX`

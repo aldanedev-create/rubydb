@@ -39,6 +39,11 @@ module RubyDB
           parts << "VALUES"
           parts << "(#{@values.map(&:to_sql).join(", ")})"
           parts << "ON CONFLICT DO NOTHING" if @on_conflict == :nothing
+          if @on_conflict.is_a?(Hash) && @on_conflict[:action] == :update
+            target = @on_conflict[:target].any? ? " (#{@on_conflict[:target].join(', ')})" : ""
+            assignments = @on_conflict[:assignments].map(&:to_sql).join(", ")
+            parts << "ON CONFLICT#{target} DO UPDATE SET #{assignments}"
+          end
 
           parts.join(" ")
         end

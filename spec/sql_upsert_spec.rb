@@ -16,4 +16,19 @@ RSpec.describe "SQL conflict handling" do
       connection&.disconnect; engine&.close if engine&.open?
     end
   end
+
+  it "updates the conflicting row with an explicit target and EXCLUDED values" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "upsert-update.rdb"), auto_cleanup: false)
+      connection = RubyDB::Rails::Connection.new(engine: engine); connection.connect
+      connection.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR(64) UNIQUE)")
+      connection.execute("INSERT INTO users (id, email) VALUES (1, 'old@example.test')")
+
+      result = connection.execute("INSERT INTO users (id, email) VALUES (1, 'new@example.test') ON CONFLICT (id) DO UPDATE SET email = excluded.email")
+      expect(result.affected_rows).to eq(1)
+      expect(connection.execute("SELECT id, email FROM users").to_a).to eq([{ "id" => 1, "email" => "new@example.test" }])
+    ensure
+      connection&.disconnect; engine&.close if engine&.open?
+    end
+  end
 end
