@@ -442,7 +442,15 @@ module RubyDB
         end
         expect(Token::Type::RPAREN)
 
-        AST::Insert.new(table, columns, values)
+        on_conflict = nil
+        if current_token&.type == Token::Type::ON
+          advance
+          expect(Token::Type::CONFLICT)
+          expect(Token::Type::DO)
+          expect(Token::Type::NOTHING)
+          on_conflict = :nothing
+        end
+        AST::Insert.new(table, columns, values, on_conflict: on_conflict)
       end
 
       def parse_update

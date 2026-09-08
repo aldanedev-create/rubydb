@@ -25,6 +25,9 @@ module RubyDB
         SET = :SET
         VALUES = :VALUES
         INTO = :INTO
+        CONFLICT = :CONFLICT
+        DO = :DO
+        NOTHING = :NOTHING
         JOIN = :JOIN
         INNER = :INNER
         LEFT = :LEFT

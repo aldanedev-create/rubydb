@@ -203,6 +203,10 @@ module RubyDB
           row_id: row_id,
           message: "INSERT 1"
         }
+      rescue DatabaseError => error
+        raise unless plan.on_conflict == :nothing && error.message.match?(/duplicate|unique|primary key/i)
+
+        { row_count: 0, affected_rows: 0, message: "INSERT 0 (conflict ignored)" }
       end
 
       def execute_update(plan)

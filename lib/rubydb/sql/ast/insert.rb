@@ -5,13 +5,14 @@ module RubyDB
     module AST
       # INSERT statement AST node
       class Insert < Node
-        attr_reader :table, :columns, :values
+        attr_reader :table, :columns, :values, :on_conflict
 
-        def initialize(table, columns = [], values = [], location: nil)
+        def initialize(table, columns = [], values = [], on_conflict: nil, location: nil)
           super(location: location)
           @table = table
           @columns = columns
           @values = values
+          @on_conflict = on_conflict
         end
 
         def accept(visitor)
@@ -22,7 +23,7 @@ module RubyDB
           Insert.new(
             @table,
             @columns.dup,
-            @values.map(&:clone),
+            @values.map(&:clone), on_conflict: @on_conflict,
             location: @location
           )
         end
@@ -37,6 +38,7 @@ module RubyDB
 
           parts << "VALUES"
           parts << "(#{@values.map(&:to_sql).join(", ")})"
+          parts << "ON CONFLICT DO NOTHING" if @on_conflict == :nothing
 
           parts.join(" ")
         end
