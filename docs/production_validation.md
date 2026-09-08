@@ -60,7 +60,8 @@ database for every round and fails if any round loses durable rows.
 
 - Join support currently covers qualified `INNER`, `LEFT [OUTER]`, `RIGHT`, and
   `FULL [OUTER] JOIN` with `ON` predicates. Cross joins, join reordering, CTEs,
-  subqueries, and set operations are not release-validated.
+  correlated subqueries, and advanced set-operation ordering are not
+  release-validated.
 - The ActiveRecord migration test is intentionally scoped. Complex table
   rebuilds, `change_column`, polymorphic references, generated columns, and
   adapter-specific schema dumps require dedicated compatibility tests before
