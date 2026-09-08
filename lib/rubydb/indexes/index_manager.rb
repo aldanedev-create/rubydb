@@ -339,38 +339,34 @@ module RubyDB
                 create_index(name, table_name, columns, options)
               end
             end
-          rescue => e
-            # Start fresh
+          rescue StandardError => error
             @indexes.clear
             @table_indexes.clear
+            raise DatabaseError, "Invalid persisted index metadata at #{index_metadata_path}: #{error.message}"
           end
         end
       end
 
       def save_indexes
         @lock.synchronize do
-          begin
-            data = {
-              indexes: {},
-              timestamp: Time.now.iso8601
+          data = {
+            indexes: {},
+            timestamp: Time.now.iso8601
+          }
+            
+          @indexes.each do |name, index|
+            data[:indexes][name] = {
+              table_name: index.table_name,
+              columns: index.columns,
+              type: index.type,
+              unique: index.unique,
+              options: index.options,
+              entries: index.entries_count,
+              created_at: index.instance_variable_get(:@created_at).iso8601
             }
-            
-            @indexes.each do |name, index|
-              data[:indexes][name] = {
-                table_name: index.table_name,
-                columns: index.columns,
-                type: index.type,
-                unique: index.unique,
-                options: index.options,
-                entries: index.entries_count,
-                created_at: index.instance_variable_get(:@created_at).iso8601
-              }
-            end
-            
-            File.write(index_metadata_path, JSON.generate(data))
-          rescue => e
-            # Log error but continue
           end
+
+          File.write(index_metadata_path, JSON.generate(data))
         end
       end
 

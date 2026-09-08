@@ -4,6 +4,33 @@ require "spec_helper"
 require "tmpdir"
 
 RSpec.describe "index persistence and maintenance" do
+  it "fails closed for malformed persisted index metadata" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "corrupt-indexes.rdb")
+      File.write("#{path}.indexes", "not-json")
+
+      expect { RubyDB::Storage::Engine.new(path, auto_vacuum: false) }
+        .to raise_error(RubyDB::DatabaseError, /Invalid persisted index metadata/)
+    end
+  end
+
+  it "surfaces index metadata publication failures" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "index-write-failure.rdb")
+      engine = RubyDB::Storage::Engine.new(path, auto_vacuum: false)
+      columns = [RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false)]
+      engine.create_table(:users, columns)
+      allow(File).to receive(:write).and_wrap_original do |original, filename, *arguments|
+        raise Errno::ENOSPC, filename if filename == "#{path}.indexes"
+        original.call(filename, *arguments)
+      end
+
+      expect { engine.index_manager.create_index(:users_id_idx, :users, [:id]) }.to raise_error(Errno::ENOSPC)
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
+
   it "builds indexes, maintains them on writes, and reloads them" do
     Dir.mktmpdir do |dir|
       path = File.join(dir, "indexed.rdb")

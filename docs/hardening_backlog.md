@@ -11,8 +11,8 @@ these capabilities.
 1. Server concurrency: multiple client processes performing mixed transactions,
    isolation checks, deadlines, cancellation, and sustained load with latency
    percentiles. Verify committed contents after restart against a reference log.
-2. Persistence: propagate index write errors; fault-test disk-full, interrupted
-   checkpoints and schema changes; add a durable write-ack protocol so callers
+2. Persistence: fault-test disk-full, interrupted checkpoints and schema
+   changes; index metadata load and write errors now fail visibly. Add a durable write-ack protocol so callers
    cannot observe a failed metadata publication as a committed schema change.
 3. SQL correctness: ambiguous identifiers, outer-join NULL handling, boolean
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
