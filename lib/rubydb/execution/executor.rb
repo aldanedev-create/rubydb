@@ -575,6 +575,11 @@ module RubyDB
           )
         when SQL::AST::FunctionCall
           apply_function(expr.name, expr.arguments.map { |argument| evaluate_expression(argument, row) })
+        when SQL::AST::Subquery
+          result = self.class.new(@engine).execute(Planner.new(@engine).plan(expr.query))
+          rows = result[:rows]
+          raise ExecutionError, "Scalar subquery returned more than one row" if rows.size > 1
+          rows.empty? ? nil : rows.first.values.first
         when Expression::Literal
           expr.value
         when Expression::Column

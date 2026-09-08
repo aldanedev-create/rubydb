@@ -340,7 +340,7 @@ module RubyDB
           AST::Star.new
         when Token::Type::LPAREN
           advance
-          expr = parse_expression
+          expr = current_token&.type == Token::Type::SELECT ? AST::Subquery.new(parse_select) : parse_expression
           expect(Token::Type::RPAREN)
           expr
         when Token::Type::IDENTIFIER
