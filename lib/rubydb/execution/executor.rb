@@ -34,6 +34,8 @@ module RubyDB
           result = case plan
           when Plan::Select
             execute_select(plan)
+          when Plan::SetOperation
+            execute_set_operation(plan)
           when Plan::Insert
             execute_insert(plan)
           when Plan::Update
@@ -98,6 +100,19 @@ module RubyDB
 
           result
         end
+      end
+
+      def execute_set_operation(plan)
+        left = self.class.new(@engine).execute(plan.left_plan)[:rows]
+        right = self.class.new(@engine).execute(plan.right_plan)[:rows]
+        key = ->(row) { row.to_a }
+        rows = case plan.operator
+        when :union then plan.all ? left + right : (left + right).uniq { |row| key.call(row) }
+        when :intersect then left.select { |row| right.any? { |other| key.call(other) == key.call(row) } }.uniq { |row| key.call(row) }
+        when :except then left.reject { |row| right.any? { |other| key.call(other) == key.call(row) } }.uniq { |row| key.call(row) }
+        else raise ExecutionError, "Unsupported set operation: #{plan.operator}"
+        end
+        { rows: rows, row_count: rows.size, column_names: rows.first&.keys || [] }
       end
 
       def execute_select(plan)

@@ -104,6 +104,14 @@ module RubyDB
         end
       end
 
+      class SetOperation < Plan
+        attr_reader :left_plan, :right_plan, :operator, :all
+        def initialize(left_plan, right_plan, operator, all: false)
+          super(:set_operation)
+          @left_plan, @right_plan, @operator, @all = left_plan, right_plan, operator, all
+        end
+      end
+
       class Insert < Plan
         attr_reader :values
 

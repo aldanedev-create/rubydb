@@ -116,8 +116,15 @@ module RubyDB
           offset = parse_expression
         end
 
-        AST::Select.new(columns, from, where, order_by, limit, offset, distinct,
-                        joins: joins, group_by: group_by, having: having)
+        select = AST::Select.new(columns, from, where, order_by, limit, offset, distinct,
+                                 joins: joins, group_by: group_by, having: having)
+        return select unless [Token::Type::UNION, Token::Type::INTERSECT, Token::Type::EXCEPT].include?(current_token&.type)
+
+        operator = current_token.type.to_s.downcase.to_sym
+        advance
+        all = current_token&.type == Token::Type::ALL
+        advance if all
+        AST::SetOperation.new(select, parse_select, operator, all: all)
       end
 
       def parse_select_columns

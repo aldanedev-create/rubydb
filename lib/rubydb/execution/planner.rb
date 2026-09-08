@@ -21,6 +21,8 @@ module RubyDB
         plan = case statement
         when SQL::AST::Select
           plan_select(statement)
+        when SQL::AST::SetOperation
+          Plan::SetOperation.new(plan(statement.left), plan(statement.right), statement.operator, all: statement.all)
         when SQL::AST::Insert
           plan_insert(statement)
         when SQL::AST::Update
