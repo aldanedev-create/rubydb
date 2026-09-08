@@ -15,6 +15,7 @@ RSpec.describe "SQL joins" do
       connection.execute("INSERT INTO accounts (id, email) VALUES (1, 'ada@example.test')")
       connection.execute("INSERT INTO accounts (id, email) VALUES (2, 'grace@example.test')")
       connection.execute("INSERT INTO projects (id, account_id, name) VALUES (10, 1, 'RubyDB')")
+      connection.execute("INSERT INTO projects (id, account_id, name) VALUES (11, 99, 'Unassigned')")
 
       inner = connection.execute(<<~SQL)
         SELECT projects.name AS project_name, accounts.email AS account_email
@@ -31,6 +32,27 @@ RSpec.describe "SQL joins" do
         { "id" => 1, "email" => "ada@example.test", "project_name" => "RubyDB" },
         { "id" => 2, "email" => "grace@example.test", "project_name" => nil }
       ])
+
+      right = connection.execute(<<~SQL).to_a
+        SELECT accounts.email AS account_email, projects.name AS project_name
+        FROM projects RIGHT JOIN accounts ON accounts.id = projects.account_id
+        ORDER BY accounts.id
+      SQL
+      full = connection.execute(<<~SQL).to_a
+        SELECT accounts.email AS account_email, projects.name AS project_name
+        FROM accounts FULL OUTER JOIN projects ON accounts.id = projects.account_id
+        ORDER BY accounts.email
+      SQL
+
+      expect(right).to eq([
+        { "account_email" => "ada@example.test", "project_name" => "RubyDB" },
+        { "account_email" => "grace@example.test", "project_name" => nil }
+      ])
+      expect(full).to contain_exactly(
+        { "account_email" => "ada@example.test", "project_name" => "RubyDB" },
+        { "account_email" => "grace@example.test", "project_name" => nil },
+        { "account_email" => nil, "project_name" => "Unassigned" }
+      )
     ensure
       connection&.disconnect
       engine&.close if engine&.open?

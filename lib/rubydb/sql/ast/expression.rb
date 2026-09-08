@@ -501,7 +501,11 @@ module RubyDB
         end
 
         def to_sql
-          keyword = @type == :left ? "LEFT JOIN" : "INNER JOIN"
+          keyword = {
+            left: "LEFT JOIN",
+            right: "RIGHT JOIN",
+            full: "FULL JOIN"
+          }.fetch(@type, "INNER JOIN")
           sql = "#{keyword} #{@table.to_sql}"
           sql << " ON #{@condition.to_sql}" if @condition
           sql

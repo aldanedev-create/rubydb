@@ -58,8 +58,8 @@ database for every round and fails if any round loses durable rows.
   not durably committed until that retry succeeds. Exercise disk-full and
   interrupted-rename fault injection on the target filesystem before release.
 
-- Join support currently covers qualified `INNER JOIN` and `LEFT [OUTER] JOIN`
-  with `ON` predicates. `RIGHT`, `FULL`, cross joins, join reordering, CTEs,
+- Join support currently covers qualified `INNER`, `LEFT [OUTER]`, `RIGHT`, and
+  `FULL [OUTER] JOIN` with `ON` predicates. Cross joins, join reordering, CTEs,
   subqueries, and set operations are not release-validated.
 - The ActiveRecord migration test is intentionally scoped. Complex table
   rebuilds, `change_column`, polymorphic references, generated columns, and

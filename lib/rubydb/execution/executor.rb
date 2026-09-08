@@ -475,12 +475,23 @@ module RubyDB
 
       def execute_join(left_rows, right_rows, join)
         result = []
+        matched_right = Array.new(right_rows.length, false)
         left_rows.each do |left_row|
-          matches = right_rows.select { |right_row| evaluate_predicate(join[:predicate], merge_join_rows(left_row, right_row)) }
+          matches = right_rows.each_index.select do |index|
+            evaluate_predicate(join[:predicate], merge_join_rows(left_row, right_rows[index]))
+          end
           if matches.empty?
-            result << merge_join_rows(left_row, nil) if join[:type] == :left
+            result << merge_join_rows(left_row, nil) if %i[left full].include?(join[:type])
           else
-            matches.each { |right_row| result << merge_join_rows(left_row, right_row) }
+            matches.each do |index|
+              matched_right[index] = true
+              result << merge_join_rows(left_row, right_rows[index])
+            end
+          end
+        end
+        if %i[right full].include?(join[:type])
+          right_rows.each_with_index do |right_row, index|
+            result << merge_join_rows(nil, right_row) unless matched_right[index]
           end
         end
         result
