@@ -1,0 +1,24 @@
+name: Workload smoke benchmark
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  workload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Deterministic storage workload
+        run: RUBYDB_BENCHMARK_ITERATIONS=100 bundle exec ruby -Ilib benchmarks/basic_workload.rb
+      - name: Concurrent durability workload
+        run: RUBYDB_WORKLOAD_THREADS=4 RUBYDB_WORKLOAD_OPERATIONS=100 bundle exec ruby -Ilib benchmarks/concurrent_workload.rb
