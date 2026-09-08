@@ -10,6 +10,7 @@ Supported and tested statements include:
   `GROUP BY` and `HAVING`
 - `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT` for compatible SELECT
   projections
+- non-correlated scalar subqueries and `IN (SELECT ...)` predicates
 - `INSERT`, `UPDATE`, and `DELETE`
 - `CREATE TABLE` and `DROP TABLE`, including primary keys, unique constraints,
   checks, foreign keys, and referential actions
