@@ -265,7 +265,13 @@ module RubyDB
             build_expression(ast.high)
           )
         when SQL::AST::In
-          values = ast.values.map { |v| build_expression(v) }
+          values = ast.values.flat_map do |value|
+            if value.is_a?(SQL::AST::Subquery)
+              Executor.new(@engine).execute(plan(value.query))[:rows].map { |row| Expression::Literal.new(row.values.first) }
+            else
+              [build_expression(value)]
+            end
+          end
           Predicate::In.new(build_expression(ast.expression), values)
         when SQL::AST::IsNull
           Predicate::IsNull.new(build_expression(ast.expression), ast.negated)

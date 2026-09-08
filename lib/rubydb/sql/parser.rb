@@ -257,7 +257,7 @@ module RubyDB
       def parse_comparison
         expr = parse_additive
 
-        if current_token && Operators.comparison?(current_token.type)
+        if current_token && Operators.comparison?(current_token.type) && current_token.type != Token::Type::IN
           op = current_token.type
           advance
           right = parse_additive
@@ -284,10 +284,14 @@ module RubyDB
           advance
           expect(Token::Type::LPAREN)
           values = []
-          while true
-            values << parse_expression
-            break unless current_token&.type == Token::Type::COMMA
-            advance
+          if current_token&.type == Token::Type::SELECT
+            values << AST::Subquery.new(parse_select)
+          else
+            while true
+              values << parse_expression
+              break unless current_token&.type == Token::Type::COMMA
+              advance
+            end
           end
           expect(Token::Type::RPAREN)
           expr = AST::In.new(expr, values)

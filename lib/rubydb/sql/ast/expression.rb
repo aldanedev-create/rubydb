@@ -286,6 +286,15 @@ module RubyDB
         end
       end
 
+      class Subquery < Expression
+        attr_reader :query
+        def initialize(query, location: nil) = (super(location: location); @query = query)
+        def contains_subquery? = true
+        def accept(visitor) = visitor.visit_subquery(self)
+        def clone = Subquery.new(@query.clone, location: @location)
+        def to_sql = "(#{@query.to_sql})"
+      end
+
       # IS NULL expression
       class IsNull < Expression
         attr_reader :expression, :negated
