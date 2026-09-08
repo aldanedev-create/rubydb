@@ -275,6 +275,9 @@ module RubyDB
             end
           end
           Predicate::In.new(build_expression(ast.expression), values)
+        when SQL::AST::Exists
+          exists = Executor.new(@engine).execute(plan(ast.query))[:rows].any?
+          Predicate::Comparison.new(Expression::Literal.new(exists), Expression::Literal.new(true), :eq)
         when SQL::AST::IsNull
           Predicate::IsNull.new(build_expression(ast.expression), ast.negated)
         else

@@ -295,6 +295,14 @@ module RubyDB
         def to_sql = "(#{@query.to_sql})"
       end
 
+      class Exists < Expression
+        attr_reader :query
+        def initialize(query, location: nil) = (super(location: location); @query = query)
+        def accept(visitor) = visitor.visit_exists(self)
+        def clone = Exists.new(@query.clone, location: @location)
+        def to_sql = "EXISTS (#{@query.to_sql})"
+      end
+
       # IS NULL expression
       class IsNull < Expression
         attr_reader :expression, :negated

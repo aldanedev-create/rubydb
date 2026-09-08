@@ -358,6 +358,12 @@ module RubyDB
         when Token::Type::STAR
           advance
           AST::Star.new
+        when Token::Type::EXISTS
+          advance
+          expect(Token::Type::LPAREN)
+          query = parse_select
+          expect(Token::Type::RPAREN)
+          AST::Exists.new(query)
         when Token::Type::LPAREN
           advance
           expr = current_token&.type == Token::Type::SELECT ? AST::Subquery.new(parse_select) : parse_expression

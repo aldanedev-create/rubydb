@@ -11,7 +11,8 @@ Supported and tested statements include:
   `GROUP BY` and `HAVING`
 - `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT` for compatible SELECT
   projections
-- non-correlated scalar subqueries and `IN (SELECT ...)` predicates
+- non-correlated scalar subqueries, `IN (SELECT ...)`, and `EXISTS (SELECT ...)`
+  predicates
 - materialized non-recursive `WITH` common table expressions; recursive CTEs
   are rejected explicitly
 - `INSERT`, `UPDATE`, and `DELETE`, including `ON CONFLICT DO NOTHING` and
