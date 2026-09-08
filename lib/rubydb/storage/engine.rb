@@ -46,6 +46,7 @@ require_relative "../constraints/check"
 require_relative "../errors/storage_error"
 require_relative "../errors/database_error"
 require_relative "../errors/corruption_error"
+require_relative "../errors/recovery_error"
 
 require "json"
 require "set"
@@ -1399,6 +1400,8 @@ module RubyDB
 
       def close
         return unless @is_open
+
+        stop_cleanup_thread
         
         # Flush WAL first (ensures all mutations are recorded)
         if @wal
@@ -1439,6 +1442,7 @@ module RubyDB
             transaction_rollback: @stats[:transaction_rollback],
             wal_writes: @stats[:wal_writes],
             crash_recoveries: @stats[:crash_recoveries],
+            last_maintenance_error: @last_maintenance_error,
             is_open: @is_open,
             visibility_rows: @visibility_map.visibility_info.size,
             active_transactions: @visibility_map.active_transaction_count
@@ -1477,19 +1481,21 @@ module RubyDB
       # Crash recovery
       def run_crash_recovery
         return false unless @wal
-        
+
         # Check if recovery is needed (WAL files exist)
         wal_dir = @config[:wal_dir] || "#{@path}.wal"
         return false unless Dir.exist?(wal_dir) && Dir.glob(File.join(wal_dir, '*.log')).any?
-        
-        begin
-          @stats[:crash_recoveries] += 1
-          result = @crash_recovery.recover
-          result[:success]
-        rescue => e
-          warn "Crash recovery failed: #{e.message}"
-          false
-        end
+
+        @stats[:crash_recoveries] += 1
+        result = @crash_recovery.recover
+        return true if result.is_a?(Hash) && result[:success]
+
+        detail = result.is_a?(Hash) ? result[:error] : "recovery returned an invalid result"
+        raise RecoveryError, "Crash recovery failed for '#{@path}': #{detail || 'unknown error'}"
+      rescue RecoveryError
+        raise
+      rescue StandardError => error
+        raise RecoveryError, "Crash recovery failed for '#{@path}': #{error.message}"
       end
 
       # WAL logging helpers
@@ -1969,40 +1975,42 @@ module RubyDB
       end
 
       def load_table_metadata
-        begin
-          metadata_path = "#{@path}.metadata"
-          if File.exist?(metadata_path)
-            data = File.read(metadata_path)
-            parsed = JSON.parse(data, symbolize_names: true)
-            
-            parsed[:tables]&.each do |table_name, table_data|
-              @table_metadata[table_name] = {
-                metadata_page: table_data[:metadata_page],
-                data_page: table_data[:data_page],
-                columns: table_data[:columns]&.map do |c|
-                  options = {
-                    null: c[:nullable],
-                    primary_key: c[:primary_key] || false,
-                    unique: c[:unique] || false,
-                    default: c[:default]
-                  }
-                  Catalog::Column.new(c[:name], c[:type].respond_to?(:to_sym) ? c[:type].to_sym : c[:type], **options)
-                end || [],
-                column_count: table_data[:column_count] || 0,
-                row_count: table_data[:row_count] || 0,
-                constraints: table_data[:constraints] || [],
-                created_at: Time.at(table_data[:created_at]),
-                updated_at: Time.at(table_data[:updated_at])
-              }
-              @table_pages[table_name] = table_data[:pages] || []
-            end
-          end
-        rescue => e
-          warn "Failed to load table metadata: #{e.class} #{e.message}"
-          # If loading fails, start fresh
-          @table_metadata.clear
-          @table_pages.clear
+        metadata_path = "#{@path}.metadata"
+        return unless File.exist?(metadata_path)
+
+        data = File.read(metadata_path)
+        parsed = JSON.parse(data, symbolize_names: true)
+        unless parsed.is_a?(Hash) && parsed[:tables].is_a?(Hash)
+          raise CorruptionError, "Invalid table metadata format in #{metadata_path}"
         end
+            
+        parsed[:tables].each do |table_name, table_data|
+          unless table_data.is_a?(Hash) && table_data[:columns].is_a?(Array) && table_data[:pages].is_a?(Array)
+            raise CorruptionError, "Invalid table metadata for '#{table_name}' in #{metadata_path}"
+          end
+
+          @table_metadata[table_name] = {
+            metadata_page: table_data[:metadata_page],
+            data_page: table_data[:data_page],
+            columns: table_data[:columns].map do |c|
+              options = {
+                null: c[:nullable],
+                primary_key: c[:primary_key] || false,
+                unique: c[:unique] || false,
+                default: c[:default]
+              }
+              Catalog::Column.new(c[:name], c[:type].respond_to?(:to_sym) ? c[:type].to_sym : c[:type], **options)
+            end,
+            column_count: table_data[:column_count] || 0,
+            row_count: table_data[:row_count] || 0,
+            constraints: table_data[:constraints] || [],
+            created_at: Time.at(table_data[:created_at]),
+            updated_at: Time.at(table_data[:updated_at])
+          }
+          @table_pages[table_name] = table_data[:pages]
+        end
+      rescue JSON::ParserError, TypeError, KeyError, ArgumentError => error
+        raise CorruptionError, "Unable to load table metadata #{metadata_path}: #{error.message}"
       end
 
       def rewrite_table_metadata_page(table_name, metadata)
@@ -2034,13 +2042,12 @@ module RubyDB
       end
 
       def save_table_metadata
-        begin
-          data = {
-            tables: {}
-          }
+        data = {
+          tables: {}
+        }
 
-          @table_metadata.each do |table_name, metadata|
-            data[:tables][table_name] = {
+        @table_metadata.each do |table_name, metadata|
+          data[:tables][table_name] = {
               metadata_page: metadata[:metadata_page],
               data_page: metadata[:data_page],
               columns: metadata[:columns].map do |c|
@@ -2059,22 +2066,43 @@ module RubyDB
               created_at: metadata[:created_at].to_i,
               updated_at: metadata[:updated_at].to_i,
               pages: @table_pages[table_name] || []
-            }
-          end
-
-          metadata_path = "#{@path}.metadata"
-          temp_path = "#{metadata_path}.tmp"
-          File.write(temp_path, JSON.generate(data))
-          File.rename(temp_path, metadata_path)
-        rescue => e
-          # Log error but continue
+          }
         end
+
+        metadata_path = "#{@path}.metadata"
+        temp_path = "#{metadata_path}.tmp-#{Process.pid}-#{Thread.current.object_id}"
+        File.open(temp_path, "wb") do |file|
+          file.write(JSON.generate(data))
+          file.flush
+          file.fsync
+        end
+        begin
+          File.rename(temp_path, metadata_path)
+        ensure
+          File.delete(temp_path) if File.file?(temp_path)
+        end
+        true
+      rescue SystemCallError, JSON::GeneratorError => error
+        raise StorageError, "Unable to persist table metadata for '#{@path}': #{error.message}"
       end
 
       def start_cleanup_thread
-        Thread.new do
+        return if @cleanup_thread&.alive?
+
+        @cleanup_lock = Mutex.new
+        @cleanup_condition = ConditionVariable.new
+        @cleanup_stop = false
+        interval = @config[:cleanup_interval] || 3600
+        @cleanup_thread = Thread.new do
           loop do
-            sleep(3600)  # Run every hour
+            should_stop = @cleanup_lock.synchronize do
+              # Shutdown may be requested before this thread reaches its first
+              # wait. Check the predicate first so that signal is never lost.
+              @cleanup_condition.wait(@cleanup_lock, interval) unless @cleanup_stop
+              @cleanup_stop
+            end
+            break if should_stop
+
             begin
               # Clean up old cache entries
               cleanup_cache
@@ -2084,11 +2112,22 @@ module RubyDB
               
               # Save metadata
               save_table_metadata
-            rescue => e
-              # Log error but continue
+            rescue StandardError => error
+              @last_maintenance_error = "#{error.class}: #{error.message}"
             end
           end
         end
+      end
+
+      def stop_cleanup_thread
+        return unless @cleanup_thread
+
+        @cleanup_lock.synchronize do
+          @cleanup_stop = true
+          @cleanup_condition.signal
+        end
+        @cleanup_thread.join
+        @cleanup_thread = nil
       end
     end
   end

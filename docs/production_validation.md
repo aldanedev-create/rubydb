@@ -16,6 +16,9 @@ compatibility.
 - Two-engine logical replication of an insert followed by explicit, manual
   promotion of the synchronized replica. Promotion retains the replicated row
   and starts a fenced primary listener.
+- Persistence safety at the engine boundary: malformed metadata and failed WAL
+  recovery abort startup, metadata publishes are fsynced before atomic rename,
+  and the maintenance worker is joined before storage closes.
 
 ## Run before a release
 
@@ -49,6 +52,11 @@ database for every round and fails if any round loses durable rows.
   on close or process exit. Never delete it while the database is open. This
   requires a filesystem that implements file locking correctly. Hard-linked
   database aliases and shared custom WAL/metadata paths are unsupported.
+
+- Failed metadata publication leaves the in-memory schema available only for an
+  explicit retry in the same process; callers must treat the failed mutation as
+  not durably committed until that retry succeeds. Exercise disk-full and
+  interrupted-rename fault injection on the target filesystem before release.
 
 - Join support currently covers qualified `INNER JOIN` and `LEFT [OUTER] JOIN`
   with `ON` predicates. `RIGHT`, `FULL`, cross joins, join reordering, CTEs,
