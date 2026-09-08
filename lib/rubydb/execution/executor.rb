@@ -851,6 +851,7 @@ module RubyDB
         else
           rows.map { |row| evaluate_expression(argument, row) }.compact
         end
+        values = values.uniq if expression.distinct
 
         case expression.name.to_s.upcase
         when "COUNT" then values.size

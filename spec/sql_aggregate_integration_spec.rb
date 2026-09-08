@@ -4,6 +4,21 @@ require "spec_helper"
 require "tmpdir"
 
 RSpec.describe "SQL aggregates" do
+  it "counts distinct non-null aggregate values" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "distinct.rdb"), auto_cleanup: false, auto_vacuum: false)
+      columns = [RubyDB::Catalog::Column.new(:value, :integer)]
+      engine.create_table(:metrics, columns)
+      [1, 1, 2, nil].each { |value| engine.insert_row(:metrics, columns, value: value) }
+      statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new("SELECT COUNT(DISTINCT value) AS total FROM metrics").tokenize).parse.first
+
+      result = RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(statement))
+      expect(result[:rows]).to eq([{ "total" => 2 }])
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
+
   it "executes grouped and global aggregates with HAVING through the normal SQL pipeline" do
     Dir.mktmpdir do |dir|
       engine = RubyDB::Storage::Engine.new(File.join(dir, "aggregates.rdb"), auto_cleanup: false, auto_vacuum: false)

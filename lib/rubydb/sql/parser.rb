@@ -374,6 +374,11 @@ module RubyDB
             # Function call
             advance
             args = []
+            distinct = false
+            if current_token&.type == Token::Type::DISTINCT
+              advance
+              distinct = true
+            end
             unless current_token&.type == Token::Type::RPAREN
               while true
                 args << parse_expression
@@ -382,7 +387,7 @@ module RubyDB
               end
             end
             expect(Token::Type::RPAREN)
-            AST::FunctionCall.new(ident, args)
+            AST::FunctionCall.new(ident, args, distinct: distinct)
           else
             AST::Identifier.new(ident)
           end

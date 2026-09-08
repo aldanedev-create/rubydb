@@ -332,12 +332,13 @@ module RubyDB
 
       # Function call
       class FunctionCall < Expression
-        attr_reader :name, :arguments
+        attr_reader :name, :arguments, :distinct
 
-        def initialize(name, arguments = [], location: nil)
+        def initialize(name, arguments = [], distinct: false, location: nil)
           super(location: location)
           @name = name
           @arguments = arguments
+          @distinct = distinct
         end
 
         def accept(visitor)
@@ -345,11 +346,12 @@ module RubyDB
         end
 
         def clone
-          FunctionCall.new(@name, @arguments.map(&:clone), location: @location)
+          FunctionCall.new(@name, @arguments.map(&:clone), distinct: @distinct, location: @location)
         end
 
         def to_sql
           args = @arguments.map(&:to_sql).join(", ")
+          args = "DISTINCT #{args}" if @distinct
           "#{@name}(#{args})"
         end
 

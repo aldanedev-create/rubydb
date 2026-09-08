@@ -6,7 +6,8 @@ a claim of PostgreSQL or SQLite compatibility.
 Supported and tested statements include:
 
 - `SELECT` with projections, `WHERE`, ordering, limits, offsets, built-in
-  expressions, and `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` aggregates with
+  expressions, and `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` aggregates (including
+  `DISTINCT` aggregate arguments) with
   `GROUP BY` and `HAVING`
 - `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT` for compatible SELECT
   projections
