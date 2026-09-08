@@ -83,6 +83,24 @@ RSpec.describe "index persistence and maintenance" do
     end
   end
 
+  it "rebuilds an existing index and preserves its definition" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "rebuild.rdb"), auto_vacuum: false)
+      columns = [RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false)]
+      engine.create_table(:users, columns)
+      engine.insert_row(:users, columns, [1])
+      engine.index_manager.create_index(:users_id_idx, :users, [:id], type: :btree, unique: true)
+
+      expect(engine.index_manager.rebuild_index(:users_id_idx)).to be(true)
+      rebuilt = engine.index_manager.get_index(:users_id_idx)
+      expect(rebuilt).to be_a(RubyDB::Indexes::BTree)
+      expect(rebuilt.unique).to be(true)
+      expect(rebuilt.search(1)).to eq(1)
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
+
   it "uses an index through the SQL planner and executor" do
     Dir.mktmpdir do |dir|
       engine = RubyDB::Storage::Engine.new(File.join(dir, "sql-index.rdb"), auto_vacuum: false)

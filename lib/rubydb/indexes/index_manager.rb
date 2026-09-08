@@ -135,8 +135,14 @@ module RubyDB
 
       def rebuild_index(name)
         @lock.synchronize do
+          index = @indexes[name]
+          raise DatabaseError, "Index '#{name}' does not exist" unless index
+
+          table_name = index.table_name
+          columns = index.columns.dup
+          options = index.options.dup
           drop_index(name, if_exists: true)
-          create_index(name, @indexes[name].table_name, @indexes[name].columns, @indexes[name].options)
+          create_index(name, table_name, columns, options)
           true
         end
       end
