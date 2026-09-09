@@ -30,6 +30,10 @@ compatibility.
   the durable replication log. A caught-up disconnected replica may be
   explicitly promoted, while lagging or never-synchronized replicas remain
   ineligible.
+- The process-level failover drill runs an independent primary and replica,
+  kills and replaces the primary process, uses a separate process to advance
+  the fencing epoch, verifies the stale writer is rejected, and confirms a
+  fresh primary continues the log and the replica reaches both committed rows.
 - Engine transaction integration: a committed transaction containing multiple
   row mutations is emitted as one replication envelope only after its local
   WAL commit and flush complete.
@@ -65,6 +69,9 @@ ruby -Ilib benchmarks/server_workload.rb
 $env:RUBYDB_SERVER_WORKLOAD_PROCESSES = "8"
 $env:RUBYDB_SERVER_WORKLOAD_OPERATIONS = "1000"
 ruby benchmarks/multiprocess_server_workload.rb
+
+# Independent primary/replica processes, crash replacement, and stale-writer fencing
+ruby scripts/replication_failover_drill
 
 # Real two-engine replication and promotion validation
 bundle exec rspec spec/replication_failover_integration_spec.rb

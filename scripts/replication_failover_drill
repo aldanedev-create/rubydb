@@ -1,0 +1,248 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Process-level replication/failover drill. The parent starts independent
+# primary and replica Ruby processes, interrupts the primary, validates
+# reconnect/catch-up, fences a stale writer, and verifies a fresh primary can
+# continue the durable log.
+
+require "json"
+require "open3"
+require "rbconfig"
+require "socket"
+require "tmpdir"
+require "timeout"
+
+root = File.expand_path("..", __dir__)
+$LOAD_PATH.unshift(File.join(root, "lib"))
+require "rubydb"
+
+TABLE = "failover_events"
+COLUMNS = [RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false)].freeze
+
+def emit(output, payload)
+  output.puts(JSON.generate(payload))
+  output.flush
+end
+
+def available_port
+  server = TCPServer.new("127.0.0.1", 0)
+  server.addr[1]
+ensure
+  server&.close
+end
+
+def run_node(role, directory, port, fence_path)
+  output = STDOUT
+  quiet = File.open(File::NULL, "w")
+  $stdout = quiet
+
+  engine_path = File.join(directory, "#{role}.rdb")
+  engine = RubyDB::Storage::Engine.new(engine_path, auto_cleanup: false, auto_vacuum: false)
+
+  if role == "primary" && !engine.table_exists?(TABLE)
+    engine.create_table(TABLE, COLUMNS)
+  end
+
+  primary = if role == "primary"
+    RubyDB::Replication::Primary.new(
+      engine,
+      host: "127.0.0.1",
+      replication_port: port,
+      log_dir: File.join(directory, "replication-log"),
+      fence_path: fence_path,
+      heartbeat_interval: 0.05,
+      replication_timeout: 0.5,
+      node_id: "primary-#{Process.pid}"
+    )
+  end
+  replica = if role == "replica"
+    RubyDB::Replication::Replica.new(
+      engine,
+      primary_host: "127.0.0.1",
+      replication_port: port,
+      retry_interval: 0.02,
+      max_retry_attempts: 500,
+      heartbeat_interval: 0.05,
+      state_path: File.join(directory, "replica-state.json")
+    )
+  end
+
+  role == "primary" ? primary.start : replica.start
+  emit(output, event: "ready", role: role, pid: Process.pid)
+
+  while (line = STDIN.gets)
+    command = JSON.parse(line, symbolize_names: true)
+    case command[:command].to_s
+    when "status"
+      status = if primary
+        primary.get_replication_status.merge(row_count: engine.table_row_count(TABLE))
+      else
+        replica.replication_status.merge(
+          row_count: engine.table_exists?(TABLE) ? engine.table_row_count(TABLE) : 0
+        )
+      end
+      emit(output, event: "status", status: status)
+    when "insert"
+      begin
+        engine.begin_transaction
+        engine.insert_row(TABLE, COLUMNS, id: command.fetch(:id))
+        committed = engine.commit_transaction
+        emit(output, event: "insert", success: committed == true)
+      rescue StandardError => error
+        engine.rollback_transaction rescue nil
+        emit(output, event: "insert", success: false, error: "#{error.class}: #{error.message}")
+      end
+    when "stop"
+      primary&.stop
+      emit(output, event: "stopped", success: true)
+    when "start"
+      primary&.start
+      emit(output, event: "started", success: true)
+    when "exit"
+      emit(output, event: "exiting", success: true)
+      break
+    else
+      emit(output, event: "error", success: false, error: "unknown command")
+    end
+  end
+ensure
+  replica&.stop
+  primary&.stop
+  engine&.close if engine&.open?
+  quiet&.close
+end
+
+def spawn_node(role, directory, port, fence_path)
+  stdin, stdout, stderr, wait_thread = Open3.popen3(
+    RbConfig.ruby, __FILE__, "--node", role, directory, port.to_s, fence_path
+  )
+  stderr_thread = Thread.new { stderr.each_line { |_line| } }
+  { stdin: stdin, stdout: stdout, stderr: stderr, wait: wait_thread, stderr_thread: stderr_thread }
+end
+
+def read_event(node, timeout: 10)
+  Timeout.timeout(timeout) do
+    loop do
+      ready = IO.select([node[:stdout]], nil, nil, 0.1)
+      next unless ready
+
+      line = node[:stdout].gets
+      raise "node exited before responding" unless line
+
+      return JSON.parse(line, symbolize_names: true)
+    end
+  end
+end
+
+def command(node, name, payload = {})
+  node[:stdin].puts(JSON.generate(payload.merge(command: name)))
+  node[:stdin].flush
+  read_event(node)
+end
+
+def wait_until(timeout: 15)
+  Timeout.timeout(timeout) do
+    loop do
+      return true if yield
+      sleep 0.05
+    end
+  end
+end
+
+def node_status(node)
+  command(node, "status").fetch(:status)
+end
+
+def close_node(node, force: false)
+  return unless node
+
+  if force && node[:wait].alive?
+    Process.kill("KILL", node[:wait].pid)
+  elsif node[:wait].alive?
+    command(node, "exit") rescue nil
+    node[:stdin].close rescue nil
+  end
+  node[:wait].join(5)
+  Process.kill("KILL", node[:wait].pid) if node[:wait].alive?
+  node[:stdout].close rescue nil
+  node[:stderr].close rescue nil
+  node[:stderr_thread]&.join(1)
+end
+
+if ARGV.first == "--node"
+  role, directory, port, fence_path = ARGV.drop(1)
+  abort "invalid node arguments" unless role && directory && port && fence_path
+  run_node(role, directory, Integer(port, 10), fence_path)
+elsif ARGV.first == "--fence"
+  fence_path = ARGV.fetch(1)
+  lease = RubyDB::Replication::FencingLease.new(fence_path, "external-fencer").acquire!
+  puts JSON.generate(success: true, epoch: lease.epoch)
+else
+  begin
+    primary = replica = replacement = final_primary = nil
+    Dir.mktmpdir("rubydb-process-failover-") do |directory|
+      begin
+        port = available_port
+        fence_path = File.join(directory, "cluster.fence")
+        primary = spawn_node("primary", directory, port, fence_path)
+        replica = spawn_node("replica", directory, port, fence_path)
+
+        raise "primary did not start" unless read_event(primary).fetch(:event) == "ready"
+        raise "replica did not start" unless read_event(replica).fetch(:event) == "ready"
+        wait_until { node_status(replica)[:state].to_s == "streaming" }
+
+        raise "initial insert failed" unless command(primary, "insert", id: 1).fetch(:success)
+        wait_until { node_status(replica)[:row_count].to_i == 1 }
+
+        close_node(primary, force: true)
+        primary = nil
+        wait_until do
+          %w[disconnected failed].include?(node_status(replica)[:state].to_s)
+        end
+
+        replacement = spawn_node("primary", directory, port, fence_path)
+        raise "replacement primary did not start" unless read_event(replacement).fetch(:event) == "ready"
+        wait_until { node_status(replica)[:state].to_s == "streaming" }
+        wait_until { node_status(replica)[:row_count].to_i == 1 }
+
+        fence_result, fence_error, fence_status = Open3.capture3(
+          RbConfig.ruby, __FILE__, "--fence", fence_path
+        )
+        raise "external fencing failed: #{fence_error}" unless fence_status.success?
+        raise "fence response invalid" unless JSON.parse(fence_result).fetch("success")
+        raise "stale primary accepted a write" if command(replacement, "insert", id: 2).fetch(:success)
+
+        close_node(replacement, force: true)
+        replacement = nil
+        final_primary = spawn_node("primary", directory, port, fence_path)
+        raise "final primary did not start" unless read_event(final_primary).fetch(:event) == "ready"
+        wait_until { node_status(replica)[:state].to_s == "streaming" }
+        raise "final insert failed" unless command(final_primary, "insert", id: 2).fetch(:success)
+        wait_until { node_status(replica)[:row_count].to_i == 2 }
+
+        puts JSON.generate(
+          success: true,
+          primary_processes: 3,
+          replica_processes: 1,
+          stale_write_rejected: true,
+          rows_replayed_after_failover: node_status(replica)[:row_count]
+        )
+      ensure
+        close_node(final_primary) if final_primary
+        final_primary = nil
+        close_node(replacement) if replacement
+        replacement = nil
+        close_node(replica) if replica
+        replica = nil
+        close_node(primary) if primary
+        primary = nil
+      end
+    end
+  ensure
+    close_node(final_primary) if defined?(final_primary) && final_primary
+    close_node(replacement) if defined?(replacement) && replacement
+    close_node(replica) if defined?(replica) && replica
+    close_node(primary) if defined?(primary) && primary
+  end
+end

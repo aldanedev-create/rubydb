@@ -59,6 +59,9 @@ jobs:
           RUBYDB_SERVER_WORKLOAD_OPERATIONS=1000 \
           ruby benchmarks/multiprocess_server_workload.rb | tee production-results/multiprocess.json
 
+      - name: Run process-level replication failover drill
+        run: ruby scripts/replication_failover_drill | tee production-results/replication-failover.json
+
       - name: Run backup and restore drill
         run: ruby scripts/restore_drill | tee production-results/restore.txt
 

@@ -79,12 +79,7 @@ RSpec.describe "replication partition recovery" do
       primary_engine.begin_transaction
       primary_engine.insert_row(:events, columns, id: 2)
       expect(primary_engine.commit_transaction).to be(true)
-      begin
-        wait_until { replica_engine.table_row_count(:events) == 2 }
-      rescue Timeout::Error
-        warn "post-reconnect primary=#{primary.get_replication_status.inspect} replica=#{replica.replication_status.inspect} rows=#{replica_engine.select_rows(:events, columns).inspect}"
-        raise
-      end
+      wait_until { replica_engine.table_row_count(:events) == 2 }
       expect(primary.replication_log.get_last_lsn).to eq(2)
 
       expect(replica_engine.select_rows(:events, columns).map { |row| row[:id] || row["id"] })

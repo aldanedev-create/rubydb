@@ -47,9 +47,11 @@ these capabilities.
    caller-supplied recovery point. Active primary engine mutations validate the
    fencing lease before writing. Replication shutdown now closes established
    replica sockets, and a reconnect/catch-up partition test verifies that the
-   replica resumes from the durable log. True multi-host partitions, stale
-   writers, and split-brain recovery still require deployment validation before
-   adding automatic election.
+   replica resumes from the durable log. A process-level failover drill now
+   kills and replaces an independent primary, advances the fencing epoch from
+   another process, rejects the stale writer, and verifies replica catch-up.
+   True multi-host network partitions and split-brain recovery still require
+   deployment validation before adding automatic election.
 5. Rails: populated migration round trips, eager loading, nested associations,
    and live adapter coverage are present. CI now exercises Rails 7.1, 7.2, and
    8.0 against the adapter; connection-pool behavior and each version's
