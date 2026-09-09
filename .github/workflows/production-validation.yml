@@ -59,6 +59,15 @@ jobs:
           RUBYDB_SERVER_WORKLOAD_OPERATIONS=1000 \
           ruby benchmarks/multiprocess_server_workload.rb | tee production-results/multiprocess.json
 
+      - name: Run production concurrency and resilience soak
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUBYDB_PRODUCTION_SOAK_CLIENTS=16 \
+          RUBYDB_PRODUCTION_SOAK_OPERATIONS=2000 \
+          RUBYDB_PRODUCTION_SOAK_CANCEL_ROWS=250000 \
+          ruby benchmarks/production_soak.rb | tee production-results/production-soak.json
+
       - name: Run process-level replication failover drill
         run: ruby scripts/replication_failover_drill | tee production-results/replication-failover.json
 

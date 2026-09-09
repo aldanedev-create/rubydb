@@ -78,6 +78,13 @@ ruby benchmarks/multiprocess_server_workload.rb
 # The parent supervises and reaps every child; a timed-out worker fails the run
 # instead of leaving orphaned workload processes behind.
 
+# Combined production concurrency/resilience gate: traffic latency, deadline,
+# real wire cancellation, connection capacity rejection, and deadlock detection
+$env:RUBYDB_PRODUCTION_SOAK_CLIENTS = "16"
+$env:RUBYDB_PRODUCTION_SOAK_OPERATIONS = "2000"
+$env:RUBYDB_PRODUCTION_SOAK_CANCEL_ROWS = "250000"
+ruby benchmarks/production_soak.rb
+
 # Independent primary/replica processes, crash replacement, and stale-writer fencing
 ruby scripts/replication_failover_drill
 

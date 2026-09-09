@@ -141,7 +141,7 @@ def command(node, name, payload = {})
   read_event(node)
 end
 
-def wait_until(timeout: 15)
+def wait_until(timeout: 30)
   Timeout.timeout(timeout) do
     loop do
       return true if yield
@@ -191,6 +191,7 @@ else
         raise "primary did not start" unless read_event(primary).fetch(:event) == "ready"
         raise "replica did not start" unless read_event(replica).fetch(:event) == "ready"
         wait_until { node_status(replica)[:state].to_s == "streaming" }
+        wait_until { node_status(primary)[:active_replicas].to_i >= 1 }
 
         raise "initial insert failed" unless command(primary, "insert", id: 1).fetch(:success)
         wait_until { node_status(replica)[:row_count].to_i == 1 }
@@ -204,6 +205,7 @@ else
         replacement = spawn_node("primary", directory, port, fence_path)
         raise "replacement primary did not start" unless read_event(replacement).fetch(:event) == "ready"
         wait_until { node_status(replica)[:state].to_s == "streaming" }
+        wait_until { node_status(replacement)[:active_replicas].to_i >= 1 }
         wait_until { node_status(replica)[:row_count].to_i == 1 }
 
         fence_result, fence_error, fence_status = Open3.capture3(

@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
+require "set"
+
 module RubyDB
   module Transactions
 
     # Import lock and transaction classes
-require_relative "lock"
-require_relative "transaction"
+    require_relative "lock"
+    require_relative "transaction"
 
     # LockManager - Manages locks for transactions
     class LockManager
@@ -22,14 +24,20 @@ require_relative "transaction"
           locks_released: 0,
           lock_waits: 0,
           lock_timeouts: 0,
-          deadlocks_detected: 0
+          deadlocks_detected: 0,
+          deadlocks_resolved: 0
         }
         @lock = Mutex.new
         @condition = ConditionVariable.new
+        @transactions = {}
+        @deadlock_victims = {}
       end
 
       def acquire_lock(transaction, table_name, row_id, lock_type, timeout = @lock_timeout)
         @lock.synchronize do
+          @transactions[transaction.id] = transaction
+          return false unless transaction.active?
+
           key = lock_key(table_name, row_id)
           
           # Check if transaction already has lock
@@ -59,11 +67,6 @@ require_relative "transaction"
           @stats[:lock_waits] += 1
           result = wait_for_lock(transaction, key, lock_type, timeout)
           
-          # Check for deadlock
-          if @deadlock_detection && !result
-            detect_deadlock
-          end
-          
           result
         end
       end
@@ -85,6 +88,7 @@ require_relative "transaction"
               end
             end
           end
+          @transactions.delete(transaction.id)
         end
       end
 
@@ -92,6 +96,8 @@ require_relative "transaction"
         @lock.synchronize do
           @locks.clear
           @waiting.clear
+          @transactions.clear
+          @deadlock_victims.clear
           @stats[:locks_released] += 1
         end
       end
@@ -112,6 +118,14 @@ require_relative "transaction"
         @waiting.size
       end
 
+      def deadlock_victim?(transaction_id)
+        @lock.synchronize { @deadlock_victims.key?(transaction_id) }
+      end
+
+      def clear_deadlock_victim(transaction_id)
+        @lock.synchronize { @deadlock_victims.delete(transaction_id) }
+      end
+
       def total_locks
         @locks.size
       end
@@ -126,7 +140,28 @@ require_relative "transaction"
         end
       end
 
+      # Return the current wait-for graph as transaction ids. This is a
+      # snapshot intended for monitoring and transaction-manager deadlock
+      # resolution; callers never receive mutable lock-manager state.
+      def wait_for_graph
+        @lock.synchronize { build_wait_for_graph }
+      end
+
       private
+
+      def build_wait_for_graph
+        graph = {}
+        @waiting.each do |transaction_id, waits|
+          graph[transaction_id] = Set.new
+          waits.each_key do |key|
+            @locks[key]&.holders&.each_key do |holder_id|
+              graph[holder_id] ||= Set.new
+              graph[transaction_id] << holder_id
+            end
+          end
+        end
+        graph
+      end
 
       def lock_key(table_name, row_id)
         "#{table_name}:#{row_id}"
@@ -192,6 +227,13 @@ require_relative "transaction"
         
         # Wait loop
         while (remaining = timeout - (Time.now - start_time)) > 0
+          if !transaction.active? || @deadlock_victims.key?(transaction.id)
+            waits = @waiting[transaction.id]
+            waits&.delete(key)
+            @waiting.delete(transaction.id) if waits&.empty?
+            return false
+          end
+
           # Check if lock is available
           if @locks[key].nil? || compatible?(@locks[key], lock_type, transaction)
             # Remove from waiting
@@ -210,10 +252,17 @@ require_relative "transaction"
           @condition.wait(@lock, remaining)
         end
         
-        # Timeout
+        # Detect while the timed-out waiter is still in the wait graph. The
+        # previous ordering removed it first, making a two-transaction cycle
+        # impossible to observe. Resolution is performed by the unlocked
+        # helper because this method already owns @lock.
+        detect_deadlock if @deadlock_detection
+
+        # Timeout or deadlock victim
         @stats[:lock_timeouts] += 1
-        @waiting[transaction.id].delete(key)
-        @waiting.delete(transaction.id) if @waiting[transaction.id].empty?
+        waits = @waiting[transaction.id]
+        waits&.delete(key)
+        @waiting.delete(transaction.id) if waits&.empty?
         false
       end
 
@@ -227,28 +276,19 @@ require_relative "transaction"
       end
 
       def detect_deadlock
-        # Build wait-for graph
-        graph = {}
-        
-        @waiting.each do |txn_id, waits|
-          graph[txn_id] = Set.new
-          waits.each do |key, _|
-            @locks[key]&.holders&.each do |holder_id, _|
-              graph[txn_id] << holder_id
-            end
-          end
-        end
-        
+        graph = build_wait_for_graph
+
         # Detect cycles
         cycles = detect_cycles(graph)
         
         if cycles.any?
           @stats[:deadlocks_detected] += 1
-          # Resolve by aborting the transaction with lowest priority
-          # (Simplified - in production would use more sophisticated algorithm)
+          # Resolve by aborting the lowest-priority transaction. The victim is
+          # marked before locks are released so its waiter cannot reacquire a
+          # lock after the condition variable wakes it.
           cycles.each do |cycle|
-            victim = cycle.min_by { |id| @waiting[id]&.size || 0 }
-            abort_transaction(victim) if victim
+            victim = cycle.compact.min_by { |id| [@transactions[id]&.priority.to_i, id.to_s] }
+            abort_transaction_unlocked(victim) if victim
           end
         end
       end
@@ -259,7 +299,7 @@ require_relative "transaction"
         active = Set.new
         path = []
         
-        graph.each do |node, _|
+        graph.keys.each do |node|
           detect_cycle_dfs(node, graph, visited, active, path, cycles) unless visited.include?(node)
         end
         
@@ -288,13 +328,34 @@ require_relative "transaction"
       end
 
       def abort_transaction(transaction_id)
-        if @transaction_manager.respond_to?(:get_transaction) &&
-            @transaction_manager.respond_to?(:rollback_transaction)
-          transaction = @transaction_manager.get_transaction(transaction_id)
-          @transaction_manager.rollback_transaction(transaction) if transaction
+        transaction = if @transaction_manager.respond_to?(:get_transaction)
+          @transaction_manager.get_transaction(transaction_id)
         end
+        if transaction && @transaction_manager.respond_to?(:rollback_transaction)
+          @transaction_manager.rollback_transaction(transaction)
+        end
+        @lock.synchronize { abort_transaction_unlocked(transaction_id) }
+      end
+
+      # Called only while @lock is held. It must never call back into the
+      # transaction manager, whose own mutex may be held by the caller.
+      def abort_transaction_unlocked(transaction_id)
+        transaction = @transactions[transaction_id]
+        if @transaction_manager
+          @deadlock_victims[transaction_id] = transaction if transaction
+        else
+          transaction&.abort
+        end
+
         @waiting.delete(transaction_id)
-        release_locks(Transaction.new(id: transaction_id))
+        @locks.each do |key, lock|
+          next unless lock.holders.key?(transaction_id)
+
+          lock.remove_holder(Transaction.new(id: transaction_id))
+          @locks.delete(key) if lock.holders.empty?
+        end
+        @stats[:deadlocks_resolved] += 1
+        @condition.broadcast
       end
     end
   end

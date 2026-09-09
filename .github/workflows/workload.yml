@@ -42,6 +42,14 @@ jobs:
           RUBYDB_SERVER_WORKLOAD_PROCESSES=8 \
           RUBYDB_SERVER_WORKLOAD_OPERATIONS=1000 \
           ruby benchmarks/multiprocess_server_workload.rb | tee workload-results/multiprocess.json
+      - name: Run cancellation, capacity, and deadlock soak
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUBYDB_PRODUCTION_SOAK_CLIENTS=8 \
+          RUBYDB_PRODUCTION_SOAK_OPERATIONS=500 \
+          RUBYDB_PRODUCTION_SOAK_CANCEL_ROWS=250000 \
+          ruby benchmarks/production_soak.rb | tee workload-results/production-soak.json
       - name: Upload workload metrics
         if: always()
         uses: actions/upload-artifact@v4

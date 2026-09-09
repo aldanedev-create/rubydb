@@ -24,4 +24,54 @@ RSpec.describe RubyDB::Transactions::LockManager do
 
     expect(calls).to eq([[:get, 4], [:rollback, 4]])
   end
+
+  it "detects and resolves a real two-transaction lock cycle" do
+    manager = described_class.new(lock_timeout: 0.1)
+    first = RubyDB::Transactions::Transaction.new(id: "first", priority: 1)
+    second = RubyDB::Transactions::Transaction.new(id: "second", priority: 2)
+    expect(manager.acquire_lock(first, "items", 1, :exclusive)).to be(true)
+    expect(manager.acquire_lock(second, "items", 2, :exclusive)).to be(true)
+
+    ready = Queue.new
+    waits = [
+      Thread.new do
+        ready << true
+        manager.acquire_lock(first, "items", 2, :exclusive, 0.1)
+      end,
+      Thread.new do
+        ready << true
+        manager.acquire_lock(second, "items", 1, :exclusive, 0.1)
+      end
+    ]
+    2.times { ready.pop }
+    waits.each { |thread| expect(thread.join(2)).to be_a(Thread) }
+
+    expect(manager.stats[:deadlocks_detected]).to be >= 1
+    expect(manager.stats[:deadlocks_resolved]).to be >= 1
+    expect([first.aborted?, second.aborted?].count(true)).to eq(1)
+    expect(manager.waiting_transactions).to eq(0)
+  ensure
+    waits&.each { |thread| thread.kill if thread.alive? }
+  end
+
+  it "rolls back the victim when the transaction manager owns the lock manager" do
+    manager = RubyDB::Transactions::TransactionManager.new(nil, auto_cleanup: false, recovery: false)
+    first = manager.begin_transaction(timeout: 0.1, priority: 1)
+    second = manager.begin_transaction(timeout: 0.1, priority: 2)
+    expect(manager.acquire_lock(first, "items", 1, :exclusive)).to be(true)
+    expect(manager.acquire_lock(second, "items", 2, :exclusive)).to be(true)
+
+    waits = [
+      Thread.new { manager.acquire_lock(first, "items", 2, :exclusive) },
+      Thread.new { manager.acquire_lock(second, "items", 1, :exclusive) }
+    ]
+    waits.each { |thread| expect(thread.join(2)).to be_a(Thread) }
+
+    expect(manager.lock_manager.stats[:deadlocks_detected]).to be >= 1
+    expect(manager.lock_manager.stats[:deadlocks_resolved]).to be >= 1
+    expect([first.aborted?, second.aborted?].count(true)).to eq(1)
+  ensure
+    waits&.each { |thread| thread.kill if thread.alive? }
+    manager&.release_all_locks
+  end
 end

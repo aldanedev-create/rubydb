@@ -29,7 +29,7 @@ module RubyDB
         @committed_transactions = []
         @aborted_transactions = []
         @transaction_log = TransactionLog.new(config[:log_path])
-        @lock_manager = LockManager.new(config)
+        @lock_manager = LockManager.new(config.merge(transaction_manager: self))
         @commit_manager = CommitManager.new(self, config)
         @stats = {
           transactions_started: 0,
@@ -166,61 +166,66 @@ module RubyDB
       end
 
       def detect_deadlock
-        @lock.synchronize do
-          # Build wait-for graph
-          graph = build_wait_for_graph
-          
-          # Detect cycles
-          cycles = detect_cycles(graph)
-          
-          if cycles.any?
-            @stats[:deadlocks_detected] += cycles.size
-            cycles.each do |cycle|
-              resolve_deadlock(cycle)
-            end
-            return true
-          end
-          
-          false
-        end
+        cycles = detect_cycles(build_wait_for_graph)
+        return false if cycles.empty?
+
+        @lock.synchronize { @stats[:deadlocks_detected] += cycles.size }
+        cycles.each { |cycle| resolve_deadlock(cycle) }
+        true
       end
 
       def resolve_deadlock(cycle)
-        # Choose victim (transaction with lowest priority)
-        victim = cycle.min_by { |txn| txn.priority }
-        
-        # Abort victim
+        transactions = Array(cycle).filter_map do |entry|
+          if entry.respond_to?(:priority)
+            entry
+          else
+            @lock.synchronize { @active_transactions[entry] }
+          end
+        end
+        victim = @lock.synchronize do
+          transactions.min_by { |transaction| transaction.priority.to_i }
+        end
+        return nil unless victim
+
         rollback_transaction(victim)
-        
-        @stats[:deadlocks_resolved] += 1
+        @lock.synchronize { @stats[:deadlocks_resolved] += 1 }
         victim
       end
 
       def acquire_lock(transaction, table_name, row_id, lock_type)
-        @lock.synchronize do
+        valid = @lock.synchronize do
           return false unless transaction.active?
-          
+
           # Check for timeout
           if transaction.expired?
             @stats[:lock_timeouts] += 1
             return false
           end
-          
-          # Acquire lock
-          result = @lock_manager.acquire_lock(
-            transaction,
-            table_name,
-            row_id,
-            lock_type,
-            transaction.timeout
-          )
-          
-          if result
-            transaction.add_locked_row(table_name, row_id, lock_type)
-          end
-          
-          result
+          true
         end
+        return false unless valid
+
+        # Do not hold the transaction-manager mutex while a lock wait blocks;
+        # deadlock resolution must be able to return through this method.
+        result = @lock_manager.acquire_lock(
+          transaction,
+          table_name,
+          row_id,
+          lock_type,
+          transaction.timeout
+        )
+
+        if result
+          transaction.add_locked_row(table_name, row_id, lock_type)
+        elsif @lock_manager.deadlock_victim?(transaction.id)
+          @lock.synchronize do
+            @stats[:deadlocks_detected] += 1
+          end
+          rollback_transaction(transaction)
+          @lock_manager.clear_deadlock_victim(transaction.id)
+        end
+
+        result
       end
 
       def release_locks(transaction)
@@ -333,55 +338,38 @@ module RubyDB
       end
 
       def build_wait_for_graph
-        graph = {}
-        
-        @active_transactions.each do |id, txn|
-          graph[id] = Set.new
-          txn.locked_rows.each do |key, lock|
-            # Find transactions waiting for this lock
-            @lock_manager.waiting_for_lock(lock).each do |waiter|
-              graph[id] << waiter.id
-            end
-          end
-        end
-        
-        graph
+        @lock_manager.wait_for_graph
       end
 
       def detect_cycles(graph)
         cycles = []
         visited = Set.new
-        recursion_stack = Set.new
-        
-        graph.each do |node, _|
-          if detect_cycle_dfs(node, graph, visited, recursion_stack, [])
-            cycles << [node]
-          end
+        active = Set.new
+        path = []
+
+        graph.each_key do |node|
+          detect_cycle_dfs(node, graph, visited, active, path, cycles) unless visited.include?(node)
         end
-        
         cycles
       end
 
-      def detect_cycle_dfs(node, graph, visited, recursion_stack, path)
-        return false if visited.include?(node)
-        
-        visited.add(node)
-        recursion_stack.add(node)
-        path << node
-        
-        graph[node]&.each do |neighbor|
-          if recursion_stack.include?(neighbor)
-            return true
-          end
-          
-          if detect_cycle_dfs(neighbor, graph, visited, recursion_stack, path)
-            return true
-          end
+      def detect_cycle_dfs(node, graph, visited, active, path, cycles)
+        if active.include?(node)
+          start = path.index(node)
+          cycle = path[start..] + [node]
+          cycles << cycle unless cycles.include?(cycle)
+          return
         end
-        
-        recursion_stack.delete(node)
+        return if visited.include?(node)
+
+        visited.add(node)
+        active.add(node)
+        path << node
+
+        graph[node]&.each { |neighbor| detect_cycle_dfs(neighbor, graph, visited, active, path, cycles) }
+
         path.pop
-        false
+        active.delete(node)
       end
 
       def can_commit?(transaction)
