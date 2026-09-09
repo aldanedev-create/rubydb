@@ -54,18 +54,29 @@ module RubyDB
             raise ConfigurationError, "Unsupported index type: #{index_type}"
           end
           
-          # Store index
-          @indexes[name] = index
-          @table_indexes[table_name] ||= []
-          @table_indexes[table_name] << name
-          
-          # Build index from existing data
-          build_index(name) unless options[:skip_build]
-          
-          @stats[:index_creates] += 1
-          save_indexes
-          
-          true
+          begin
+            # Store index
+            @indexes[name] = index
+            @table_indexes[table_name] ||= []
+            @table_indexes[table_name] << name
+
+            # Build the in-memory structure first, then publish its durable
+            # definition once. A failed publication must not leave an index
+            # visible in this process but absent from the on-disk catalog.
+            build_index(name, persist: false) unless options[:skip_build]
+
+            @stats[:index_creates] += 1
+            save_indexes
+            true
+          rescue Exception
+            @indexes.delete(name)
+            if @table_indexes[table_name]
+              @table_indexes[table_name].delete(name)
+              @table_indexes.delete(table_name) if @table_indexes[table_name].empty?
+            end
+            @stats[:index_creates] -= 1 if @stats[:index_creates].positive?
+            raise
+          end
         end
       end
 
@@ -115,7 +126,7 @@ module RubyDB
         @indexes.key?(name)
       end
 
-      def build_index(name)
+      def build_index(name, persist: true)
         @lock.synchronize do
           index = @indexes[name]
           return false unless index
@@ -128,7 +139,7 @@ module RubyDB
           index.build(rows)
           
           @stats[:index_builds] += 1
-          save_indexes
+          save_indexes if persist
           true
         end
       end
@@ -372,7 +383,18 @@ module RubyDB
             }
           end
 
-          File.write(index_metadata_path, JSON.generate(data))
+          path = index_metadata_path
+          temporary = "#{path}.tmp-#{Process.pid}-#{Thread.current.object_id}-#{Time.now.to_f.hash.abs}"
+          File.open(temporary, "wb") do |file|
+            file.write(JSON.generate(data))
+            file.flush
+            file.fsync
+          end
+          begin
+            File.rename(temporary, path)
+          ensure
+            File.delete(temporary) if File.file?(temporary)
+          end
         end
       end
 

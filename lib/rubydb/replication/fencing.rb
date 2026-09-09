@@ -24,7 +24,11 @@ module RubyDB
           current = read_record
           @epoch = current ? current.fetch("epoch").to_i + 1 : 1
           temporary = "#{@path}.tmp-#{Process.pid}-#{Thread.current.object_id}"
-          File.write(temporary, JSON.generate(node_id: @node_id, epoch: @epoch, updated_at: Time.now.utc.iso8601))
+          File.open(temporary, "wb") do |file|
+            file.write(JSON.generate(node_id: @node_id, epoch: @epoch, updated_at: Time.now.utc.iso8601))
+            file.flush
+            file.fsync
+          end
           File.rename(temporary, @path)
         ensure
           File.delete(temporary) if defined?(temporary) && File.file?(temporary)

@@ -93,8 +93,10 @@ module RubyDB
         @lock.synchronize { @running }
       end
 
-      def promote_to_primary
+      def promote_to_primary(recovery_point: nil)
         @lock.synchronize do
+          validate_promotion!(recovery_point)
+
           # Stop replication
           stop
 
@@ -316,6 +318,26 @@ module RubyDB
         @connection = nil
         @state = STATE_DISCONNECTED
         @stats[:last_disconnect_time] = Time.now
+      end
+
+      def validate_promotion!(recovery_point)
+        unless [STATE_STREAMING, STATE_SYNCED].include?(@state)
+          raise ReplicationError, "Replica is not synchronized enough for promotion"
+        end
+
+        if @last_received_lsn != @last_replayed_lsn
+          raise ReplicationError,
+                "Replica has unapplied replication data (received=#{@last_received_lsn.inspect}, " \
+                "replayed=#{@last_replayed_lsn.inspect})"
+        end
+
+        return true if recovery_point.nil?
+
+        target = recovery_point.to_i
+        replayed = @last_replayed_lsn.to_i
+        raise ReplicationError, "Replica has not reached recovery point #{target}" if replayed < target
+
+        true
       end
     end
   end

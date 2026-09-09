@@ -57,6 +57,7 @@ module RubyDB
         @heartbeat_thread = nil
         @recovery = nil
         @fencing_lease = FencingLease.new(@config[:fence_path], @config[:node_id]).acquire!
+        @engine.set_write_fence(@fencing_lease) if @engine.respond_to?(:set_write_fence)
         @engine_commit_listener = proc do |transaction_id, changes|
           write(
             id: "engine_tx_#{transaction_id}",

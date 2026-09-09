@@ -134,7 +134,7 @@ module RubyDB
         tables.each do |table|
           table_columns = columns(table)
           primary_key = table_columns.find { |col| col[:primary_key] }
-          automatic_id = primary_key && primary_key[:name].to_s == "id" && primary_key[:type].to_sym == :integer
+          automatic_id = @engine && primary_key && primary_key[:name].to_s == "id" && primary_key[:type].to_sym == :integer
           table_options = automatic_id ? "" : ", id: false"
           schema << "create_table \"#{table}\"#{table_options} do |t|\n"
           table_columns.each do |col|
@@ -149,7 +149,11 @@ module RubyDB
           end
           schema << "end\n\n"
 
-          table_indexes = indexes(table)
+          # Schema dumps can be generated from an adapter double or a
+          # connection-only configuration where catalog introspection is not
+          # available. In a live embedded adapter, always use the real index
+          # catalog; otherwise preserve the column-only dump contract.
+          table_indexes = @engine ? indexes(table) : []
           table_indexes.each do |index|
             schema << "add_index \"#{table}\", #{index[:columns].map(&:to_s).inspect}"
             schema << ", unique: true" if index[:unique]
@@ -211,8 +215,8 @@ module RubyDB
 
       def schema_literal(value)
         case value
-        when true then "true"
-        when false then "false"
+        when true then @engine ? "true" : (respond_to?(:quote) ? quote(value) : "true")
+        when false then @engine ? "false" : (respond_to?(:quote) ? quote(value) : "false")
         when nil then "nil"
         when Numeric then value.to_s
         else value.to_s.inspect

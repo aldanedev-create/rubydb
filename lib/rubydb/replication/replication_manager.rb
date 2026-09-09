@@ -110,7 +110,7 @@ module RubyDB
         end
       end
 
-      def promote_to_primary
+      def promote_to_primary(recovery_point: nil)
         @lock.synchronize do
           if @mode != MODE_REPLICA
             return { success: false, error: "Not in replica mode" }
@@ -121,9 +121,24 @@ module RubyDB
             return { success: false, error: "Replica is not synchronized enough for manual promotion" }
           end
 
+          if status[:last_received_lsn] != status[:last_replayed_lsn]
+            return {
+              success: false,
+              error: "Replica has unapplied replication data; promotion requires a caught-up recovery point"
+            }
+          end
+
+          if recovery_point && status[:last_replayed_lsn].to_i < recovery_point.to_i
+            return { success: false, error: "Replica has not reached recovery point #{recovery_point}" }
+          end
+
           # Promote replica to primary. Automatic promotion is intentionally
           # not attempted; callers must explicitly invoke this operation.
-          @replica&.promote_to_primary
+          begin
+            @replica&.promote_to_primary(recovery_point: recovery_point)
+          rescue ReplicationError => e
+            return { success: false, error: e.message }
+          end
 
           # Switch mode
           @mode = MODE_PRIMARY

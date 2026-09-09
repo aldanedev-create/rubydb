@@ -15,9 +15,11 @@ these capabilities.
    validation remain open.
 2. Persistence: fault-test disk-full and interrupted checkpoints/schema changes;
    index metadata load and write errors now fail visibly, and failed schema
-   publications roll back in-memory state. Commit acknowledgements now expose
-   durable versus uncertain WAL state and recovery-required post-WAL flush
-   failures. Fault-injection coverage for checkpoints/schema writes remains.
+   publications roll back in-memory state. Metadata and index catalogs are
+   published through unique temporary files with flush/fsync/atomic rename.
+   Commit acknowledgements now expose durable versus uncertain WAL state and
+   recovery-required post-WAL flush failures. Fault-injection coverage for
+   checkpoints and broader page-write failures remains.
 3. SQL correctness: ambiguous identifiers, outer-join NULL handling, boolean
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
    schema changes on populated tables. Non-recursive CTEs, subqueries, set
@@ -30,7 +32,10 @@ these capabilities.
    connections bootstrap the catalog before row replay, including empty replicas. TCP input now
    uses bounded newline framing and replay positions are fsynced before ack;
    replica engine mutation entry points are read-only except for internal replay.
-   Validate partitions and stale writers before adding automatic election.
+   Promotion now rejects any received/replayed LSN gap and can require a
+   caller-supplied recovery point. Active primary engine mutations validate the
+   fencing lease before writing. Validate partitions and stale writers before
+   adding automatic election.
 5. Rails: populated migration round trips, eager loading, nested associations,
    connection pools and a supported-version CI matrix remain open. Native and
    ActiveRecord schema dumps now round-trip automatic/custom primary-key modes,

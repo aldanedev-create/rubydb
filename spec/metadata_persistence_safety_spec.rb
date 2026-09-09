@@ -52,4 +52,33 @@ RSpec.describe "table metadata persistence" do
       engine&.close if engine&.open?
     end
   end
+
+  it "rolls back a failed populated-table schema publication" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "alter-failure.rdb")
+      engine = RubyDB::Storage::Engine.new(path, auto_cleanup: false, auto_vacuum: false)
+      engine.create_table(:events, columns)
+      engine.insert_row(:events, columns, id: 1)
+      metadata_path = "#{path}.metadata"
+      fail_publish = true
+      allow(File).to receive(:rename).and_wrap_original do |original, source, destination|
+        raise Errno::EIO, "simulated interrupted schema publication" if fail_publish && destination == metadata_path
+
+        original.call(source, destination)
+      end
+
+      expect { engine.add_column(:events, :message, :text, null: true) }
+        .to raise_error(RubyDB::StorageError, /Unable to persist table metadata/)
+      expect(engine.table_columns(:events).map(&:name)).to eq([:id])
+
+      fail_publish = false
+      engine.close
+      reopened = RubyDB::Storage::Engine.new(path, auto_cleanup: false, auto_vacuum: false)
+      expect(reopened.table_columns(:events).map(&:name)).to eq(["id"])
+      expect(reopened.select_rows(:events, reopened.table_columns(:events))).to include(hash_including("id" => 1))
+    ensure
+      engine&.close if engine&.open?
+      reopened&.close if reopened&.open?
+    end
+  end
 end

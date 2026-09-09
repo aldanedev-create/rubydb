@@ -92,11 +92,17 @@ module RubyDB
         @transaction_context_key = "rubydb_engine_transaction_#{object_id}".to_sym
         @commit_listeners = []
         @last_commit_ack = nil
+        @metadata_write_lock = Mutex.new
+        @metadata_write_sequence = 0
         @current_transaction_id = 0
         @recovery_in_progress = false
         # A replica must never accept an accidental local mutation. Replay uses
         # the narrowly-scoped with_replication_apply escape hatch below.
         @replication_read_only = false
+        # Optional cluster fencing lease installed by the active primary.
+        # Checking it before every local mutation prevents a stale primary
+        # from accepting writes after another node has taken the lease.
+        @write_fence = nil
         @stats = {
           table_creates: 0,
           row_inserts: 0,
@@ -310,7 +316,8 @@ module RubyDB
       def add_column(table_name, column_name, type, options = {})
         ensure_writable!
         table_name = resolve_table_name(table_name)
-        @lock.synchronize do
+        with_schema_publication do
+          @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
           metadata = @table_metadata[table_key]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
@@ -328,13 +335,15 @@ module RubyDB
           @catalog.find_table(table_key)&.add_column(column) if @catalog&.current_database
           save_table_metadata
           true
+          end
         end
       end
 
       def drop_column(table_name, column_name)
         ensure_writable!
         table_name = resolve_table_name(table_name)
-        @lock.synchronize do
+        with_schema_publication do
+          @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
           metadata = @table_metadata[table_key]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
@@ -349,13 +358,15 @@ module RubyDB
           @catalog.find_table(table_key)&.drop_column(column_name) if @catalog&.current_database
           save_table_metadata
           true
+          end
         end
       end
 
       def add_constraint(table_name, constraint)
         ensure_writable!
         table_name = resolve_table_name(table_name)
-        @lock.synchronize do
+        with_schema_publication do
+          @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
           metadata = @table_metadata[table_key]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
@@ -391,13 +402,15 @@ module RubyDB
           metadata[:updated_at] = Time.now
           save_table_metadata
           true
+          end
         end
       end
 
       def drop_constraint(table_name, constraint_name)
         ensure_writable!
         table_name = resolve_table_name(table_name)
-        @lock.synchronize do
+        with_schema_publication do
+          @lock.synchronize do
           table_key = @table_metadata.key?(table_name) ? table_name : table_name.to_sym
           metadata = @table_metadata[table_key]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
@@ -408,6 +421,7 @@ module RubyDB
           metadata[:updated_at] = Time.now
           save_table_metadata
           true
+          end
         end
       end
 
@@ -497,6 +511,14 @@ module RubyDB
 
       def set_replication_read_only(value)
         @lock.synchronize { @replication_read_only = !!value }
+      end
+
+      def set_write_fence(fence)
+        @lock.synchronize { @write_fence = fence }
+      end
+
+      def write_fence
+        @lock.synchronize { @write_fence }
       end
 
       def with_replication_apply
@@ -1652,8 +1674,10 @@ module RubyDB
       end
 
       def ensure_writable!
-        return unless @replication_read_only
         return if Thread.current[:rubydb_replication_apply_depth].to_i.positive?
+
+        @write_fence&.assert_valid!
+        return unless @replication_read_only
 
         raise ReplicationError, "Replica is read-only; promote it before accepting local writes"
       end
@@ -2217,16 +2241,19 @@ module RubyDB
         end
 
         metadata_path = "#{@path}.metadata"
-        temp_path = "#{metadata_path}.tmp-#{Process.pid}-#{Thread.current.object_id}"
-        File.open(temp_path, "wb") do |file|
-          file.write(JSON.generate(data))
-          file.flush
-          file.fsync
-        end
-        begin
-          File.rename(temp_path, metadata_path)
-        ensure
-          File.delete(temp_path) if File.file?(temp_path)
+        @metadata_write_lock.synchronize do
+          @metadata_write_sequence += 1
+          temp_path = "#{metadata_path}.tmp-#{Process.pid}-#{Thread.current.object_id}-#{@metadata_write_sequence}"
+          File.open(temp_path, "wb") do |file|
+            file.write(JSON.generate(data))
+            file.flush
+            file.fsync
+          end
+          begin
+            File.rename(temp_path, metadata_path)
+          ensure
+            File.delete(temp_path) if File.file?(temp_path)
+          end
         end
         true
       rescue SystemCallError, JSON::GeneratorError => error

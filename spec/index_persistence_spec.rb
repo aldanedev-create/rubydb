@@ -20,9 +20,9 @@ RSpec.describe "index persistence and maintenance" do
       engine = RubyDB::Storage::Engine.new(path, auto_vacuum: false)
       columns = [RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false)]
       engine.create_table(:users, columns)
-      allow(File).to receive(:write).and_wrap_original do |original, filename, *arguments|
-        raise Errno::ENOSPC, filename if filename == "#{path}.indexes"
-        original.call(filename, *arguments)
+      allow(File).to receive(:rename).and_wrap_original do |original, source, destination|
+        raise Errno::ENOSPC, destination if destination == "#{path}.indexes"
+        original.call(source, destination)
       end
 
       expect { engine.index_manager.create_index(:users_id_idx, :users, [:id]) }.to raise_error(Errno::ENOSPC)
