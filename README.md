@@ -128,6 +128,8 @@ by the presence of an adapter.
 - [Production readiness](docs/production-readiness.md)
 - [Operations and workload testing](docs/operations/workload-testing.md)
 - [Production runbook](docs/operations/production-runbook.md)
+- [CLI guide](docs/cli.md)
+- [CLI cheat sheet](docs/cli-cheatsheet.md)
 - [Release checklist](docs/release.md)
 - [Security policy](SECURITY.md)
 - [Contributing and testing](CONTRIBUTING.md)

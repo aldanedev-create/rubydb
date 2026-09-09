@@ -12,6 +12,8 @@ Start here:
 - [Production validation](production_validation.md)
 - [Production-readiness audit](production-readiness.md)
 - [Production runbook](operations/production-runbook.md)
+- [CLI guide](cli.md)
+- [CLI cheat sheet](cli-cheatsheet.md)
 - [Disaster recovery](operations/disaster-recovery.md)
 - [Monitoring and alerting](operations/monitoring.md)
 - [Workload testing](operations/workload-testing.md)

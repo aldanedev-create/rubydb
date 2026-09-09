@@ -60,6 +60,7 @@ module RubyDB
           end
 
           parser.parse!(args)
+          @options = options
 
           # Load history
           load_history
