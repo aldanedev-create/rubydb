@@ -24,6 +24,18 @@ module ActiveRecord
 
       ADAPTER_NAME = "RubyDB"
 
+      # ActiveRecord 7.2 uses adapter-level methods while compiling hash-form
+      # order clauses (for example, `order(created_at: :desc)`). Keep these
+      # independent of a live connection so relation construction is safe
+      # during schema-cache and query setup as well.
+      def self.quote_table_name(name)
+        quote_column_name(name)
+      end
+
+      def self.quote_column_name(name)
+        "\"#{name.to_s.gsub('"', '""')}\""
+      end
+
       NATIVE_DATABASE_TYPES = {
         primary_key: "INTEGER PRIMARY KEY AUTOINCREMENT",
         string: { name: "VARCHAR", limit: 255 },
