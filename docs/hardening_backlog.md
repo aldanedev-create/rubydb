@@ -41,9 +41,11 @@ these capabilities.
    fencing lease before writing. Validate partitions and stale writers before
    adding automatic election.
 5. Rails: populated migration round trips, eager loading, nested associations,
-   connection pools and a supported-version CI matrix remain open. Native and
-   ActiveRecord schema dumps now round-trip automatic/custom primary-key modes,
-   defaults, and indexes through live engines.
+   connection pools and a supported-version CI matrix remain open. Migration
+   tracking now uses stable content checksums and fails closed for changed or
+   missing applied migrations. Native and ActiveRecord schema dumps now
+   round-trip automatic/custom primary-key modes, defaults, and indexes through
+   live engines.
 6. Operations: backup manifest writes now use durable atomic publication, live
    engines flush WAL/storage before physical backup, and a scheduled restore
    drill reopens restored files. Upgrade tests, measured resource limits,

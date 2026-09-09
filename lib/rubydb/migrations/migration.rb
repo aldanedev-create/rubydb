@@ -75,6 +75,13 @@ module RubyDB
         @state == STATE_FAILED
       end
 
+      # Return a stable content checksum even before the migration is applied.
+      # The checksum must not include timestamps or object identity so the same
+      # migration loaded in a later process produces the same value.
+      def checksum
+        @checksum || calculate_checksum
+      end
+
       def rolled_back?
         @state == STATE_ROLLED_BACK
       end
@@ -232,7 +239,14 @@ module RubyDB
       end
 
       def calculate_checksum
-        data = @up_operations.map(&:to_s).join + @down_operations.map(&:to_s).join
+        data = begin
+          [@version, @name, to_sql].join("\0")
+        rescue ArgumentError
+          # Non-serializable Ruby operations still receive a deterministic
+          # source-based checksum; SQL serialization remains the preferred
+          # migration compatibility path.
+          [@version, @name, (@up_operations + @down_operations).map(&:source_location)].to_json
+        end
         @checksum = Digest::SHA256.hexdigest(data)[0...16]
       end
     end

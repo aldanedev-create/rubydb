@@ -26,6 +26,7 @@ module RubyDB
         with_lock do
           ensure_schema
           applied = applied_versions
+          validate_applied_migrations(applied)
           target = target_version
           pending = ordered_migrations.reject { |migration| applied.key?(migration.version.to_s) }
           pending = pending.select { |migration| migration_key(migration.version) <= migration_key(target) } if target
@@ -39,6 +40,7 @@ module RubyDB
         with_lock do
           ensure_schema
           applied = applied_versions
+          validate_applied_migrations(applied)
           to_rollback = ordered_migrations.select { |m| applied.key?(m.version.to_s) }
                                       .sort_by { |m| migration_key(m.version) }
                                       .reverse
@@ -138,7 +140,24 @@ module RubyDB
       end
 
       def migration_checksum(migration)
-        migration.instance_variable_get(:@checksum) || Digest::SHA256.hexdigest(migration.to_json)[0...16]
+        migration.checksum
+      end
+
+      def validate_applied_migrations(applied)
+        migrations_by_version = @migrations.each_with_object({}) do |migration, result|
+          result[migration.version.to_s] = migration
+        end
+
+        applied.each do |version, record|
+          migration = migrations_by_version[version]
+          raise MigrationError, "applied migration #{version} is missing from the migration path" unless migration
+
+          expected = migration_checksum(migration)
+          recorded = record[:checksum].to_s
+          unless recorded.empty? || recorded == expected
+            raise MigrationError, "migration checksum mismatch for #{version}"
+          end
+        end
       end
 
       def load_migrations

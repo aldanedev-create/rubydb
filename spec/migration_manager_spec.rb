@@ -47,6 +47,37 @@ RSpec.describe RubyDB::Migrations::MigrationManager do
 
     expect(result.map(&:version)).to eq(%w[1 2])
   end
+
+  it "accepts the same migration checksum after a reload" do
+    applied_migration = RubyDB::Migrations::Migration.new("1", "create_flags")
+    applied_migration.up { |recorder| recorder.execute("SELECT 1") }
+    reloaded_migration = RubyDB::Migrations::Migration.new("1", "create_flags")
+    reloaded_migration.up { |recorder| recorder.execute("SELECT 1") }
+    database = FakeDatabase.new(
+      Struct.new(:path).new("/tmp/rubydb-test"),
+      [{ version: "1", migration_name: "create_flags", checksum: applied_migration.checksum }],
+      []
+    )
+
+    expect(described_class.new(database, migrations: [reloaded_migration]).migrate).to eq([])
+  end
+
+  it "fails closed when an applied migration was changed or removed" do
+    original = RubyDB::Migrations::Migration.new("1", "create_flags")
+    original.up { |recorder| recorder.execute("SELECT 1") }
+    changed = RubyDB::Migrations::Migration.new("1", "create_flags")
+    changed.up { |recorder| recorder.execute("SELECT 2") }
+    database = FakeDatabase.new(
+      Struct.new(:path).new("/tmp/rubydb-test"),
+      [{ version: "1", migration_name: "create_flags", checksum: original.checksum }],
+      []
+    )
+
+    expect { described_class.new(database, migrations: [changed]).migrate }
+      .to raise_error(RubyDB::Migrations::MigrationError, /checksum mismatch/)
+    expect { described_class.new(database, migrations: []).migrate }
+      .to raise_error(RubyDB::Migrations::MigrationError, /missing from the migration path/)
+  end
 end
 
 RSpec.describe RubyDB::Migrations::SchemaDiff do
