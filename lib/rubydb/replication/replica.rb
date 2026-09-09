@@ -229,6 +229,10 @@ module RubyDB
           next if line.empty?
 
           message = JSON.parse(line, symbolize_names: true)
+          if message[:type].to_s == "replication_bootstrap"
+            apply_bootstrap_schema(message[:schema].to_s)
+            next
+          end
           next unless message[:type].to_s == "replication_data"
 
           Array(message[:data]).each do |entry|
@@ -247,6 +251,20 @@ module RubyDB
                  else
                    STATE_STREAMING
                  end
+      end
+
+      def apply_bootstrap_schema(schema)
+        return if schema.empty? || !@engine.respond_to?(:with_replication_apply)
+
+        @engine.with_replication_apply do
+          statements = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(schema).tokenize).parse
+          statements.each do |statement|
+            plan = RubyDB::Execution::Planner.new(@engine).plan(statement)
+            RubyDB::Execution::Executor.new(@engine).execute(plan)
+          end
+        end
+      rescue StandardError => error
+        raise RubyDB::ReplicationError, "Replica bootstrap failed: #{error.message}"
       end
 
       def load_state

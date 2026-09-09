@@ -186,6 +186,12 @@ module RubyDB
           block.call(builder)
         end
 
+        # Treat symbol and string table names as the same logical identifier.
+        # SQL always supplies strings, while the Ruby API commonly supplies
+        # symbols; without resolving here, CREATE TABLE IF NOT EXISTS could
+        # create a second physical table for an existing logical table.
+        table_name = resolve_table_name(table_name)
+
         @lock.synchronize do
           @stats[:table_creates] += 1
           

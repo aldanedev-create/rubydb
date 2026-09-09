@@ -247,6 +247,15 @@ module RubyDB
         client.write(JSON.generate(success: true, replica_id: replica_id, mode: "logical") + "\n")
         client.flush
 
+        # Send the catalog before row replay so a new replica does not require
+        # an out-of-band schema copy. IF NOT EXISTS keeps reconnects safe.
+        schema = @engine.respond_to?(:schema_dump) ? @engine.schema_dump : ""
+        unless schema.empty?
+          schema = schema.gsub(/^CREATE TABLE /, "CREATE TABLE IF NOT EXISTS ")
+          client.write(JSON.generate(type: "replication_bootstrap", schema: schema) + "\n")
+          client.flush
+        end
+
         from_lsn = handshake[:wal_position].to_i + 1
         @replication_log.read_transactions(from_lsn).each do |entry|
           send_replication_entry(client, entry)

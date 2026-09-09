@@ -41,4 +41,24 @@ RSpec.describe "CREATE TABLE SQL execution" do
       engine&.close if engine&.open?
     end
   end
+
+  it "treats symbol and string names as one table for IF NOT EXISTS" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "identifier-alias.rdb"), auto_vacuum: false)
+      columns = [RubyDB::Catalog::Column.new(:id, :integer, primary_key: true)]
+      engine.create_table(:users, columns)
+
+      statement = RubyDB::SQL::Parser.new(
+        RubyDB::SQL::Lexer.new('CREATE TABLE IF NOT EXISTS "users" (id INTEGER PRIMARY KEY)').tokenize
+      ).parse.first
+      result = RubyDB::Execution::Executor.new(engine).execute(
+        RubyDB::Execution::Planner.new(engine).plan(statement)
+      )
+
+      expect(result[:message]).to eq("CREATE TABLE users")
+      expect(engine.list_tables).to eq([:users])
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
 end

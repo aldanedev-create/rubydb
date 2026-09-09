@@ -15,7 +15,6 @@ RSpec.describe "RubyDB logical replication" do
       primary_engine = RubyDB::Storage::Engine.new(File.join(dir, "primary.rdb"), auto_vacuum: false)
       replica_engine = RubyDB::Storage::Engine.new(File.join(dir, "replica.rdb"), auto_vacuum: false)
       primary_engine.create_table("users", columns)
-      replica_engine.create_table("users", columns)
 
       primary = RubyDB::Replication::Primary.new(
         primary_engine, host: "127.0.0.1", replication_port: port,
@@ -35,7 +34,7 @@ RSpec.describe "RubyDB logical replication" do
       primary.write(id: "tx-1", operation: "insert", table_name: "users", values: [11])
       deadline = Time.now + 2
       loop do
-        rows = replica_engine.select_rows("users", columns)
+        rows = replica_engine.table_exists?("users") ? replica_engine.select_rows("users", columns) : []
         break if rows.any? { |row| (row[:id] || row["id"]) == 11 }
         break if Time.now >= deadline
         sleep(0.01)
