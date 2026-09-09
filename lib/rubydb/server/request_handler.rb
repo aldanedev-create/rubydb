@@ -190,7 +190,7 @@ module RubyDB
         end
 
         # Execute SQL
-        execute_sql(sql, params)
+        execute_sql(sql, params, deadline_at: request[:deadline_at])
       end
 
       def handle_prepare(request)
@@ -241,12 +241,12 @@ module RubyDB
         success_response({ pong: true, timestamp: Time.now.iso8601 })
       end
 
-      def execute_sql(sql, params)
+      def execute_sql(sql, params, deadline_at: nil)
         tokens = RubyDB::SQL::Lexer.new(sql).tokenize
         statements = RubyDB::SQL::Parser.new(tokens).parse
         results = statements.map do |statement|
           plan = RubyDB::Execution::Planner.new(@engine).plan(statement)
-          RubyDB::Execution::Executor.new(@engine).execute(plan)
+          RubyDB::Execution::Executor.new(@engine, deadline_at: deadline_at).execute(plan)
         end
         results.size == 1 ? results.first : results
       end

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "set"
+require "time"
 
 module RubyDB
   module Execution
@@ -8,9 +9,10 @@ module RubyDB
     class Executor
       attr_reader :engine, :stats
 
-      def initialize(engine, cte_rows: {})
+      def initialize(engine, cte_rows: {}, deadline_at: nil)
         @engine = engine
         @cte_rows = cte_rows
+        @deadline_at = deadline_at && (deadline_at.is_a?(Time) ? deadline_at : Time.parse(deadline_at.to_s))
         @stats = {
           queries_executed: 0,
           rows_returned: 0,
@@ -28,6 +30,7 @@ module RubyDB
 
       def execute(plan, transaction_id = nil)
         @lock.synchronize do
+          check_deadline!
           start_time = Time.now
           @stats[:queries_executed] += 1
           @current_transaction = transaction_id
@@ -106,8 +109,8 @@ module RubyDB
       end
 
       def execute_set_operation(plan)
-        left = self.class.new(@engine, cte_rows: @cte_rows).execute(plan.left_plan, @current_transaction)[:rows]
-        right = self.class.new(@engine, cte_rows: @cte_rows).execute(plan.right_plan, @current_transaction)[:rows]
+        left = child_executor(@cte_rows).execute(plan.left_plan, @current_transaction)[:rows]
+        right = child_executor(@cte_rows).execute(plan.right_plan, @current_transaction)[:rows]
         left_width = left.first&.size || plan.left_plan.columns.size
         right_width = right.first&.size || plan.right_plan.columns.size
         if left_width != right_width
@@ -129,10 +132,10 @@ module RubyDB
           available_ctes[name.to_s] = if plan.recursive && cte_plan.is_a?(Plan::SetOperation) && cte_plan.operator == :union
             execute_recursive_cte(name.to_s, cte_plan, available_ctes)
           else
-            self.class.new(@engine, cte_rows: available_ctes).execute(cte_plan, @current_transaction)[:rows]
+            child_executor(available_ctes).execute(cte_plan, @current_transaction)[:rows]
           end
         end
-        self.class.new(@engine, cte_rows: available_ctes).execute(plan.query_plan, @current_transaction)
+        child_executor(available_ctes).execute(plan.query_plan, @current_transaction)
       end
 
       def execute_recursive_cte(name, cte_plan, available_ctes)
@@ -140,7 +143,7 @@ module RubyDB
           raise ExecutionError, "Recursive CTE requires UNION or UNION ALL"
         end
 
-        anchor = self.class.new(@engine, cte_rows: available_ctes).execute(cte_plan.left_plan, @current_transaction)[:rows]
+        anchor = child_executor(available_ctes).execute(cte_plan.left_plan, @current_transaction)[:rows]
         accumulated = anchor.dup
         working = anchor
         output_columns = anchor.first&.keys || cte_plan.left_plan.columns.map(&:to_s)
@@ -152,7 +155,7 @@ module RubyDB
           raise ExecutionError, "Recursive CTE exceeded #{max_iterations} iterations" if iterations > max_iterations
 
           recursive_scope = available_ctes.merge(name => working)
-          next_rows = self.class.new(@engine, cte_rows: recursive_scope).execute(cte_plan.right_plan, @current_transaction)[:rows]
+          next_rows = child_executor(recursive_scope).execute(cte_plan.right_plan, @current_transaction)[:rows]
           next_rows = next_rows.map do |row|
             output_columns.zip(row.values).to_h
           end
@@ -178,13 +181,17 @@ module RubyDB
         # existing single-table callers.
         rows = qualify_rows(scan_table(plan), plan.source_reference || plan.table_name)
         plan.joins.each do |join|
+          check_deadline!
           right_rows = qualify_rows(scan_table(Plan::Select.new(join[:table].name, [])), join[:table])
           rows = execute_join(rows, right_rows, join)
         end
 
         # Apply filters (WHERE clause)
         if plan.predicate
-          rows = rows.select { |row| evaluate_predicate(plan.predicate, row) }
+          rows = rows.each_with_index.filter_map do |row, index|
+            check_deadline! if (index & 255).zero?
+            row if evaluate_predicate(plan.predicate, row)
+          end
         end
 
         apply_window_functions!(rows, plan.projections) if plan.projections
@@ -201,7 +208,10 @@ module RubyDB
           rows = rows.select { |row| evaluate_predicate(plan.having, row) } if plan.having
         elsif plan.projections
           # Apply projections (SELECT columns)
-          rows = rows.map { |row| project_row(row, plan.projections) }
+          rows = rows.each_with_index.map do |row, index|
+            check_deadline! if (index & 255).zero?
+            project_row(row, plan.projections)
+          end
         end
 
         # Apply DISTINCT
@@ -569,6 +579,7 @@ module RubyDB
         result = []
         matched_right = Array.new(right_rows.length, false)
         left_rows.each do |left_row|
+          check_deadline!
           matches = right_rows.each_index.select do |index|
             evaluate_predicate(join[:predicate], merge_join_rows(left_row, right_rows[index]))
           end
@@ -650,7 +661,7 @@ module RubyDB
             apply_function(expr.name, expr.arguments.map { |argument| evaluate_expression(argument, row) })
           end
         when SQL::AST::Subquery
-          result = self.class.new(@engine).execute(Planner.new(@engine).plan(expr.query))
+          result = child_executor(@cte_rows).execute(Planner.new(@engine).plan(expr.query))
           rows = result[:rows]
           raise ExecutionError, "Scalar subquery returned more than one row" if rows.size > 1
           rows.empty? ? nil : rows.first.values.first
@@ -768,6 +779,16 @@ module RubyDB
           return row[key] if row.respond_to?(:key?) && row.key?(key)
         end
         nil
+      end
+
+      def child_executor(cte_rows)
+        self.class.new(@engine, cte_rows: cte_rows, deadline_at: @deadline_at)
+      end
+
+      def check_deadline!
+        return unless @deadline_at && Time.now >= @deadline_at
+
+        raise ExecutionError.new("Request deadline exceeded during execution", code: "deadline_exceeded")
       end
 
       def apply_function(name, args)

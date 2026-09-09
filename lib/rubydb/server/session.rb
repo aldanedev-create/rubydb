@@ -44,13 +44,14 @@ module RubyDB
             return { success: false, error: "Request deadline exceeded before execution", code: "deadline_exceeded" }
           end
 
-          case request[:type]
-          when "query"
-            process_query(request[:sql], request[:params] || [])
+          begin
+            case request[:type]
+            when "query"
+              process_query(request[:sql], request[:params] || [], request[:deadline_at])
           when "prepare"
             process_prepare(request[:sql])
-          when "execute"
-            process_execute(request[:statement_id], request[:params] || [])
+            when "execute"
+              process_execute(request[:statement_id], request[:params] || [], request[:deadline_at])
           when "close"
             process_close(request[:statement_id])
           when "begin"
@@ -61,8 +62,13 @@ module RubyDB
             process_rollback
           when "ping"
             process_ping
-          else
-            { success: false, error: "Unknown request type: #{request[:type]}" }
+            else
+              { success: false, error: "Unknown request type: #{request[:type]}" }
+            end
+          rescue RubyDB::ExecutionError => error
+            raise unless error.code.to_s == "deadline_exceeded"
+
+            { success: false, error: error.message, code: error.code.to_s }
           end
         end
       end
@@ -118,14 +124,14 @@ module RubyDB
         "sess_#{Time.now.to_i}_#{SecureRandom.hex(8)}"
       end
 
-      def process_query(sql, params)
+      def process_query(sql, params, deadline_at = nil)
         permission_error = authorize_sql(sql)
         return permission_error if permission_error
 
         {
           success: true,
           type: "query_result",
-          result: execute_sql(sql, params),
+          result: execute_sql(sql, params, deadline_at: deadline_at),
           timestamp: Time.now.iso8601
         }
       end
@@ -149,7 +155,7 @@ module RubyDB
         }
       end
 
-      def process_execute(stmt_id, params)
+      def process_execute(stmt_id, params, deadline_at = nil)
         stmt = @prepared_statements[stmt_id]
         unless stmt
           return {
@@ -161,7 +167,7 @@ module RubyDB
         {
           success: true,
           type: "execute_result",
-          result: execute_sql(stmt[:sql], params),
+          result: execute_sql(stmt[:sql], params, deadline_at: deadline_at),
           timestamp: Time.now.iso8601
         }
       end
@@ -261,7 +267,7 @@ module RubyDB
         }
       end
 
-      def execute_sql(sql, params)
+      def execute_sql(sql, params, deadline_at: nil)
         engine = @config[:engine]
         raise RubyDB::ServerError, "Session has no database engine" unless engine
 
@@ -269,7 +275,7 @@ module RubyDB
         statements = RubyDB::SQL::Parser.new(tokens).parse
         results = statements.map do |statement|
           plan = RubyDB::Execution::Planner.new(engine).plan(statement)
-          RubyDB::Execution::Executor.new(engine).execute(plan)
+          RubyDB::Execution::Executor.new(engine, deadline_at: deadline_at).execute(plan)
         end
         results.size == 1 ? results.first : results
       end

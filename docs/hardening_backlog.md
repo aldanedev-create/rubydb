@@ -8,11 +8,13 @@ background-maintenance shutdown.
 The following work remains open; passing the regression suite does not certify
 these capabilities.
 
-1. Server concurrency: deadlines, cancellation, and sustained load with latency
-   percentiles. Engine transaction state is now scoped per client connection
-   thread, and concurrent commit/rollback behavior is covered. Multi-process
-   durability is covered; mixed transaction reference-log and restart
-   validation remain open.
+1. Server concurrency: cancellation and sustained load with latency percentiles.
+   Client deadlines are checked before execution and propagated into the query
+   executor, which checks during long read phases. Engine transaction state is
+   now scoped per client connection thread, and concurrent commit/rollback
+   behavior is covered. Multi-process durability is covered; wire-level
+   cancellation and mixed transaction reference-log/restart validation remain
+   open.
 2. Persistence: fault-test disk-full and interrupted checkpoints/schema changes;
    index metadata load and write errors now fail visibly, and failed schema
    publications roll back in-memory state. Metadata and index catalogs are

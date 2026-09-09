@@ -85,6 +85,24 @@ RSpec.describe "server session execution" do
     end
   end
 
+  it "enforces an execution deadline inside the executor" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "executor-deadline.rdb"), auto_vacuum: false)
+      statement = RubyDB::SQL::Parser.new(
+        RubyDB::SQL::Lexer.new("SELECT 1").tokenize
+      ).parse.first
+      plan = RubyDB::Execution::Planner.new(engine).plan(statement)
+
+      expect {
+        RubyDB::Execution::Executor.new(engine, deadline_at: Time.now - 1).execute(plan)
+      }.to raise_error(RubyDB::ExecutionError) { |error|
+        expect(error.code).to eq("deadline_exceeded")
+      }
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
+
   it "reports a durable commit acknowledgement after the WAL boundary" do
     Dir.mktmpdir do |dir|
       engine = RubyDB::Storage::Engine.new(File.join(dir, "commit-ack.rdb"), auto_vacuum: false)

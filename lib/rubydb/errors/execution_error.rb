@@ -3,8 +3,8 @@
 module RubyDB
   # Raised when query execution fails
   class ExecutionError < Error
-    def initialize(message = "Execution error", details: nil)
-      super(message, code: ErrorCodes::ERROR, details: details)
+    def initialize(message = "Execution error", code: ErrorCodes::ERROR, details: nil)
+      super(message, code: code, details: details)
     end
   end
 end
