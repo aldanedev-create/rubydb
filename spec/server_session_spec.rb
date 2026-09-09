@@ -64,4 +64,24 @@ RSpec.describe "server session execution" do
       engine&.close if engine&.open?
     end
   end
+
+  it "accepts a future deadline and executes the request" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "deadline-future.rdb"), auto_vacuum: false)
+      engine.create_table("users", [RubyDB::Catalog::Column.new("id", :integer, primary_key: true)])
+      session = RubyDB::Server::Session.new(nil, engine: engine)
+      session.authenticate(username: "rubydb", database: "rubydb")
+
+      response = session.process(
+        type: "query",
+        sql: "INSERT INTO users (id) VALUES (1)",
+        deadline_at: (Time.now + 5).iso8601
+      )
+
+      expect(response[:success]).to be(true)
+      expect(engine.table_row_count("users")).to eq(1)
+    ensure
+      engine&.close
+    end
+  end
 end

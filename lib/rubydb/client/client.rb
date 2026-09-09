@@ -110,7 +110,7 @@ module RubyDB
         @connected && @connection && @connection.connected?
       end
 
-      def query(sql, params = [])
+      def query(sql, params = [], timeout: nil)
         @lock.synchronize do
           ensure_connected
 
@@ -118,7 +118,8 @@ module RubyDB
 
           begin
             # Send query
-            response = @connection.send_query(sql, params)
+            deadline_at = timeout && (Time.now + Float(timeout)).iso8601(6)
+            response = @connection.send_query(sql, params, deadline_at: deadline_at)
             @stats[:queries_executed] += 1
 
             # Parse result

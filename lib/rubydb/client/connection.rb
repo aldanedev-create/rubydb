@@ -110,13 +110,15 @@ module RubyDB
         @connected && @socket && !@socket.closed?
       end
 
-      def send_query(sql, params = [])
+      def send_query(sql, params = [], deadline_at: nil)
         @lock.synchronize do
           ensure_connected
 
+          payload = { sql: sql, params: params }
+          payload[:deadline_at] = deadline_at if deadline_at
           message = Protocol::Message.new(
             Protocol::Message::TYPE_QUERY,
-            { sql: sql, params: params }
+            payload
           )
 
           send_message(message)

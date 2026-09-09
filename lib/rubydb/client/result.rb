@@ -6,6 +6,7 @@ module RubyDB
     class Result
       attr_reader :columns, :rows, :row_count, :affected_rows, :sql
       attr_reader :command_tag, :statement_id, :transaction_id
+      attr_reader :error
 
       def initialize(data = {})
         @columns = data[:columns] || []
