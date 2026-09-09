@@ -634,7 +634,7 @@ module RubyDB
           return nil unless row
 
           qualified_name = expr.table && "#{expr.table}.#{expr.name}"
-          row[qualified_name] || row[expr.name] || row[expr.name.to_sym]
+          row_value(row, qualified_name, expr.name, expr.name.to_sym)
         when SQL::AST::UnaryOp
           apply_ast_unary_op(expr.operator, evaluate_expression(expr.operand, row))
         when SQL::AST::BinaryOp
@@ -660,7 +660,7 @@ module RubyDB
           return nil unless row
 
           qualified_name = expr.table && "#{expr.table}.#{expr.name}"
-          row[qualified_name] || row[expr.name] || row[expr.name.to_sym]
+          row_value(row, qualified_name, expr.name, expr.name.to_sym)
         when Expression::BinaryOp
           left = evaluate_expression(expr.left, row)
           right = evaluate_expression(expr.right, row)
@@ -720,14 +720,16 @@ module RubyDB
 
       def apply_ast_binary_op(operator, left, right)
         case operator
-        when SQL::Token::Type::EQ then left == right
-        when SQL::Token::Type::NE then left != right
+        # SQL comparisons involving NULL evaluate to UNKNOWN, represented by
+        # nil here. WHERE filtering already treats UNKNOWN as non-matching.
+        when SQL::Token::Type::EQ then left.nil? || right.nil? ? nil : left == right
+        when SQL::Token::Type::NE then left.nil? || right.nil? ? nil : left != right
         when SQL::Token::Type::LT then !left.nil? && !right.nil? && left < right
         when SQL::Token::Type::LTE then !left.nil? && !right.nil? && left <= right
         when SQL::Token::Type::GT then !left.nil? && !right.nil? && left > right
         when SQL::Token::Type::GTE then !left.nil? && !right.nil? && left >= right
-        when SQL::Token::Type::AND then !!left && !!right
-        when SQL::Token::Type::OR then !!left || !!right
+        when SQL::Token::Type::AND then sql_and(left, right)
+        when SQL::Token::Type::OR then sql_or(left, right)
         when SQL::Token::Type::PLUS then apply_binary_op(left, right, :plus)
         when SQL::Token::Type::MINUS then apply_binary_op(left, right, :minus)
         when SQL::Token::Type::STAR then apply_binary_op(left, right, :multiply)
@@ -745,6 +747,27 @@ module RubyDB
         when :not then !operand
         else operand
         end
+      end
+
+      def sql_and(left, right)
+        return false if left == false || right == false
+        return nil if left.nil? || right.nil?
+
+        !!left && !!right
+      end
+
+      def sql_or(left, right)
+        return true if left == true || right == true
+        return nil if left.nil? || right.nil?
+
+        !!left || !!right
+      end
+
+      def row_value(row, *keys)
+        keys.compact.each do |key|
+          return row[key] if row.respond_to?(:key?) && row.key?(key)
+        end
+        nil
       end
 
       def apply_function(name, args)

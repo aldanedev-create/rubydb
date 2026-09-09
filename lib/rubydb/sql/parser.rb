@@ -282,7 +282,12 @@ module RubyDB
       def parse_comparison
         expr = parse_additive
 
-        if current_token && Operators.comparison?(current_token.type) && current_token.type != Token::Type::IN
+        # IS NULL / IS NOT NULL have a dedicated AST node and must be parsed
+        # before the generic binary-comparison path. Treating IS as a normal
+        # comparison loses the null predicate and can turn it into a
+        # three-valued expression that is always truthy at the filter layer.
+        if current_token && Operators.comparison?(current_token.type) &&
+           ![Token::Type::IN, Token::Type::IS].include?(current_token.type)
           op = current_token.type
           advance
           right = parse_additive

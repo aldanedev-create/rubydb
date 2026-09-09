@@ -70,7 +70,10 @@ module RubyDB
 
         def evaluate(row)
           return nil unless row
-          row[@name] || row[@name.to_sym]
+          return row[@name] if row.key?(@name)
+          return row[@name.to_sym] if row.respond_to?(:key?) && row.key?(@name.to_sym)
+
+          nil
         end
 
         def to_s
