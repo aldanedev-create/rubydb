@@ -13,7 +13,7 @@ these capabilities.
    executor, which checks during long read phases. Engine transaction state is
    now scoped per client connection thread, and concurrent commit/rollback
    behavior is covered. Multi-process durability is covered; wire-level
-   wire cancellation is now request-scoped and cooperative: a client can send
+   cancellation is now request-scoped and cooperative: a client can send
    a cancel frame while the connection reader remains active, and the server
    acknowledges it only for the active request. Mixed transaction reference-log
    and restart validation remain open.
@@ -22,8 +22,12 @@ these capabilities.
    publications roll back in-memory state. Metadata and index catalogs are
    published through unique temporary files with flush/fsync/atomic rename.
    Commit acknowledgements now expose durable versus uncertain WAL state and
-   recovery-required post-WAL flush failures. Fault-injection coverage for
-   checkpoints and broader page-write failures remains.
+   recovery-required post-WAL flush failures. Storage accepts an explicit
+   `io_fault_injector` hook for page writes, file extension/truncation, and
+   sync operations; those paths now verify typed failures and descriptor
+   cleanup. Compaction now reads the engine's actual record-header layout,
+   observes dirty buffer-pool pages, and is covered through reopen validation.
+   Real filesystem quota and power-loss tests remain environment work.
 3. SQL correctness: ambiguous identifiers, aggregate edge cases (NULLs,
    DISTINCT, and expressions), and schema changes on populated tables remain
    open. Boolean false values, `IS NULL`, NULL comparison behavior, and
@@ -45,7 +49,9 @@ these capabilities.
    fencing lease before writing. Validate partitions and stale writers before
    adding automatic election.
 5. Rails: populated migration round trips, eager loading, nested associations,
-   connection pools and a supported-version CI matrix remain open. Migration
+   and live adapter coverage are present. CI now exercises Rails 7.1, 7.2, and
+   8.0 against the adapter; connection-pool behavior and each version's
+   compatibility result still require hosted-run evidence. Migration
    tracking now uses stable content checksums and fails closed for changed or
    missing applied migrations. Native and ActiveRecord schema dumps now
    round-trip automatic/custom primary-key modes, defaults, and indexes through
@@ -57,13 +63,14 @@ these capabilities.
    support constant-time shared-token authentication when configured; TLS and
    credential rotation procedures still require deployment validation.
 
-7. Release engineering: cross-platform Ruby 3.3/3.4 CI, the ActiveRecord
-   adapter CI job, and a deterministic bounded fuzz safety workflow are now
-   wired into GitHub Actions, and release provenance signing is enabled for gem
-   artifacts. CI now enforces 25% line and 20% branch coverage (the current
-   audit measured 62.0% line and 32.84% branch). Property-based generators, RubyGems
-   gem-level signatures, and automated changelog/release publication remain
-   open.
+7. Release engineering: cross-platform Ruby 3.3/3.4 CI, Rails 7.1/7.2/8.0
+   adapter jobs, and a deterministic bounded fuzz safety workflow are wired
+   into GitHub Actions. CI enforces 25% line and 20% branch coverage (the
+   current audit measured 62.0% line and 32.84% branch). Release provenance
+   signing is enabled, optional RubyGems gem-level signing accepts protected
+   key/certificate paths, dependency audit runs weekly, and tag releases can
+   publish generated GitHub release notes. A maintainer must still provision
+   the RubyGems signing secrets and review generated notes before publication.
 
 Deployment tests must record the commit, platform, workload and measured
 results. Keep untested features marked as unvalidated.

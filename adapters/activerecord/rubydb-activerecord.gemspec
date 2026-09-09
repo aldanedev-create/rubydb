@@ -18,7 +18,7 @@ Gem::Specification.new do |spec|
   spec.files = Dir.glob("lib/**/*.rb") + %w[README.md]
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "activerecord", "~> 7.2.0"
+  spec.add_dependency "activerecord", ">= 7.1", "< 8.1"
   spec.add_dependency "rubydb", "~> 0.1.0"
 
   spec.add_development_dependency "rake", "~> 13.2"

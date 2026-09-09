@@ -13,13 +13,13 @@ module RubyDB
         @buffer_size = config[:buffer_size] || Constants::DEFAULT_BUFFER_POOL_SIZE
 
         # Initialize components
-        @file_manager = FileManager.new(path, @page_size)
+        @file_manager = FileManager.new(path, @page_size, config)
         @page_manager = PageManager.new(@file_manager)
         @buffer_pool = BufferPool.new(@buffer_size)
         @free_space_map = FreeSpaceMap.new(@page_manager)
         visibility_path = config[:visibility_path] || "#{path}.visibility"
         @visibility_map = VisibilityMap.new(@page_manager, config.merge(visibility_path: visibility_path))
-        @page_allocator = PageAllocator.new(@page_manager)
+        @page_allocator = PageAllocator.new(@page_manager, buffer_pool: @buffer_pool)
 
         # Connect components
         @buffer_pool.set_page_manager(@page_manager)

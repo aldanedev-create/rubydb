@@ -26,6 +26,19 @@ Gem::Specification.new do |spec|
   spec.metadata['source_code_uri'] = 'https://github.com/aldanedev-create/rubydb/tree/main'
   spec.metadata['changelog_uri'] = 'https://github.com/aldanedev-create/rubydb/blob/main/CHANGELOG.md'
 
+  # RubyGems signing is opt-in for release builders. The private key and
+  # certificate are supplied through protected CI paths and never committed.
+  signing_key = ENV['RUBYDB_GEM_SIGNING_KEY']
+  certificate = ENV['RUBYDB_GEM_CERT']
+  if signing_key || certificate
+    raise 'RUBYDB_GEM_SIGNING_KEY and RUBYDB_GEM_CERT must be provided together' unless signing_key && certificate
+    raise "RubyGems signing key not found: #{signing_key}" unless File.file?(signing_key)
+    raise "RubyGems certificate not found: #{certificate}" unless File.file?(certificate)
+
+    spec.signing_key = signing_key
+    spec.cert_chain = [File.read(certificate)]
+  end
+
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
   spec.files = Dir.chdir(__dir__) do

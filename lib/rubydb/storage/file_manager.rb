@@ -8,9 +8,10 @@ module RubyDB
     class FileManager
       attr_reader :path, :page_size, :file, :file_size, :num_pages
 
-      def initialize(path, page_size = Constants::DEFAULT_PAGE_SIZE)
+      def initialize(path, page_size = Constants::DEFAULT_PAGE_SIZE, config = {})
         @path = path
         @page_size = page_size
+        @io_fault_injector = config[:io_fault_injector] || config["io_fault_injector"]
         @file = nil
         @file_size = 0
         @num_pages = 0
@@ -19,6 +20,7 @@ module RubyDB
       end
 
       def create_or_open
+        opened_successfully = false
         exists = File.exist?(@path)
 
         if exists
@@ -35,9 +37,18 @@ module RubyDB
           initialize_file
         end
 
+        opened_successfully = true
         self
       rescue SystemCallError => e
         raise StorageError, "Failed to open database file: #{e.message}"
+      ensure
+        unless opened_successfully
+          @file&.close rescue nil
+          @file = nil
+          @file_size = 0
+          @num_pages = 0
+          @is_open = false
+        end
       end
 
       def read_page(page_number)
@@ -57,6 +68,7 @@ module RubyDB
       def write_page(page_number, data)
         raise StorageError, "File not open" unless @is_open
         raise StorageError, "File is read-only" if @read_only
+        inject_fault(:page_write, page_number: page_number, bytes: data.bytesize)
 
         if page_number == 0 && @num_pages.zero?
           # This is the initial superblock allocation before the file has been sized.
@@ -76,6 +88,7 @@ module RubyDB
       def extend_file(num_pages = 1)
         raise StorageError, "File not open" unless @is_open
         raise StorageError, "File is read-only" if @read_only
+        inject_fault(:file_extend, num_pages: num_pages)
 
         new_size = (@num_pages + num_pages) * @page_size
         @file.truncate(new_size)
@@ -89,6 +102,7 @@ module RubyDB
       def truncate_file(num_pages)
         raise StorageError, "File not open" unless @is_open
         raise StorageError, "File is read-only" if @read_only
+        inject_fault(:file_truncate, num_pages: num_pages)
 
         new_size = num_pages * @page_size
         @file.truncate(new_size)
@@ -108,6 +122,7 @@ module RubyDB
       end
 
       def sync
+        inject_fault(:file_sync)
         @file.fsync if @file
       rescue SystemCallError => e
         raise StorageError, "Failed to sync file: #{e.message}"
@@ -122,6 +137,19 @@ module RubyDB
       end
 
       private
+
+      # Fault injection is an explicit test/deployment hook. It is disabled
+      # unless a caller supplies a callable and is invoked before each
+      # durability-sensitive filesystem operation.
+      def inject_fault(operation, context = {})
+        return unless @io_fault_injector
+
+        @io_fault_injector.call(operation, context.merge(path: @path))
+      rescue StorageError
+        raise
+      rescue => e
+        raise StorageError, "Injected #{operation} failure: #{e.message}"
+      end
 
       def initialize_file
         # Write initial superblock page. The file must be allowed to accept page 0

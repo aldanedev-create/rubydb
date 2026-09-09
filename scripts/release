@@ -21,6 +21,12 @@ unless placeholder_files.empty?
 end
 abort "rake build:checksum failed" unless system("rake", "build:checksum")
 
+if ENV["RUBYDB_GEM_SIGNING_KEY"] || ENV["RUBYDB_GEM_CERT"]
+  abort "Both RUBYDB_GEM_SIGNING_KEY and RUBYDB_GEM_CERT are required for gem signing" unless ENV["RUBYDB_GEM_SIGNING_KEY"] && ENV["RUBYDB_GEM_CERT"]
+  abort "RubyGems signing key does not exist" unless File.file?(ENV["RUBYDB_GEM_SIGNING_KEY"])
+  abort "RubyGems signing certificate does not exist" unless File.file?(ENV["RUBYDB_GEM_CERT"])
+end
+
 gem_path = Dir["pkg/rubydb-*.gem"].max_by { |path| File.mtime(path) }
 abort "No built gem found" unless gem_path
 checksum_path = File.join("checksums", "#{File.basename(gem_path)}.sha512")

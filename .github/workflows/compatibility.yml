@@ -31,8 +31,12 @@ jobs:
         run: bundle exec rspec
 
   rails:
-    name: ActiveRecord adapter
+    name: ActiveRecord ${{ matrix.rails }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rails: ["7.1", "7.2", "8.0"]
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
@@ -46,7 +50,11 @@ jobs:
         run: gem install "$(ls -t pkg/rubydb-*.gem | head -n 1)" --local --no-document
       - name: Install adapter dependencies
         working-directory: adapters/activerecord
+        env:
+          RUBYDB_RAILS_VERSION: ${{ matrix.rails }}
         run: bundle install --jobs 4 --retry 3
       - name: Run adapter integration suite
         working-directory: adapters/activerecord
+        env:
+          RUBYDB_RAILS_VERSION: ${{ matrix.rails }}
         run: bundle exec rspec

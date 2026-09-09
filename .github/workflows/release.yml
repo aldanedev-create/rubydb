@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
   attestations: write
 
@@ -20,6 +20,22 @@ jobs:
         with:
           ruby-version: "3.3"
           bundler-cache: true
+      - name: Configure optional RubyGems signing
+        if: ${{ secrets.RUBYDB_GEM_SIGNING_KEY_B64 != '' && secrets.RUBYDB_GEM_CERT_B64 != '' }}
+        env:
+          RUBYDB_GEM_SIGNING_KEY_B64: ${{ secrets.RUBYDB_GEM_SIGNING_KEY_B64 }}
+          RUBYDB_GEM_CERT_B64: ${{ secrets.RUBYDB_GEM_CERT_B64 }}
+        shell: bash
+        run: |
+          key_path="$RUNNER_TEMP/rubydb-gem-private-key.pem"
+          cert_path="$RUNNER_TEMP/rubydb-gem-public-cert.pem"
+          printf '%s' "$RUBYDB_GEM_SIGNING_KEY_B64" | base64 --decode > "$key_path"
+          printf '%s' "$RUBYDB_GEM_CERT_B64" | base64 --decode > "$cert_path"
+          chmod 600 "$key_path"
+          {
+            echo "RUBYDB_GEM_SIGNING_KEY=$key_path"
+            echo "RUBYDB_GEM_CERT=$cert_path"
+          } >> "$GITHUB_ENV"
       - name: Verify tag matches gem version
         shell: bash
         run: test "${GITHUB_REF_NAME#v}" = "$(ruby -Ilib -rrubydb/version -e 'puts RubyDB::VERSION')"
@@ -37,6 +53,10 @@ jobs:
           GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
           RUBYDB_PUBLISH: "1"
         run: ruby scripts/release
+      - name: Publish GitHub release notes from changelog history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
       - uses: actions/upload-artifact@v4
         with:
           name: rubydb-gem-${{ github.ref_name }}

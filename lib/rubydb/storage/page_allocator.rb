@@ -10,8 +10,9 @@ module RubyDB
     class PageAllocator
       attr_reader :page_manager, :free_space_map, :stats
 
-      def initialize(page_manager)
+      def initialize(page_manager, buffer_pool: nil)
         @page_manager = page_manager
+        @buffer_pool = buffer_pool
         @free_space_map = FreeSpaceMap.new(page_manager)
         @lock = Mutex.new
         @stats = {
@@ -63,7 +64,7 @@ module RubyDB
           candidate_page = @free_space_map.find_page_with_space(needed_bytes)
 
           if candidate_page
-            page = @page_manager.get_page(candidate_page)
+            page = get_page(candidate_page)
             
             # Verify page is valid and has space
             if page && page.header.page_type != 3 && page.free_space >= needed_bytes
@@ -73,7 +74,7 @@ module RubyDB
               @free_space_map.update_page(candidate_page, page ? page.free_space : 0)
               # Try another search
               page_number = @free_space_map.find_page_with_space(needed_bytes)
-              page = @page_manager.get_page(page_number) if page_number
+              page = get_page(page_number) if page_number
             end
           end
 
@@ -87,7 +88,7 @@ module RubyDB
             page.header.data_end = PageHeader::SIZE
             page.write_header
             
-            @page_manager.write_page(page)
+            write_page(page)
             @free_space_map.update_page(page_number, page.free_space)
             
             # Clear any cached records for this page
@@ -95,7 +96,7 @@ module RubyDB
           end
 
           # Get the page and reserve space
-          page = @page_manager.get_page(page_number)
+          page = get_page(page_number)
           
           # Calculate new data end position
           new_data_end = page.header.data_end + needed_bytes
@@ -111,7 +112,7 @@ module RubyDB
           page.write_header
           
           # Write the updated page
-          @page_manager.write_page(page)
+          write_page(page)
 
           # Update free space map
           @free_space_map.update_page(page_number, page.free_space)
@@ -159,7 +160,7 @@ module RubyDB
           end
 
           # Get page before freeing
-          page = @page_manager.get_page(page_number)
+          page = get_page(page_number)
           raise StorageError, "Page #{page_number} could not be read" unless page
           
           if page
@@ -195,7 +196,7 @@ module RubyDB
             raise StorageError, "Page #{page_number} does not exist"
           end
 
-          page = @page_manager.get_page(page_number)
+          page = get_page(page_number)
           
           # Check if page is free
           if page.header.page_type == 3
@@ -208,7 +209,7 @@ module RubyDB
             compact_result = compact_page(page_number)
             
             # Re-check after compaction
-            page = @page_manager.get_page(page_number)
+            page = get_page(page_number)
             
             if page.free_space < needed_bytes
               # Check if we can allocate an overflow page
@@ -243,7 +244,7 @@ module RubyDB
             raise StorageError, "Page #{page_number} does not exist"
           end
           
-          page = @page_manager.get_page(page_number)
+          page = get_page(page_number)
           
           # Skip if page is free
           if page.header.page_type == 3
@@ -319,7 +320,7 @@ module RubyDB
           page.header.data_end = new_data_end
           page.write_header
           
-          @page_manager.write_page(page)
+          write_page(page)
           
           # Update free space map
           @free_space_map.update_page(page_number, page.free_space)
@@ -368,7 +369,7 @@ module RubyDB
           overflow_page.header.prev_page = parent_page_number
           overflow_page.write_header
           
-          @page_manager.write_page(overflow_page)
+          write_page(overflow_page)
           
           # Link overflow page to parent
           @overflow_pages[parent_page_number] ||= []
@@ -407,7 +408,7 @@ module RubyDB
           result = {}
           @overflow_pages.each do |parent, children|
             result[parent] = children.map do |child|
-              page = @page_manager.get_page(child) rescue nil
+              page = get_page(child) rescue nil
               if page
                 {
                   page_number: child,
@@ -476,7 +477,7 @@ module RubyDB
 
       # Calculate fragmentation percentage for a page
       def page_fragmentation(page_number)
-        page = @page_manager.get_page(page_number) rescue nil
+        page = get_page(page_number) rescue nil
         return 0.0 unless page
         
         # Skip if page is free
@@ -547,7 +548,7 @@ module RubyDB
             raise StorageError, "Page #{page_number} does not exist"
           end
           
-          page = @page_manager.get_page(page_number)
+          page = get_page(page_number)
           
           # Skip if page is free
           if page.header.page_type == 3
@@ -558,7 +559,7 @@ module RubyDB
           if page.free_space < needed_bytes
             # Try compacting first
             compact_result = compact_page(page_number)
-            page = @page_manager.get_page(page_number)
+            page = get_page(page_number)
             
             if page.free_space < needed_bytes
               # Try allocating overflow
@@ -580,7 +581,7 @@ module RubyDB
           offset = page.header.data_end
           page.header.data_end += needed_bytes
           page.write_header
-          @page_manager.write_page(page)
+          write_page(page)
           
           # Update free space map
           @free_space_map.update_page(page_number, page.free_space)
@@ -606,7 +607,7 @@ module RubyDB
             return false
           end
           
-          page = @page_manager.get_page(page_number)
+          page = get_page(page_number)
           
           # Skip if page is free
           return false if page.header.page_type == 3
@@ -615,7 +616,7 @@ module RubyDB
           if offset + length == page.header.data_end
             page.header.data_end -= length
             page.write_header
-            @page_manager.write_page(page)
+            write_page(page)
             
             # Update free space map
             @free_space_map.update_page(page_number, page.free_space)
@@ -762,6 +763,23 @@ module RubyDB
 
       private
 
+      # Compaction and reservation must observe dirty pages held by the
+      # buffer pool. Falling back to PageManager keeps this class usable in
+      # isolated tests and by legacy callers.
+      def get_page(page_number)
+        return @page_manager.get_page(page_number) unless @buffer_pool
+
+        @buffer_pool.get_page(page_number).page
+      end
+
+      def write_page(page)
+        if @buffer_pool
+          @buffer_pool.write_page(page)
+        else
+          @page_manager.write_page(page)
+        end
+      end
+
       # Read all records from a page with proper record header parsing
       def read_page_records(page)
         # Check cache first
@@ -781,12 +799,15 @@ module RubyDB
         
         while offset < page.header.data_end
           begin
-            # Read record header: [record_id(8)] [header_size(2)] [data_length(4)] [flags(2)]
-            # Total header size: 16 bytes
+            # Engine records use [record_id(8)] [data_length(4)]
+            # [flags(2)] [column_count(2)]. Keep this parser aligned with
+            # Engine#insert_row so compaction never treats a row id as a
+            # header-size field.
             record_header = page.read(offset, 16)
             
             if record_header && record_header.bytesize == 16
-              record_id, rec_header_size, data_length, flags = record_header.unpack("Q>S>I>S>")
+              record_id, data_length, flags, = record_header.unpack("Q>L>S>S")
+              rec_header_size = 16
               
               # Validate header
               if rec_header_size >= 16 && data_length > 0 && data_length < (page.size - offset)

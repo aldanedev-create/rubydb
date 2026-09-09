@@ -4,7 +4,8 @@ source "https://rubygems.org"
 
 gemspec
 
-gem "activerecord", "~> 7.2.0"
+rails_version = ENV.fetch("RUBYDB_RAILS_VERSION", "7.2")
+gem "activerecord", "~> #{rails_version}.0"
 gem "rake", "~> 13.2"
 gem "rspec", "~> 3.13"
 gem "rubocop", "~> 1.60"

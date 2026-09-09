@@ -13,6 +13,19 @@ permissions:
   security-events: write
 
 jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Audit Ruby dependencies
+        run: |
+          gem install bundler-audit --no-document
+          bundle audit check --update
+
   codeql:
     runs-on: ubuntu-latest
     steps:
