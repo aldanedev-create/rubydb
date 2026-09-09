@@ -432,8 +432,11 @@ module RubyDB
         # Remove redundant conditions
         plan = remove_redundant_conditions(plan)
 
-        # Choose optimal join order (if multiple tables)
-        # This is simplified - production would implement join ordering
+        # Reorder only a pure inner-join chain. Outer joins are order
+        # sensitive, and cross joins are an explicit user request, so those
+        # remain in source order. Predicate dependencies prevent a join from
+        # being moved before a table referenced by its ON clause.
+        reorder_inner_joins(plan) if plan.is_a?(Plan::Select)
 
         plan
       end
@@ -442,6 +445,68 @@ module RubyDB
         # Push predicates down to scan level
         # This is already done in the planner
         plan
+      end
+
+      def reorder_inner_joins(plan)
+        joins = plan.joins
+        return plan if joins.empty? || joins.any? { |join| join[:type] != :inner }
+
+        available = [plan.source_reference&.name || plan.table_name].compact.map(&:to_s)
+        pending = joins.dup
+        ordered = []
+
+        until pending.empty?
+          eligible = pending.select do |join|
+            table = join[:table]
+            right_names = [table.name, table.alias_name].compact.map(&:to_s)
+            referenced = predicate_table_names(join[:predicate])
+            (referenced - (available + right_names)).empty?
+          end
+          eligible = [pending.first] if eligible.empty?
+
+          chosen = eligible.min_by do |join|
+            @engine.table_row_count(join[:table].name) rescue 1_000_000
+          end
+          pending.delete(chosen)
+          ordered << chosen
+          available.concat([chosen[:table].name, chosen[:table].alias_name].compact.map(&:to_s))
+        end
+
+        plan.set_joins(ordered)
+        plan
+      end
+
+      def predicate_table_names(predicate)
+        case predicate
+        when Predicate::Comparison
+          expression_table_names(predicate.left) + expression_table_names(predicate.right)
+        when Predicate::And, Predicate::Or
+          predicate_table_names(predicate.left) + predicate_table_names(predicate.right)
+        when Predicate::Not
+          predicate_table_names(predicate.operand)
+        when Predicate::Between
+          expression_table_names(predicate.expression) + expression_table_names(predicate.low) +
+            expression_table_names(predicate.high)
+        when Predicate::In, Predicate::IsNull, Predicate::Like
+          expression_table_names(predicate.expression)
+        else
+          []
+        end.uniq
+      end
+
+      def expression_table_names(expression)
+        case expression
+        when Expression::Column
+          expression.table ? [expression.table.to_s] : []
+        when Expression::BinaryOp
+          expression_table_names(expression.left) + expression_table_names(expression.right)
+        when Expression::UnaryOp
+          expression_table_names(expression.operand)
+        when Expression::Function
+          expression.arguments.flat_map { |argument| expression_table_names(argument) }
+        else
+          []
+        end
       end
 
       def remove_redundant_conditions(plan)

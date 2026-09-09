@@ -268,9 +268,18 @@ module RubyDB
 
         target = plan.on_conflict[:target]
         target = @engine.table_columns(table_name).select(&:primary_key?).map(&:name) if target.empty?
+        if target.empty?
+          target = @engine.table_columns(table_name).select(&:unique?).map(&:name)
+        end
+        if target.empty? && @engine.respond_to?(:index_manager)
+          target = @engine.index_manager.get_indexes_for_table(table_name)
+            .select(&:unique?).min_by { |index| index.columns.size }&.columns || []
+        end
         raise ExecutionError, "ON CONFLICT DO UPDATE requires a conflict target or primary key" if target.empty?
         existing = @engine.select_rows(table_name, @engine.table_columns(table_name)).find do |row|
-          target.all? { |column| (row[column] || row[column.to_sym]) == (row_data[column] || row_data[column.to_sym]) }
+          target.all? do |column|
+            row_value(row, column, column.to_s) == row_value(row_data, column, column.to_s)
+          end
         end
         raise error unless existing
 

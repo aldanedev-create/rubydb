@@ -31,4 +31,24 @@ RSpec.describe "SQL conflict handling" do
       connection&.disconnect; engine&.close if engine&.open?
     end
   end
+
+  it "infers a unique constraint for targetless DO UPDATE" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "upsert-unique.rdb"), auto_cleanup: false)
+      connection = RubyDB::Rails::Connection.new(engine: engine)
+      connection.connect
+      connection.execute("CREATE TABLE users (email VARCHAR(64) UNIQUE, active BOOLEAN)")
+      connection.execute("INSERT INTO users (email, active) VALUES ('a@example.test', FALSE)")
+
+      result = connection.execute(<<~SQL)
+        INSERT INTO users (email, active) VALUES ('a@example.test', TRUE)
+        ON CONFLICT DO UPDATE SET active = excluded.active
+      SQL
+      expect(result.affected_rows).to eq(1)
+      expect(connection.execute("SELECT active FROM users").to_a).to eq([{ "active" => true }])
+    ensure
+      connection&.disconnect
+      engine&.close if engine&.open?
+    end
+  end
 end

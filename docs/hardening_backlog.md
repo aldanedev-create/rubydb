@@ -27,9 +27,11 @@ these capabilities.
    open. Boolean false values, `IS NULL`, NULL comparison behavior, and
    outer-join NULL extension now have regression coverage. Non-recursive CTEs,
    subqueries, set operations, targeted `ON CONFLICT DO UPDATE`, and
-   ranking/partition window functions, explicit `ROWS` window frames, and
-   bounded recursive CTEs are implemented; broader upsert forms and optimizer
-   join-order planning remain open.
+   ranking/partition window functions, explicit `ROWS` window frames, bounded
+   recursive CTEs, dependency-aware inner-join reordering, and targetless
+   conflict updates using primary/unique definitions are implemented; multi-row
+   insert sources, broader dialect upsert forms, and statistics-driven plan
+   costing remain open.
 4. Replication: synchronized acknowledgements and promotion with an explicit
    recovery point. Engine commits now package all committed row changes into a
    single replication envelope after the local WAL commit point. Primary

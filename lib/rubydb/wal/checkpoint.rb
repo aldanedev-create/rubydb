@@ -20,6 +20,7 @@ module RubyDB
           checkpoints_created: 0,
           checkpoints_restored: 0,
           checkpoint_failures: 0,
+          last_error: nil,
           total_checkpoint_time_ms: 0,
           avg_checkpoint_time_ms: 0,
           last_checkpoint_size: 0
@@ -75,6 +76,11 @@ module RubyDB
             # Write checkpoint record to WAL
             record = Record.new(:checkpoint, checkpoint_data)
             @wal_writer.write_record(record)
+            # A checkpoint is a durability boundary even when ordinary WAL
+            # writes use asynchronous buffering. Do not publish its state or
+            # return success until the checkpoint frame is flushed and synced.
+            @wal_writer.flush
+            @wal_writer.sync
 
             # Update checkpoint info
             @last_checkpoint_lsn = current_lsn
@@ -91,6 +97,7 @@ module RubyDB
 
           rescue => e
             @stats[:checkpoint_failures] += 1
+            @stats[:last_error] = "#{e.class}: #{e.message}"
             raise
           end
         end
