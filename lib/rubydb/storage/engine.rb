@@ -1296,7 +1296,7 @@ module RubyDB
           tx[:committed_at] = Time.now
           @current_transaction_id = 0
 
-          committed_changes = tx[:changes].flat_map do |table_name, rows|
+          committed_changes = (tx[:changes] || {}).flat_map do |table_name, rows|
             rows.values.map { |change| change.merge(table: table_name) }
           end
           @commit_listeners.dup.each do |listener|
