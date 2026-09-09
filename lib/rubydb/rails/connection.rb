@@ -58,7 +58,10 @@ module RubyDB
             password: @config[:password] || "",
             database: @config[:database] || "rubydb",
             timeout: @config[:timeout] || 30,
-            pool_size: @config[:pool_size] || 1
+            pool_size: @config[:pool_size] || 1,
+            ssl: @config[:ssl] || @config["ssl"] || false,
+            compress: @config[:compress] || @config["compress"] || false,
+            format: @config[:format] || @config["format"] || :json
           )
           @client.connect
           @connected = true

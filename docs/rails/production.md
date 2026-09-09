@@ -60,3 +60,18 @@ schema features, and dialect-specific SQL require explicit validation before
 use. Automatic high-availability election is disabled; failover is an
 operator-controlled, fenced procedure described in
 [`docs/operations/failover.md`](../operations/failover.md).
+
+## Environment-based deployment
+
+The Rails application normally points at RubyDB through `config/database.yml`.
+For a production server, set `embedded: false` and map protected environment
+values to `host`, `port`, `database`, `username`, `password`, `timeout`, and
+the `ssl` hash. See the copy-paste example in
+[Rails database configuration](database-yml.md). The application connects to
+the RubyDB server endpoint; it does not open the server’s data directory.
+
+Deploy the RubyDB server separately with its own persistent volume and
+`config/production.yml`. Verify TLS hostname/CA validation, authentication,
+readiness, migration status, and a read/write smoke query from the same network
+path as the Rails application. Use a secret manager for credentials and never
+commit or print them.
