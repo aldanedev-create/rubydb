@@ -138,6 +138,32 @@ module RubyDB
         end
       end
 
+      def query_async(sql, params = [], timeout: nil)
+        @lock.synchronize do
+          ensure_connected
+          deadline_at = timeout && (Time.now + Float(timeout)).iso8601(6)
+          handle = @connection.send_query_async(sql, params, deadline_at: deadline_at)
+          AsyncResult.new(handle)
+        end
+      end
+
+      class AsyncResult
+        attr_reader :request_id
+
+        def initialize(handle)
+          @handle = handle
+          @request_id = handle.request_id
+        end
+
+        def cancel
+          @handle.cancel
+        end
+
+        def wait(timeout = nil)
+          Result.new(@handle.wait(timeout))
+        end
+      end
+
       def prepare(sql)
         @lock.synchronize do
           ensure_connected

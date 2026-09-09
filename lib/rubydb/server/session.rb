@@ -7,6 +7,24 @@ module RubyDB
   module Server
     # Session - Represents a client session
     class Session
+      # A request-scoped cancellation token. Cancellation is deliberately
+      # cooperative: executors observe it at bounded points and unwind the
+      # request without killing a Ruby thread while it owns engine state.
+      class CancellationToken
+        def initialize
+          @lock = Mutex.new
+          @cancelled = false
+        end
+
+        def cancel!
+          @lock.synchronize { @cancelled = true }
+        end
+
+        def cancelled?
+          @lock.synchronize { @cancelled }
+        end
+      end
+
       attr_reader :id, :connection, :created_at, :last_activity
       attr_reader :username, :database, :transaction
 
@@ -25,6 +43,9 @@ module RubyDB
         @variables = {}
         @is_active = true
         @lock = Mutex.new
+        @operations_lock = Mutex.new
+        @operations = {}
+        @pending_cancellations = {}
       end
 
       def authenticate(credentials)
@@ -38,20 +59,30 @@ module RubyDB
       end
 
       def process(request)
+        return process_cancel(request) if request[:type].to_s == "cancel"
+
         @lock.synchronize do
           @last_activity = Time.now
           if request[:deadline_at] && Time.now >= Time.parse(request[:deadline_at].to_s)
             return { success: false, error: "Request deadline exceeded before execution", code: "deadline_exceeded" }
           end
 
+          request_id = request[:request_id].to_s
+          request_id = "local_#{object_id}_#{Time.now.to_f}" if request_id.empty?
+          cancellation = CancellationToken.new
+          @operations_lock.synchronize do
+            @operations[request_id] = cancellation
+            cancellation.cancel! if @pending_cancellations.delete(request_id)
+          end
+
           begin
             case request[:type]
             when "query"
-              process_query(request[:sql], request[:params] || [], request[:deadline_at])
+              process_query(request[:sql], request[:params] || [], request[:deadline_at], cancellation)
           when "prepare"
             process_prepare(request[:sql])
             when "execute"
-              process_execute(request[:statement_id], request[:params] || [], request[:deadline_at])
+              process_execute(request[:statement_id], request[:params] || [], request[:deadline_at], cancellation)
           when "close"
             process_close(request[:statement_id])
           when "begin"
@@ -66,11 +97,25 @@ module RubyDB
               { success: false, error: "Unknown request type: #{request[:type]}" }
             end
           rescue RubyDB::ExecutionError => error
-            raise unless error.code.to_s == "deadline_exceeded"
+            raise unless %w[deadline_exceeded cancelled].include?(error.code.to_s)
 
             { success: false, error: error.message, code: error.code.to_s }
+          ensure
+            @operations_lock.synchronize { @operations.delete(request_id) }
           end
         end
+      end
+
+      def cancel(request_id, allow_pending: false)
+        token = @operations_lock.synchronize do
+          key = request_id.to_s
+          current = @operations[key]
+          @pending_cancellations[key] = true if !current && allow_pending
+          current
+        end
+
+        token&.cancel!
+        true
       end
 
       def close
@@ -124,14 +169,27 @@ module RubyDB
         "sess_#{Time.now.to_i}_#{SecureRandom.hex(8)}"
       end
 
-      def process_query(sql, params, deadline_at = nil)
+      def process_cancel(request)
+        target = request[:target_request_id] || request[:request_id]
+        cancelled = cancel(target, allow_pending: request[:allow_pending_cancellation] == true)
+        {
+          success: cancelled,
+          type: "cancel_response",
+          target_request_id: target,
+          cancelled: cancelled,
+          code: cancelled ? "cancel_requested" : "request_not_found",
+          timestamp: Time.now.iso8601
+        }
+      end
+
+      def process_query(sql, params, deadline_at = nil, cancellation = nil)
         permission_error = authorize_sql(sql)
         return permission_error if permission_error
 
         {
           success: true,
           type: "query_result",
-          result: execute_sql(sql, params, deadline_at: deadline_at),
+          result: execute_sql(sql, params, deadline_at: deadline_at, cancellation: cancellation),
           timestamp: Time.now.iso8601
         }
       end
@@ -155,7 +213,7 @@ module RubyDB
         }
       end
 
-      def process_execute(stmt_id, params, deadline_at = nil)
+      def process_execute(stmt_id, params, deadline_at = nil, cancellation = nil)
         stmt = @prepared_statements[stmt_id]
         unless stmt
           return {
@@ -167,7 +225,7 @@ module RubyDB
         {
           success: true,
           type: "execute_result",
-          result: execute_sql(stmt[:sql], params, deadline_at: deadline_at),
+          result: execute_sql(stmt[:sql], params, deadline_at: deadline_at, cancellation: cancellation),
           timestamp: Time.now.iso8601
         }
       end
@@ -267,7 +325,7 @@ module RubyDB
         }
       end
 
-      def execute_sql(sql, params, deadline_at: nil)
+      def execute_sql(sql, params, deadline_at: nil, cancellation: nil)
         engine = @config[:engine]
         raise RubyDB::ServerError, "Session has no database engine" unless engine
 
@@ -275,7 +333,11 @@ module RubyDB
         statements = RubyDB::SQL::Parser.new(tokens).parse
         results = statements.map do |statement|
           plan = RubyDB::Execution::Planner.new(engine).plan(statement)
-          RubyDB::Execution::Executor.new(engine, deadline_at: deadline_at).execute(plan)
+          RubyDB::Execution::Executor.new(
+            engine,
+            deadline_at: deadline_at,
+            cancellation: cancellation
+          ).execute(plan)
         end
         results.size == 1 ? results.first : results
       end

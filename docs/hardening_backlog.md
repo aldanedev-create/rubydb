@@ -13,8 +13,10 @@ these capabilities.
    executor, which checks during long read phases. Engine transaction state is
    now scoped per client connection thread, and concurrent commit/rollback
    behavior is covered. Multi-process durability is covered; wire-level
-   cancellation and mixed transaction reference-log/restart validation remain
-   open.
+   wire cancellation is now request-scoped and cooperative: a client can send
+   a cancel frame while the connection reader remains active, and the server
+   acknowledges it only for the active request. Mixed transaction reference-log
+   and restart validation remain open.
 2. Persistence: fault-test disk-full and interrupted checkpoints/schema changes;
    index metadata load and write errors now fail visibly, and failed schema
    publications roll back in-memory state. Metadata and index catalogs are

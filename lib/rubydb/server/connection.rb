@@ -44,6 +44,10 @@ module RubyDB
         @idle_timeout = config[:idle_timeout] || 300
         @buffer = ""
         @lock = Monitor.new
+        @write_lock = Mutex.new
+        @active_request_lock = Mutex.new
+        @active_request_id = nil
+        @active_request_thread = nil
         @closed = false
         @pending_requests = []
       end
@@ -209,6 +213,33 @@ module RubyDB
         @state = STATE_READY
         write_data(protocol, Protocol::Message.new(Protocol::Message::TYPE_READY_FOR_QUERY, negotiated))
 
+        request_queue = Queue.new
+        request_worker = Thread.new do
+          while (entry = request_queue.pop)
+            begin
+              message, request = entry
+              response = begin
+                @session.process(request)
+              rescue StandardError => e
+                { success: false, error: e.message, timestamp: Time.now.iso8601 }
+              end
+              response[:request_id] ||= message.id
+              @config[:connection_pool]&.record_request(response[:success] != false)
+              response_type = response[:type] || "#{message.type}_response"
+              begin
+                write_data(protocol, Protocol::Message.new(response_type.to_sym, response))
+              rescue IOError, SystemCallError
+                break
+              end
+            ensure
+              @active_request_lock.synchronize do
+                @active_request_id = nil if message && @active_request_id == message.id
+              end
+            end
+          end
+        end
+        @active_request_lock.synchronize { @active_request_thread = request_worker }
+
         while !@closed && (line = read_frame)
           begin
             message = protocol.decoder.decode(line, protocol.encoder.format)
@@ -220,16 +251,34 @@ module RubyDB
             next
           end
           break if message.type.to_s == "terminate"
-          request = message.payload.merge(type: message.type.to_s)
-          response = begin
-            @session.process(request)
-          rescue StandardError => e
-            { success: false, error: e.message, timestamp: Time.now.iso8601 }
+          request = message.payload.merge(type: message.type.to_s, request_id: message.id)
+
+          if message.type.to_s == "cancel"
+            active_target = @active_request_lock.synchronize { @active_request_id == request[:target_request_id] }
+            request[:allow_pending_cancellation] = active_target
+            response = begin
+              @session.process(request)
+            rescue StandardError => e
+              { success: false, error: e.message, timestamp: Time.now.iso8601 }
+            end
+            @config[:connection_pool]&.record_request(response[:success] != false)
+            write_data(protocol, Protocol::Message.new(:cancel_response, response))
+            next
           end
-          @config[:connection_pool]&.record_request(response[:success] != false)
-          response_type = response[:type] || "#{message.type}_response"
-          write_data(protocol, Protocol::Message.new(response_type.to_sym, response))
+
+          already_busy = @active_request_lock.synchronize { !@active_request_id.nil? }
+          if already_busy
+            response = { success: false, error: "Connection has a request in flight", code: "busy", request_id: message.id, timestamp: Time.now.iso8601 }
+            write_data(protocol, Protocol::Message.new(:error, response))
+            next
+          end
+
+          @active_request_lock.synchronize { @active_request_id = message.id }
+          request_queue << [message, request]
         end
+        request_queue << nil
+        request_worker.join(5)
+        @active_request_thread&.join(5)
       rescue RequestTooLarge => e
         write_data(protocol, Protocol::Message.new(
           Protocol::Message::TYPE_ERROR,
@@ -281,15 +330,17 @@ module RubyDB
       end
 
       def write_data(protocol, data)
-        if data.is_a?(String)
-          @client.write(data)
-          @bytes_sent += data.bytesize
-        else
-          encoded = protocol.encoder.encode(data)
-          @client.write(encoded)
-          @bytes_sent += encoded.bytesize
+        @write_lock.synchronize do
+          if data.is_a?(String)
+            @client.write(data)
+            @bytes_sent += data.bytesize
+          else
+            encoded = protocol.encoder.encode(data)
+            @client.write(encoded)
+            @bytes_sent += encoded.bytesize
+          end
+          @client.flush
         end
-        @client.flush
       end
 
       def error_response(message)

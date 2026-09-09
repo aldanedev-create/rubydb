@@ -12,6 +12,31 @@ module RubyDB
   module Client
     # Connection - Client connection to database server
     class Connection
+      class QueryHandle
+        attr_reader :request_id
+
+        def initialize(connection, request_id, thread)
+          @connection = connection
+          @request_id = request_id
+          @thread = thread
+        end
+
+        def cancel
+          @connection.cancel(@request_id)
+        end
+
+        def cancelled?
+          @cancelled == true
+        end
+
+        def wait(timeout = nil)
+          @thread.join(timeout)
+          raise ConnectionError, "Query did not finish within #{timeout} seconds" if @thread.alive?
+
+          @thread.value
+        end
+      end
+
       attr_reader :config, :socket, :stats
 
       def initialize(config = {})
@@ -124,6 +149,37 @@ module RubyDB
           send_message(message)
           unwrap_result(receive_message.payload)
         end
+      end
+
+      # Starts a query and returns a handle that can issue a wire-level
+      # cancellation while the server is executing it. The same connection
+      # must not be used for another application request until wait returns.
+      def send_query_async(sql, params = [], deadline_at: nil)
+        ensure_connected
+        payload = { sql: sql, params: params }
+        payload[:deadline_at] = deadline_at if deadline_at
+        message = Protocol::Message.new(Protocol::Message::TYPE_QUERY, payload)
+        @lock.synchronize { send_message(message) }
+        thread = Thread.new do
+          loop do
+            response = receive_message
+            next if response.type == :cancel_response
+            next if response.type == :notice && response.payload[:target_request_id].to_s != message.id.to_s
+
+            break unwrap_result(response.payload.merge(request_id: message.id))
+          end
+        end
+        QueryHandle.new(self, message.id, thread)
+      end
+
+      def cancel(request_id)
+        ensure_connected
+        message = Protocol::Message.new(
+          Protocol::Message::TYPE_CANCEL,
+          { target_request_id: request_id.to_s }
+        )
+        @lock.synchronize { send_message(message) }
+        true
       end
 
       def send_prepare(sql)

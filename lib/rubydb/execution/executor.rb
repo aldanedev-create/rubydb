@@ -9,10 +9,11 @@ module RubyDB
     class Executor
       attr_reader :engine, :stats
 
-      def initialize(engine, cte_rows: {}, deadline_at: nil)
+      def initialize(engine, cte_rows: {}, deadline_at: nil, cancellation: nil)
         @engine = engine
         @cte_rows = cte_rows
         @deadline_at = deadline_at && (deadline_at.is_a?(Time) ? deadline_at : Time.parse(deadline_at.to_s))
+        @cancellation = cancellation
         @stats = {
           queries_executed: 0,
           rows_returned: 0,
@@ -814,10 +815,19 @@ module RubyDB
       end
 
       def child_executor(cte_rows)
-        self.class.new(@engine, cte_rows: cte_rows, deadline_at: @deadline_at)
+        self.class.new(
+          @engine,
+          cte_rows: cte_rows,
+          deadline_at: @deadline_at,
+          cancellation: @cancellation
+        )
       end
 
       def check_deadline!
+        if @cancellation&.cancelled?
+          raise ExecutionError.new("Request cancelled by client", code: "cancelled")
+        end
+
         return unless @deadline_at && Time.now >= @deadline_at
 
         raise ExecutionError.new("Request deadline exceeded during execution", code: "deadline_exceeded")

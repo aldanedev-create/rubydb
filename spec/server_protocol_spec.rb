@@ -88,6 +88,39 @@ RSpec.describe "RubyDB live server protocol" do
     end
   end
 
+  it "cancels an in-flight query through the wire protocol" do
+    Dir.mktmpdir do |dir|
+      probe = TCPServer.new("127.0.0.1", 0)
+      port = probe.addr[1]
+      probe.close
+      server = RubyDB::Server::Server.new(
+        host: "127.0.0.1", port: port, data_dir: dir,
+        pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: 1
+      )
+      server.start
+      client = RubyDB::Client::Client.new(host: "127.0.0.1", port: port, timeout: 5, pool_size: 1)
+      entered = Queue.new
+
+      allow_any_instance_of(RubyDB::Execution::Executor).to receive(:check_deadline!) do |executor|
+        entered << true
+        token = executor.instance_variable_get(:@cancellation)
+        sleep(0.001) until token&.cancelled?
+        raise RubyDB::ExecutionError.new("Request cancelled by client", code: "cancelled")
+      end
+
+      query = client.query_async("SELECT 1")
+      expect { entered.pop }.not_to raise_error
+      expect(query.cancel).to be(true)
+      result = query.wait(5)
+
+      expect(result.success?).to be(false)
+      expect(result.error).to include("cancelled")
+    ensure
+      client&.disconnect
+      server&.stop
+    end
+  end
+
   it "rejects an unsupported protocol version cleanly" do
     Dir.mktmpdir do |dir|
       port_probe = TCPServer.new("127.0.0.1", 0)
