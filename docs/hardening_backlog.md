@@ -17,8 +17,9 @@ these capabilities.
 3. SQL correctness: ambiguous identifiers, outer-join NULL handling, boolean
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
    schema changes on populated tables. Non-recursive CTEs, subqueries, set
-   operations, and targeted `ON CONFLICT DO UPDATE` are implemented; recursive
-   CTEs, window functions, and broader upsert forms remain open.
+   operations, targeted `ON CONFLICT DO UPDATE`, and ranking/partition window
+   functions are implemented; recursive CTEs, window frames, and broader upsert
+   forms remain open.
 4. Replication: synchronized acknowledgements, transaction/WAL integration,
    and promotion with an explicit recovery point. Primary connections now
    bootstrap the catalog before row replay, including empty replicas. TCP input now

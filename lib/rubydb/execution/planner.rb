@@ -127,7 +127,8 @@ module RubyDB
         # Handle GROUP BY
         aggregates = statement.columns.select do |column|
           expression = column.respond_to?(:expression) ? column.expression : column
-          expression.is_a?(SQL::AST::FunctionCall) && %w[COUNT SUM AVG MIN MAX].include?(expression.name.to_s.upcase)
+          expression.is_a?(SQL::AST::FunctionCall) && !expression.window &&
+            %w[COUNT SUM AVG MIN MAX].include?(expression.name.to_s.upcase)
         end
         if statement.group_by&.any? || aggregates.any?
           plan.set_group_by(statement.group_by || [], aggregates)

@@ -393,7 +393,8 @@ module RubyDB
               end
             end
             expect(Token::Type::RPAREN)
-            AST::FunctionCall.new(ident, args, distinct: distinct)
+            window = current_token&.type == Token::Type::OVER ? parse_window_spec : nil
+            AST::FunctionCall.new(ident, args, distinct: distinct, window: window)
           else
             AST::Identifier.new(ident)
           end
@@ -434,6 +435,26 @@ module RubyDB
           advance
         end
         order_items
+      end
+
+      def parse_window_spec
+        expect(Token::Type::OVER)
+        expect(Token::Type::LPAREN)
+        partition_by = []
+        if current_token&.type == Token::Type::PARTITION
+          advance
+          expect(Token::Type::BY)
+          partition_by = parse_expression_list
+        end
+
+        order_by = []
+        if current_token&.type == Token::Type::ORDER
+          advance
+          expect(Token::Type::BY)
+          order_by = parse_order_by
+        end
+        expect(Token::Type::RPAREN)
+        { partition_by: partition_by, order_by: order_by }
       end
 
       def parse_expression_list

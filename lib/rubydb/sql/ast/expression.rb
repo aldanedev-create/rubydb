@@ -340,13 +340,14 @@ module RubyDB
 
       # Function call
       class FunctionCall < Expression
-        attr_reader :name, :arguments, :distinct
+        attr_reader :name, :arguments, :distinct, :window
 
-        def initialize(name, arguments = [], distinct: false, location: nil)
+        def initialize(name, arguments = [], distinct: false, window: nil, location: nil)
           super(location: location)
           @name = name
           @arguments = arguments
           @distinct = distinct
+          @window = window
         end
 
         def accept(visitor)
@@ -354,13 +355,28 @@ module RubyDB
         end
 
         def clone
-          FunctionCall.new(@name, @arguments.map(&:clone), distinct: @distinct, location: @location)
+          cloned_window = if @window
+            {
+              partition_by: @window[:partition_by].map(&:clone),
+              order_by: @window[:order_by].map(&:clone)
+            }
+          end
+          FunctionCall.new(@name, @arguments.map(&:clone), distinct: @distinct, window: cloned_window, location: @location)
         end
 
         def to_sql
           args = @arguments.map(&:to_sql).join(", ")
           args = "DISTINCT #{args}" if @distinct
-          "#{@name}(#{args})"
+          sql = "#{@name}(#{args})"
+          if @window
+            partition = @window[:partition_by]
+            ordering = @window[:order_by]
+            parts = []
+            parts << "PARTITION BY #{partition.map(&:to_sql).join(', ')}" unless partition.empty?
+            parts << "ORDER BY #{ordering.map(&:to_sql).join(', ')}" unless ordering.empty?
+            sql << " OVER (#{parts.join(' ')})"
+          end
+          sql
         end
 
         def inspect

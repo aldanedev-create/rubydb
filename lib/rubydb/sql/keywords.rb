@@ -91,6 +91,8 @@ module RubyDB
         "VACUUM" => Token::Type::VACUUM,
         "WITH" => Token::Type::WITH,
         "RECURSIVE" => Token::Type::RECURSIVE,
+        "OVER" => Token::Type::OVER,
+        "PARTITION" => Token::Type::PARTITION,
         "INTEGER" => Token::Type::INTEGER,
         "BIGINT" => Token::Type::BIGINT,
         "SMALLINT" => Token::Type::SMALLINT,

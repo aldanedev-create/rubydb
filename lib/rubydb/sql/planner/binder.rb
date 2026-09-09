@@ -536,6 +536,7 @@ module RubyDB
           common_functions = %w[
             COUNT SUM AVG MAX MIN LOWER UPPER LENGTH
             SUBSTR CONCAT COALESCE NULLIF
+            ROW_NUMBER RANK DENSE_RANK
             DATE TIME TIMESTAMP EXTRACT
             JSON_ARRAY JSON_OBJECT JSON_EXTRACT
           ]

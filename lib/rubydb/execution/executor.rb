@@ -150,6 +150,8 @@ module RubyDB
           rows = rows.select { |row| evaluate_predicate(plan.predicate, row) }
         end
 
+        apply_window_functions!(rows, plan.projections) if plan.projections
+
         # ORDER BY is evaluated against the source rows, so a column used
         # solely for ordering remains available even when it is not selected.
         aggregating = plan.aggregates && !plan.aggregates.empty?
@@ -604,7 +606,11 @@ module RubyDB
             evaluate_expression(expr.right, row)
           )
         when SQL::AST::FunctionCall
-          apply_function(expr.name, expr.arguments.map { |argument| evaluate_expression(argument, row) })
+          if expr.window
+            row && row[window_key(expr)]
+          else
+            apply_function(expr.name, expr.arguments.map { |argument| evaluate_expression(argument, row) })
+          end
         when SQL::AST::Subquery
           result = self.class.new(@engine).execute(Planner.new(@engine).plan(expr.query))
           rows = result[:rows]
@@ -841,7 +847,83 @@ module RubyDB
       end
 
       def aggregate_function?(expression)
-        expression.is_a?(SQL::AST::FunctionCall) && %w[COUNT SUM AVG MIN MAX].include?(expression.name.to_s.upcase)
+        expression.is_a?(SQL::AST::FunctionCall) && !expression.window &&
+          %w[COUNT SUM AVG MIN MAX].include?(expression.name.to_s.upcase)
+      end
+
+      def apply_window_functions!(rows, projections)
+        projections.each do |projection|
+          expression = projection.respond_to?(:expression) ? projection.expression : projection
+          next unless expression.is_a?(SQL::AST::FunctionCall) && expression.window
+
+          spec = expression.window
+          partitions = {}
+          rows.each { |row| (partitions[spec[:partition_by].map { |part| evaluate_expression(part, row) }] ||= []) << row }
+          partitions.each_value do |partition_rows|
+            ordered_rows = sort_window_rows(partition_rows, spec[:order_by])
+            ordered_rows.each_with_index do |row, index|
+              row[window_key(expression)] = window_value(expression, ordered_rows, index, spec[:order_by])
+            end
+          end
+        end
+      end
+
+      def window_key(expression)
+        "__rubydb_window_#{expression.object_id}"
+      end
+
+      def sort_window_rows(rows, order_by)
+        return rows.dup if order_by.empty?
+
+        rows.sort do |left, right|
+          comparison = 0
+          order_by.each do |item|
+            left_value = evaluate_expression(item.expression, left)
+            right_value = evaluate_expression(item.expression, right)
+            comparison = compare_sort_values(left_value, right_value)
+            comparison = -comparison if item.direction == :desc
+            break unless comparison.zero?
+          end
+          comparison
+        end
+      end
+
+      def compare_sort_values(left, right)
+        return 0 if left.nil? && right.nil?
+        return -1 if left.nil?
+        return 1 if right.nil?
+
+        left <=> right
+      end
+
+      def window_value(expression, rows, index, order_by)
+        name = expression.name.to_s.upcase
+        if %w[ROW_NUMBER RANK DENSE_RANK].include?(name)
+          return index + 1 if name == "ROW_NUMBER" || order_by.empty?
+
+          keys = rows.map { |row| order_by.map { |item| evaluate_expression(item.expression, row) } }
+          current = keys[index]
+          return keys.index(current) + 1 if name == "RANK"
+
+          return keys[0..index].uniq.index(current) + 1
+        end
+
+        argument = expression.arguments.first
+        values = if argument.is_a?(SQL::AST::Star)
+          rows
+        else
+          rows.map { |row| evaluate_expression(argument, row) }.compact
+        end
+        values = values.uniq if expression.distinct
+        case name
+        when "COUNT" then values.size
+        when "SUM" then values.empty? ? nil : values.sum
+        when "AVG" then values.empty? ? nil : values.sum / values.size.to_f
+        when "MIN" then values.min
+        when "MAX" then values.max
+        else
+          raise ExecutionError, "Unsupported window function: #{expression.name}"
+        end
       end
 
       def apply_aggregate_function(expression, rows)

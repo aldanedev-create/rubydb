@@ -25,6 +25,8 @@ compatibility.
 - Persistence safety at the engine boundary: malformed metadata and failed WAL
   recovery abort startup, metadata publishes are fsynced before atomic rename,
   and the maintenance worker is joined before storage closes.
+- SQL window ranking (`ROW_NUMBER`, `RANK`, `DENSE_RANK`) and partition-wide
+  aggregate windows have focused regression coverage.
 
 ## Run before a release
 
@@ -71,8 +73,8 @@ database for every round and fails if any round loses durable rows.
   interrupted-rename fault injection on the target filesystem before release.
 
 - Join support currently covers qualified `INNER`, `LEFT [OUTER]`, `RIGHT`, and
-  `FULL [OUTER] JOIN` with `ON` predicates. Cross joins, join reordering, CTEs,
-  correlated subqueries, and advanced set-operation ordering are not
+  `FULL [OUTER] JOIN` with `ON` predicates. Join reordering, correlated
+  subqueries, window frames, and advanced set-operation ordering are not
   release-validated.
 - The ActiveRecord migration test is intentionally scoped. Complex table
   rebuilds, `change_column`, polymorphic references, generated columns, and

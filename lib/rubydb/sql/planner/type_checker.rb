@@ -407,7 +407,7 @@ module RubyDB
         def function_return_type(name)
           # Define return types for common functions
           case name.upcase
-          when "COUNT", "SUM", "AVG", "MAX", "MIN"
+          when "COUNT", "SUM", "AVG", "MAX", "MIN", "ROW_NUMBER", "RANK", "DENSE_RANK"
             :integer
           when "LOWER", "UPPER", "SUBSTR", "CONCAT", "COALESCE", "NULLIF"
             :text

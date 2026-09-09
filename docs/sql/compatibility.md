@@ -9,6 +9,8 @@ Supported and tested statements include:
   expressions, and `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` aggregates (including
   `DISTINCT` aggregate arguments) with
   `GROUP BY` and `HAVING`
+- window ranking functions `ROW_NUMBER`, `RANK`, and `DENSE_RANK`, plus
+  partition-wide aggregate windows using `OVER (PARTITION BY ... ORDER BY ...)`
 - `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT` for compatible SELECT
   projections
 - non-correlated scalar subqueries, `IN (SELECT ...)`, and `EXISTS (SELECT ...)`

@@ -92,6 +92,8 @@ module RubyDB
         VACUUM = :VACUUM
         WITH = :WITH
         RECURSIVE = :RECURSIVE
+        OVER = :OVER
+        PARTITION = :PARTITION
 
         # Data types
         INTEGER = :INTEGER
