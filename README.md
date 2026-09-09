@@ -1,321 +1,133 @@
 # RubyDB
 
-**⚠️ ALPHA - NOT PRODUCTION READY ⚠️**
+RubyDB is a Ruby-native relational database with an embedded engine, a
+client/server mode, a Ruby client, and an ActiveRecord adapter.
 
-A developer-first relational database for Ruby and Rails - currently in active development.
+> **Status: alpha.** RubyDB is suitable for experimentation, development,
+> controlled embedded workloads, and applications that stay within the
+> documented and tested feature set. It is not currently a drop-in
+> replacement for PostgreSQL, MySQL, or SQLite.
 
-[![Ruby](https://img.shields.io/badge/ruby-4.0.6-red.svg)](https://www.ruby-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/rubydb/rubydb)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/rubydb/rubydb/actions)
+## What works today
 
----
+The repository contains implementation and automated coverage for:
 
-## ⚠️ IMPORTANT: ALPHA STATUS ⚠️
+- SQL tables, CRUD, joins, grouping and aggregates, ordering, transactions,
+  savepoints, conflict handling, and documented maintenance statements
+- typed values, primary/foreign keys, unique and check constraints, and B-tree
+  indexes
+- durable storage, WAL-backed commits, recovery, snapshots, branching, and
+  MVCC paths
+- Ruby API, client/server protocol, connection pooling, configuration, and
+  operational tooling
+- ActiveRecord integration, Rails migrations, and a runnable Rails example
 
-**RubyDB is currently in ALPHA development. It is NOT production ready.**
+These features are not a guarantee of compatibility with every application.
+Run the test suite and validate your own schema, queries, workload, backup,
+restore, and failure scenarios before using RubyDB for important data.
 
-### Current State
-- **Architecture**: Complete design and implementation
-- **Storage Engine**: Partial implementation
-- **SQL Parser**: Basic SQL support
-- **Transactions**: WAL-backed transaction, rollback, savepoint, and MVCC paths covered by integration tests
-- **WAL**: Partial implementation
-- **Replication**: Logical replication and guarded failover paths covered by integration tests
-- **Tests**: Unit tests exist, integration tests incomplete
-- **Performance**: Not optimized
-- **Stability**: Not production ready
+## Why “complete PostgreSQL/MySQL/SQLite compatibility” matters
 
-### Known Issues
-- Storage persistence is incomplete
-- Crash recovery does not work correctly
-- MVCC is not fully implemented
-- Query optimizer is basic
-- No proper isolation level enforcement
-- Replication is not functional
-- Performance is not production grade
-- Security features are not fully integrated
+That requirement is only necessary when RubyDB is intended to be a drop-in
+replacement for an existing application using one of those databases.
 
-### When Will It Be Ready?
-**Estimated timeline: 6-12 months with active development**
+It includes much more than accepting similar `SELECT` statements:
 
-| Phase | Status | Timeline |
-|-------|--------|----------|
-| Core Database | ⏳ In Progress | 2-4 months |
-| Rails Integration | ⏳ In Progress | 1-2 months |
-| Production Features | ⏸️ Planned | 2-3 months |
-| Developer Features | ⏸️ Planned | 1-2 months |
+- dialect-specific SQL syntax, functions, operators, casts, and error behavior
+- query semantics for joins, `NULL`, ordering, grouping, subqueries, CTEs,
+  unions, upserts, and window functions
+- data types, indexes, constraints, generated values, and transaction behavior
+- migration behavior and ActiveRecord adapter mappings
+- client protocol, connection behavior, locking, limits, and operational tools
 
----
+A new Ruby or Rails application does not need complete compatibility. It can
+use RubyDB's documented SQL and adapter behavior directly. Compatibility is
+needed to move an existing PostgreSQL, MySQL, or SQLite application without
+rewriting queries and without discovering semantic differences in production.
 
-## What RubyDB Aims To Be
+RubyDB currently targets a documented RubyDB SQL subset plus tested Rails
+operations. The compatibility documents describe the supported statements;
+unsupported or unverified dialect features must not be assumed to work.
 
-RubyDB is designed to combine:
-- **SQLite's simplicity** - Zero configuration, single file, easy to start
-- **PostgreSQL's capabilities** - Transactions, concurrency, replication
-- **Ruby/Rails native experience** - First-class integration
+## Quick start
 
-### Target Audience
-- **Rails Developers** - Local development, testing, and small production apps
-- **Ruby Developers** - Embeddable database for Ruby applications
-- **Students** - Learning database internals through Ruby
-- **Prototypes** - Quick development with a real database
+Install the prerelease gem:
 
----
-
-## Quick Start (Alpha Version)
-
-### Installation
-```bash
+```sh
 gem install rubydb --pre
 ```
 
-### Create a Database
-```bash
-rubydb create myapp
-rubydb start myapp
-```
+For local development from this repository:
 
-### Use with Ruby
-```ruby
-require 'rubydb'
-
-db = RubyDB.connect('rubydb://local/./myapp.rdb')
-
-# Basic operations (limited functionality in alpha)
-db.execute('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
-db.execute("INSERT INTO users (name) VALUES ('John')")
-db.query('SELECT * FROM users')
-```
-
-### Use with Rails
-```ruby
-# Gemfile
-gem 'rubydb', require: false  # Experimental Rails support
-```
-
----
-
-## Features Status
-
-### ✅ Implemented (Partial/Basic)
-- [x] Basic SQL parsing (SELECT, INSERT, UPDATE, DELETE)
-- [x] Storage engine foundation
-- [x] Page-based storage
-- [x] Buffer pool
-- [x] WAL foundation
-- [x] Transaction foundation
-- [x] Basic CLI
-- [x] Ruby client
-- [x] Basic data types
-
-### ⚠️ In Progress
-- [ ] Complete SQL support (JOINs, subqueries, window functions)
-- [ ] Full MVCC implementation
-- [ ] Complete WAL with crash recovery
-- [ ] Query optimizer
-- [ ] Index support (B-Tree)
-- [ ] Constraints enforcement
-- [ ] Rails adapter
-
-### ❌ Not Yet Started
-- [ ] Replication
-- [ ] High availability
-- [ ] Full security
-- [ ] Backup/restore
-- [ ] Monitoring
-- [ ] Performance optimization
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     APPLICATION LAYER                                  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐   │
-│  │   Ruby Client   │  │   Rails Adapter │  │   Protocol Client   │   │
-│  └────────┬────────┘  └────────┬────────┘  └──────────┬──────────┘   │
-└───────────┼─────────────────────┼───────────────────────┼──────────────┘
-            │                     │                       │
-            ▼                     ▼                       ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       SERVER & PROTOCOL LAYER                          │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │              RubyDB Protocol (JSON/Binary)                     │  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         SQL ENGINE LAYER                               │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌───────────────────┐│  │
-│  │  │  Lexer  │─▶│ Parser  │─▶│  AST    │─▶│    Planner       ││  │
-│  │  └─────────┘  └─────────┘  └─────────┘  │  ┌─────────────┐  ││  │
-│  │                                          │  │  Optimizer  │  ││  │
-│  │                                          │  └─────────────┘  ││  │
-│  │                                          └───────────────────┘│  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       EXECUTION LAYER                                  │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │  │
-│  │  │  SELECT  │  │  INSERT  │  │  UPDATE  │  │   DELETE     │  │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────────┘  │  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      TRANSACTION LAYER                                 │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │  ┌────────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐  │  │
-│  │  │ Transaction│  │    Lock    │  │   MVCC   │  │Isolation │  │  │
-│  │  │  Manager   │  │  Manager   │  │          │  │  Levels  │  │  │
-│  │  └────────────┘  └────────────┘  └──────────┘  └──────────┘  │  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        STORAGE LAYER                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │  │
-│  │  │  Buffer  │  │   Page   │  │   WAL    │  │   Recovery   │  │  │
-│  │  │   Pool   │  │  Manager │  │          │  │              │  │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────────┘  │  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           DISK LAYER                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │  │
-│  │  │  *.rdb   │  │*.rdb-wal │  │*.rdb-shm │  │   *.backup   │  │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────────┘  │  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Comparison (Target - Not Current)
-
-| Feature | SQLite | RubyDB (Alpha) | PostgreSQL |
-|---------|--------|----------------|------------|
-| Setup | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
-| Local Development | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| Rails Integration | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Production Workloads | ⭐⭐ | ❌ | ⭐⭐⭐⭐⭐ |
-| Concurrency | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
-| SQL Support | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Database Branching | ❌ | ⭐⭐ | ❌ |
-| Time-Travel Queries | Limited | ⭐⭐ | Extensions |
-| Stability | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Performance | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
-
----
-
-## Development Status
-
-### Current Focus (Q3-Q4 2026)
-1. **Complete storage persistence** - Make data actually save to disk
-2. **Implement MVCC** - Proper multi-version concurrency control
-3. **Complete WAL** - Working write-ahead log with recovery
-4. **SQL parser improvements** - More complete SQL support
-5. **Query optimizer** - Cost-based optimization
-
-### Next Priorities (Q1 2027)
-1. **Rails adapter** - Full ActiveRecord integration
-2. **Index support** - Working B-Tree indexes
-3. **Constraints** - Complete constraint enforcement
-4. **Security** - Authentication and authorization
-
-### Future Goals (Q2-Q3 2027)
-1. **Replication** - Primary-replica support
-2. **Backup/restore** - Complete backup system
-3. **Monitoring** - Metrics and health checks
-4. **Performance optimization** - Production performance
-
----
-
-## Contributing
-
-We welcome contributors! Please see our [Contributing Guide](CONTRIBUTING.md).
-
-### Areas Needing Help
-1. **Storage Engine** - Make persistence work
-2. **SQL Parser** - Complete SQL support
-3. **MVCC** - Implement versioning properly
-4. **Testing** - Add comprehensive tests
-5. **Documentation** - User and API docs
-6. **Performance** - Optimize Ruby code
-7. **Rails Integration** - Make adapter work
-
-### Development Setup
-```bash
-git clone https://github.com/rubydb/rubydb.git
-cd rubydb
+```sh
 bundle install
-bundle exec rake spec
+bundle exec rspec
 ```
 
----
+## Ruby usage
+
+RubyDB can run embedded in a single owning process:
+
+```ruby
+require "rubydb"
+
+engine = RubyDB::Storage::Engine.new("tmp/example.rdb")
+engine.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+engine.execute("INSERT INTO users (name) VALUES ('Aldane')")
+puts engine.execute("SELECT * FROM users").inspect
+engine.close
+```
+
+For multiple application processes, use RubyDB's server/client mode and point
+clients at the managed server. Do not open the same embedded database path
+from multiple independent processes.
+
+## Rails example
+
+The small Rails 7.2 application in
+[`examples/rails_app`](examples/rails_app) runs a real migration, model query,
+and browser form through `rubydb-activerecord`.
+
+```sh
+cd examples/rails_app
+bundle install
+bundle exec ruby bin/rails db:migrate
+bundle exec ruby bin/rails server -b 127.0.0.1 -p 3001
+```
+
+Open <http://127.0.0.1:3001/>. The example uses an embedded database under
+`tmp/`; set `RUBYDB_DATABASE` to choose another path. See the adapter and Rails
+documentation for network configuration, migrations, production deployment,
+backups, restore drills, and monitoring.
+
+## Compatibility policy
+
+RubyDB does not claim complete PostgreSQL, MySQL, or SQLite compatibility until
+each compatibility area has both an implementation and repeatable validation.
+The project must validate at least:
+
+1. parser and execution behavior for the documented dialect surface
+2. type, constraint, transaction, locking, and error semantics
+3. ActiveRecord queries, joins, eager loading, associations, and migrations
+4. sustained concurrency, cancellation, recovery, backup/restore, and failover
+5. supported Ruby, Rails, operating-system, and client/server combinations
+
+Until then, compatibility should be treated as feature-specific, not implied
+by the presence of an adapter.
 
 ## Documentation
 
-- [Architecture](docs/architecture/) - Complete architecture overview
-- [Getting Started](docs/getting-started/) - Alpha setup guide
-- [Development](docs/contributing/) - Development guide
-- [API Reference](docs/api/) - API documentation
-
----
+- [Getting started](docs/getting-started/quickstart.md)
+- [SQL compatibility](docs/sql/compatibility.md)
+- [SQL syntax](docs/sql/syntax.md)
+- [Rails installation](docs/rails/installation.md)
+- [Rails production guidance](docs/rails/production.md)
+- [Production readiness](docs/production-readiness.md)
+- [Operations and workload testing](docs/operations/workload-testing.md)
+- [Security policy](SECURITY.md)
+- [Contributing and testing](CONTRIBUTING.md)
+- [Roadmap](ROADMAP.md)
 
 ## License
 
 RubyDB is released under the [MIT License](LICENSE).
-
----
-
-## Acknowledgments
-
-RubyDB draws inspiration from:
-- **SQLite** - Simplicity and developer experience
-- **PostgreSQL** - Production features and reliability  
-- **Rails** - Ruby-first developer experience
-- **Datomic** - Data history and time-travel queries
-- **Git** - Branching workflow
-
----
-
-## Disclaimer
-
-**⚠️ RubyDB is currently in ALPHA development. It is NOT PRODUCTION READY.**
-
-- Data loss is possible
-- API may change without notice
-- Features may be incomplete
-- Performance is not optimized
-- Security is not fully implemented
-- Not recommended for production use
-
-Use at your own risk in development and testing environments only.
-
----
-
-## Contact
-
-- **GitHub**: [https://github.com/rubydb/rubydb](https://github.com/rubydb/rubydb)
-- **Issues**: [https://github.com/rubydb/rubydb/issues](https://github.com/rubydb/rubydb/issues)
-- **Discussions**: [https://github.com/rubydb/rubydb/discussions](https://github.com/rubydb/rubydb/discussions)
-
----
-
-Made with ❤️ by the RubyDB community
-
-**Status: ALPHA - Not Production Ready**
