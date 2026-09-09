@@ -34,6 +34,10 @@ compatibility.
   kills and replaces the primary process, uses a separate process to advance
   the fencing epoch, verifies the stale writer is rejected, and confirms a
   fresh primary continues the log and the replica reaches both committed rows.
+- The network partition drill routes the live replication stream through a
+  fault-injecting TCP proxy, drops and heals the stream while the primary stays
+  running, verifies replica catch-up, fences the stale primary, and promotes a
+  synchronized replica.
 - Engine transaction integration: a committed transaction containing multiple
   row mutations is emitted as one replication envelope only after its local
   WAL commit and flush complete.
@@ -68,10 +72,17 @@ ruby -Ilib benchmarks/server_workload.rb
 # isolation and durable rows; scale processes/operations for the deployment.
 $env:RUBYDB_SERVER_WORKLOAD_PROCESSES = "8"
 $env:RUBYDB_SERVER_WORKLOAD_OPERATIONS = "1000"
+$env:RUBYDB_SERVER_WORKLOAD_CHILD_TIMEOUT = "120"
 ruby benchmarks/multiprocess_server_workload.rb
+
+# The parent supervises and reaps every child; a timed-out worker fails the run
+# instead of leaving orphaned workload processes behind.
 
 # Independent primary/replica processes, crash replacement, and stale-writer fencing
 ruby scripts/replication_failover_drill
+
+# Live TCP partition, catch-up, fencing, and promotion
+ruby scripts/replication_network_failover_drill
 
 # Real two-engine replication and promotion validation
 bundle exec rspec spec/replication_failover_integration_spec.rb

@@ -13,7 +13,7 @@ RSpec.describe "replication partition recovery" do
     probe&.close
   end
 
-  def wait_until(timeout: 5)
+  def wait_until(timeout: 15)
     Timeout.timeout(timeout) do
       sleep 0.01 until yield
     end

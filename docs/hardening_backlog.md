@@ -50,8 +50,10 @@ these capabilities.
    replica resumes from the durable log. A process-level failover drill now
    kills and replaces an independent primary, advances the fencing epoch from
    another process, rejects the stale writer, and verifies replica catch-up.
-   True multi-host network partitions and split-brain recovery still require
-   deployment validation before adding automatic election.
+   A reproducible TCP fault-proxy drill now exercises live partition, healing,
+   catch-up, fencing, and promotion while the primary remains alive. True
+   multi-host partitions, independent fencing infrastructure, and split-brain
+   recovery still require deployment validation before adding automatic election.
 5. Rails: populated migration round trips, eager loading, nested associations,
    and live adapter coverage are present. CI now exercises Rails 7.1, 7.2, and
    8.0 against the adapter; connection-pool behavior and each version's
@@ -72,9 +74,10 @@ these capabilities.
    into GitHub Actions. CI enforces 25% line and 20% branch coverage (the
    current audit measured 62.0% line and 32.84% branch). Release provenance
    signing is enabled, RubyGems gem-level signing requires protected
-   key/certificate paths, dependency audit runs weekly, and tag releases can
-   publish generated GitHub release notes. A maintainer must still provision
-   the RubyGems signing secrets and review generated notes before publication.
+   key/certificate paths, tag/changelog preflight fails closed, dependency
+   audit runs weekly, and tag releases can publish generated GitHub release
+   notes. A maintainer must still provision the RubyGems signing secrets and
+   review generated notes before publication.
 
 Deployment tests must record the commit, platform, workload and measured
 results. Keep untested features marked as unvalidated.

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "open3"
+require "rbconfig"
 
 RSpec.describe "deployment packaging" do
   let(:root) { File.expand_path("..", __dir__) }
@@ -32,5 +34,27 @@ RSpec.describe "deployment packaging" do
     expect(service).to include("Restart=on-failure")
     expect(service).to include("NoNewPrivileges=true")
     expect(service).to include("ProtectSystem=strict")
+  end
+
+  it "fails closed when a release tag has no matching changelog or version" do
+    script = File.join(root, "scripts/release_check")
+    stdout, stderr, status = Open3.capture3(
+      { "GITHUB_REF_NAME" => "v999.999.999" },
+      RbConfig.ruby, script
+    )
+
+    expect(status).not_to be_success
+    expect("#{stdout}\n#{stderr}").to include("does not match RubyDB::VERSION")
+  end
+
+  it "accepts the current tagged version and reviewed changelog entry" do
+    script = File.join(root, "scripts/release_check")
+    stdout, stderr, status = Open3.capture3(
+      { "GITHUB_REF_NAME" => "v#{RubyDB::VERSION}" },
+      RbConfig.ruby, script
+    )
+
+    expect(status).to be_success, stderr
+    expect(stdout).to include("Release preflight passed")
   end
 end

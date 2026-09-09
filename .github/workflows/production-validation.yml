@@ -62,6 +62,9 @@ jobs:
       - name: Run process-level replication failover drill
         run: ruby scripts/replication_failover_drill | tee production-results/replication-failover.json
 
+      - name: Run network partition and promotion drill
+        run: ruby scripts/replication_network_failover_drill | tee production-results/replication-network-failover.json
+
       - name: Run backup and restore drill
         run: ruby scripts/restore_drill | tee production-results/restore.txt
 

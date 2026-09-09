@@ -1,6 +1,6 @@
 # Releasing RubyDB to RubyGems
 
-1. Update `CHANGELOG.md`, bump the semantic version, and confirm the Ruby/Rails support matrix for the release.
+1. Update `CHANGELOG.md`, bump the semantic version, and confirm the Ruby/Rails support matrix for the release. The version must have a top-level `## <version>` changelog entry; the release preflight fails closed when it is missing.
 2. Run the complete verification suite and workload test. The release workflow independently builds and validates the gem on a version tag.
 3. Create a RubyGems API key with the minimum scope needed to push this gem. Store it as the `RUBYGEMS_API_KEY` GitHub Actions secret or in RubyGems' protected credentials file; never commit it.
 4. Create and push an annotated `v<version>` tag. The compatibility workflow
@@ -13,7 +13,7 @@
 RUBYDB_PUBLISH=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release
 ```
 
-Without `RUBYDB_PUBLISH=1`, `ruby scripts/release` only rebuilds and verifies the gem/checksum.
+Without `RUBYDB_PUBLISH=1`, `ruby scripts/release` only rebuilds and verifies the gem/checksum. Manual publication must also set `RUBYDB_RELEASE_VERSION=<version>`; tagged CI obtains that identity from `GITHUB_REF_NAME`.
 
 The tag workflow also creates a signed GitHub build-provenance attestation for
 the exact gem artifact. Verify that attestation in the repository's Actions or

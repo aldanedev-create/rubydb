@@ -50,6 +50,8 @@ jobs:
       - name: Verify tag matches gem version
         shell: bash
         run: test "${GITHUB_REF_NAME#v}" = "$(ruby -Ilib -rrubydb/version -e 'puts RubyDB::VERSION')"
+      - name: Verify changelog release entry
+        run: ruby scripts/release_check
       - name: Test and build release artifact
         run: |
           bundle exec rspec

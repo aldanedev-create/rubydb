@@ -7,6 +7,8 @@ require "rbconfig"
 root = File.expand_path("..", __dir__)
 Dir.chdir(root)
 
+abort "release metadata preflight failed" unless system(RbConfig.ruby, File.join(root, "scripts", "release_check"))
+
 release_descriptors = [
   "rubydb.gemspec",
   "adapters/activerecord/rubydb-activerecord.gemspec",

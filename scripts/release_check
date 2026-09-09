@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Fail-closed release metadata validation. This stays separate from gem
+# building so CI can prove that a tag has a reviewed changelog entry before
+# any artifact is published.
+
+require "pathname"
+
+root = Pathname.new(__dir__).parent
+$LOAD_PATH.unshift(root.join("lib").to_s)
+require "rubydb/version"
+
+version = RubyDB::VERSION
+github_ref = ENV.fetch("GITHUB_REF_NAME", "").strip
+requested_version = ENV.fetch("RUBYDB_RELEASE_VERSION", "").strip
+
+tag_version = if github_ref.start_with?("v")
+  github_ref.delete_prefix("v")
+end
+
+if !requested_version.empty? && tag_version && requested_version != tag_version
+  abort "RUBYDB_RELEASE_VERSION #{requested_version} does not match GITHUB_REF_NAME #{github_ref}"
+end
+
+release_version = requested_version.empty? ? tag_version : requested_version
+if release_version.nil? || release_version.empty?
+  if ENV["RUBYDB_PUBLISH"] == "1"
+    abort "Publishing requires GITHUB_REF_NAME=v#{version} or RUBYDB_RELEASE_VERSION=#{version}"
+  end
+
+  puts "Release preflight skipped: no release tag or explicit release version"
+  exit 0
+end
+
+abort "Release version #{release_version} does not match RubyDB::VERSION #{version}" unless release_version == version
+
+changelog_path = root.join("CHANGELOG.md")
+changelog = changelog_path.read
+header = /^##\s+#{Regexp.escape(release_version)}(?:\s|$)/
+abort "CHANGELOG.md has no entry for version #{release_version}" unless changelog.match?(header)
+
+puts "Release preflight passed for RubyDB #{release_version}"

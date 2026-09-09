@@ -7,11 +7,42 @@ require "rbconfig"
 require "socket"
 require "tempfile"
 require "tmpdir"
+require "timeout"
 require_relative "../lib/rubydb"
 
 processes = Integer(ENV.fetch("RUBYDB_SERVER_WORKLOAD_PROCESSES", "4"), 10)
 operations = Integer(ENV.fetch("RUBYDB_SERVER_WORKLOAD_OPERATIONS", "100"), 10)
+child_timeout = Float(ENV.fetch("RUBYDB_SERVER_WORKLOAD_CHILD_TIMEOUT", "120"))
 raise ArgumentError, "processes and operations must be positive" unless processes.positive? && operations.positive?
+raise ArgumentError, "RUBYDB_SERVER_WORKLOAD_CHILD_TIMEOUT must be positive" unless child_timeout.positive?
+
+def terminate_children(children)
+  children.each do |pid, _file|
+    next unless pid
+
+    begin
+      Process.kill("TERM", pid)
+    rescue Errno::ESRCH, Errno::ECHILD
+      next
+    rescue StandardError
+      begin
+        Process.kill("KILL", pid)
+      rescue StandardError
+        nil
+      end
+    end
+  end
+
+  children.each do |pid, _file|
+    next unless pid
+
+    begin
+      Process.wait(pid)
+    rescue Errno::ECHILD, Errno::ESRCH
+      nil
+    end
+  end
+end
 
 Dir.mktmpdir("rubydb-multiprocess-workload") do |dir|
   probe = TCPServer.new("127.0.0.1", 0)
@@ -41,7 +72,18 @@ Dir.mktmpdir("rubydb-multiprocess-workload") do |dir|
   end
 
   results = children.map do |pid, file|
-    _waited_pid, status = Process.wait2(pid)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + child_timeout
+    waited_pid = nil
+    status = nil
+    until waited_pid
+      waited_pid, status = Process.waitpid2(pid, Process::WNOHANG)
+      break if waited_pid
+      if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        raise Timeout::Error, "worker #{pid} exceeded #{child_timeout} seconds"
+      end
+
+      sleep 0.05
+    end
     file.rewind
     output = file.read
     raise "worker #{pid} failed: #{output}" unless status.success?
@@ -57,6 +99,7 @@ Dir.mktmpdir("rubydb-multiprocess-workload") do |dir|
                      durable_rows: durable_rows, elapsed_seconds: elapsed.round(3),
                      workers: results)
 ensure
+  terminate_children(children || [])
   output_files&.each(&:close!)
   server&.stop
   reopened&.close if defined?(reopened) && reopened&.open?
