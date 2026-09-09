@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
-require "readline"
+begin
+  require "readline"
+rescue LoadError
+  # The interactive shell is optional for library and adapter consumers.
+  # `execute` reports a focused error if the command is requested without it.
+end
 require "json"
 
 module RubyDB
@@ -18,6 +23,10 @@ module RubyDB
         end
 
         def execute(args, options)
+          unless defined?(Readline)
+            raise RubyDB::Error, "The interactive shell requires the readline extension"
+          end
+
           parser = OptionParser.new do |opts|
             opts.banner = "Usage: rubydb shell [options]"
             opts.on("-d", "--database NAME", "Database name") do |name|
