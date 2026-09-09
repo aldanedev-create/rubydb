@@ -10,9 +10,10 @@ Gem::Specification.new do |spec|
 
   spec.summary = 'A developer-first relational database for Ruby'
   spec.description = <<~DESC
-    RubyDB is a production-capable, developer-first relational database 
-    written in Ruby. It combines SQLite-like simplicity with PostgreSQL-like 
-    production capabilities, with first-class Ruby and Rails integration.
+    RubyDB is a developer-first relational database foundation written in Ruby.
+    It combines SQLite-like simplicity with a growing SQL, WAL, MVCC, server,
+    replication, and Rails integration surface. Production deployment is
+    limited to the capabilities and validation documented by the project.
   DESC
   spec.homepage = 'https://github.com/aldanedev-create/rubydb'
   spec.license = 'MIT'

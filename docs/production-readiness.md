@@ -32,6 +32,8 @@ The current suite verifies storage reopen, subprocess crash recovery, MVCC isola
   This does not certify multi-process writers or server capacity; embedded
   ownership remains exclusive and multi-process clients must use the server.
 
+- multi-row SQL `VALUES` inserts execute through the parser, binder, planner,
+  and executor, including per-row conflict handling and Rails insert IDs
 - incremental backups capture WAL mutations after a verified base LSN; differential backups capture the verified base-relative WAL delta and restore through the same validated delta path
 - replication is limited to the explicit logical row-mutation envelope API
 - automatic failover is limited to synchronized candidates; fencing requires a shared durable fence path and still needs multi-host split-brain validation
