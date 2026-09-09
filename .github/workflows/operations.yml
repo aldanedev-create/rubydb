@@ -1,0 +1,22 @@
+name: Operations drills
+
+on:
+  schedule:
+    - cron: "47 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Run backup and restore drill
+        run: ruby scripts/restore_drill

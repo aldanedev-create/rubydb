@@ -32,9 +32,11 @@ these capabilities.
    Validate partitions and stale writers before adding automatic election.
 5. Rails: populated migration round trips, schema dump/load, eager loading,
    nested associations, connection pools and a supported-version CI matrix.
-6. Operations: complete backup manifests, automated restore drills, upgrade
-   tests, measured resource limits, alerting, and security review of replication
-   endpoints and authorization enforcement.
+6. Operations: backup manifest writes now use durable atomic publication, live
+   engines flush WAL/storage before physical backup, and a scheduled restore
+   drill reopens restored files. Upgrade tests, measured resource limits,
+   alerting, and security review of replication endpoints and authorization
+   enforcement remain open.
 
 7. Release engineering: cross-platform Ruby 3.3/3.4 CI, the ActiveRecord
    adapter CI job, and a deterministic bounded fuzz safety workflow are now

@@ -23,6 +23,10 @@ the SQL parser, WAL, storage, transaction, and query-engine fuzzers. Increase
 `RUBYDB_FUZZ_ITERATIONS` locally when investigating a failure, retaining the
 reported `RUBYDB_FUZZ_SEED` for reproduction.
 
+The scheduled operations workflow runs `ruby scripts/restore_drill`, which
+creates a live backup, verifies its manifest/checksums, restores it into a
+separate directory, and reopens the restored database before succeeding.
+
 After publication, install the exact released version in a clean environment and run a smoke test:
 
 ```sh

@@ -86,6 +86,7 @@ module RubyDB
           backup_path = File.join(@config[:backup_dir], backup_name)
 
           begin
+            flush_engine_for_backup
             # Create backup directory
             FileUtils.mkdir_p(backup_path)
 
@@ -117,8 +118,7 @@ module RubyDB
             end
 
             # Create manifest
-            manifest_path = File.join(backup_path, "manifest.json")
-            File.write(manifest_path, JSON.generate(metadata))
+            write_manifest(backup_path, metadata)
 
             # Verify backup
             if @config[:verify_after_backup]
@@ -331,6 +331,29 @@ module RubyDB
         metadata[:files] = files
         metadata[:size] = calculate_backup_size(backup_path)
         metadata[:checksum] = calculate_checksum(backup_path)
+      end
+
+      # A physical backup must start from a durable engine boundary. Closed
+      # engines are supported for offline backup callers, so only flush live
+      # engines and always surface I/O failures to create_backup.
+      def flush_engine_for_backup
+        return unless @engine.respond_to?(:open?) && @engine.open?
+
+        @engine.wal.flush if @engine.respond_to?(:wal) && @engine.wal
+        @engine.flush if @engine.respond_to?(:flush)
+      end
+
+      def write_manifest(backup_path, metadata)
+        manifest_path = File.join(backup_path, "manifest.json")
+        temporary = "#{manifest_path}.tmp-#{Process.pid}-#{Thread.current.object_id}"
+        File.open(temporary, "wb") do |file|
+          file.write(JSON.generate(metadata))
+          file.flush
+          file.fsync
+        end
+        File.rename(temporary, manifest_path)
+      ensure
+        File.delete(temporary) if defined?(temporary) && File.file?(temporary)
       end
 
       def copy_file(src, dest)

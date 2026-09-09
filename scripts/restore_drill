@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# End-to-end backup/restore drill. This intentionally uses a fresh destination
+# and opens the restored files with the real storage engine.
+
+require "tmpdir"
+
+root = File.expand_path("..", __dir__)
+$LOAD_PATH.unshift(File.join(root, "lib"))
+require "rubydb"
+
+Dir.mktmpdir("rubydb-restore-drill-") do |directory|
+  source = File.join(directory, "source", "rubydb.rdb")
+  backup_dir = File.join(directory, "backups")
+  verification_dir = File.join(directory, "verification")
+  restore_dir = File.join(directory, "restored")
+  columns = [RubyDB::Catalog::Column.new("id", :integer, primary_key: true, null: false)]
+
+  engine = RubyDB::Storage::Engine.new(source, auto_cleanup: false, auto_vacuum: false)
+  engine.create_table("restore_drill", columns)
+  engine.insert_row("restore_drill", columns, [1])
+  engine.insert_row("restore_drill", columns, [2])
+
+  backup = RubyDB::Backup::Backup.new(engine, backup_dir: backup_dir, include_schema: true)
+  created = backup.create_backup
+  abort "backup failed: #{created[:error]}" unless created[:success]
+
+  verification = RubyDB::Backup::Verification.new(verification_dir: verification_dir)
+  result = verification.verify_restore(created[:backup_path])
+  abort "restore verification failed: #{result[:error]}" unless result[:success]
+  abort "restore row-count mismatch" unless result[:row_counts]["restore_drill"] == 2
+
+  restored = RubyDB::Backup::Restore.new(nil, backup_dir: backup_dir).restore(
+    created[:backup_path], destination: restore_dir
+  )
+  abort "restore failed: #{restored[:error]}" unless restored[:success]
+  restored_engine = RubyDB::Storage::Engine.new(File.join(restore_dir, "rubydb.rdb"), auto_cleanup: false, auto_vacuum: false)
+  abort "restored data mismatch" unless restored_engine.table_row_count("restore_drill") == 2
+
+  puts "Restore drill passed: #{created[:backup_name]} (2 rows restored and reopened)"
+ensure
+  restored_engine&.close
+  engine&.close
+end
