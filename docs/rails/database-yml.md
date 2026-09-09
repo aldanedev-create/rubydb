@@ -61,7 +61,32 @@ committed YAML file, Docker image, URL, shell history, or log. The server must
 be configured separately with its own data directory, authentication, TLS
 certificate/key, and resource limits; see [server configuration](../server/configuration.md).
 
-The current adapter uses discrete `host`/`port`/credential/TLS settings. It
-does not promise a single `DATABASE_URL` parser or PostgreSQL wire protocol.
+## One connection URL
+
+The adapter also accepts a RubyDB-specific URL through `url`. This is useful
+when a hosting provider gives the application one connection string:
+
+```yaml
+production:
+  adapter: rubydb
+  embedded: false
+  url: <%= ENV.fetch("RUBYDB_URL") %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", "5") %>
+```
+
+Example URL with TLS verification:
+
+```text
+rubydbs://app_user:password@db.example.com:7432/app?verify_peer=true&ca_file=%2Fetc%2Frubydb%2Fca.crt
+```
+
+Supported schemes are `rubydb://` and `rubydbs://`; `rubydbs` enables TLS.
+The URL supports percent-encoded username/password/database values and query
+options including `ssl`, `sslmode`, `verify_peer`, `ca_file`, `cert_file`,
+`key_file`, `min_version`, `timeout`, `pool_size`, `compress`, and `format`.
+Use a secret manager to inject `RUBYDB_URL`; URLs containing passwords must not
+be committed, printed, or placed in public issue reports. This is RubyDB’s
+URL format, not a PostgreSQL wire-protocol or generic `DATABASE_URL` promise.
+
 Use the documented mapping above and run a real migration plus smoke query
 through the network path before production.

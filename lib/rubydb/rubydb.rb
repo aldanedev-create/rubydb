@@ -207,6 +207,7 @@ require_relative "server/worker"
 require_relative "server/request_handler"
 require_relative "server/lifecycle"
 
+require_relative "client/connection_url"
 require_relative "client/client"
 require_relative "client/connection"
 require_relative "client/result"

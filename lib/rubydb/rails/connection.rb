@@ -51,18 +51,24 @@ module RubyDB
             return
           end
 
-          @client = RubyDB::Client::Client.new(
-            host: @config[:host] || "localhost",
-            port: @config[:port] || 7432,
-            username: @config[:username] || "rubydb",
-            password: @config[:password] || "",
-            database: @config[:database] || "rubydb",
-            timeout: @config[:timeout] || 30,
-            pool_size: @config[:pool_size] || 1,
-            ssl: @config[:ssl] || @config["ssl"] || false,
-            compress: @config[:compress] || @config["compress"] || false,
-            format: @config[:format] || @config["format"] || :json
-          )
+          url = @config[:url] || @config["url"]
+          client_config = if url
+            {url: url}
+          else
+            {
+              host: @config[:host] || "localhost",
+              port: @config[:port] || 7432,
+              username: @config[:username] || "rubydb",
+              password: @config[:password] || "",
+              database: @config[:database] || "rubydb"
+            }
+          end
+          client_config[:timeout] = @config[:timeout] || @config["timeout"] || 30
+          client_config[:pool_size] = @config[:pool_size] || 1
+          client_config[:ssl] = @config[:ssl] || @config["ssl"] if @config[:ssl] || @config["ssl"]
+          client_config[:compress] = @config[:compress] || @config["compress"] if @config[:compress] || @config["compress"]
+          client_config[:format] = @config[:format] || @config["format"] if @config[:format] || @config["format"]
+          @client = RubyDB::Client::Client.new(client_config)
           @client.connect
           @connected = true
         end

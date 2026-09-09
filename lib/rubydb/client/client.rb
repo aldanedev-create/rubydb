@@ -6,6 +6,7 @@ require "time"
 require "digest"
 
 require_relative "connection"
+require_relative "connection_url"
 require_relative "result"
 require_relative "statement"
 require_relative "prepared_statement"
@@ -21,6 +22,8 @@ module RubyDB
       attr_reader :config, :connection, :pool, :stats, :last_commit_ack
 
       def initialize(config = {})
+        url = config[:url] || config["url"]
+        config = ConnectionURL.parse(url).merge(config.each_with_object({}) { |(key, value), result| result[key.to_sym] = value }) if url
         @config = {
           host: config[:host] || "localhost",
           port: config[:port] || 7432,

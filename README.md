@@ -80,7 +80,17 @@ engine.close
 
 For multiple application processes, use RubyDB's server/client mode and point
 clients at the managed server. Do not open the same embedded database path
-from multiple independent processes.
+from multiple independent processes. A regular Ruby application can use a
+RubyDB connection URL supplied by its environment:
+
+```ruby
+client = RubyDB::Client::Client.new(url: ENV.fetch("RUBYDB_URL"))
+client.query("SELECT 1")
+client.disconnect
+```
+
+Use the `rubydb://` or TLS-enabled `rubydbs://` format documented in the Rails
+configuration guide. RubyDB URLs are not PostgreSQL URLs.
 
 ## Rails example
 

@@ -70,6 +70,11 @@ the `ssl` hash. See the copy-paste example in
 [Rails database configuration](database-yml.md). The application connects to
 the RubyDB server endpoint; it does not open the server’s data directory.
 
+If the deployment platform provides one connection string, set
+`RUBYDB_URL` to the documented `rubydb://` or `rubydbs://` format and use the
+`url:` form in `database.yml`. Do not assume a PostgreSQL `DATABASE_URL` will
+work; RubyDB uses its own protocol and URL scheme.
+
 Deploy the RubyDB server separately with its own persistent volume and
 `config/production.yml`. Verify TLS hostname/CA validation, authentication,
 readiness, migration status, and a read/write smoke query from the same network

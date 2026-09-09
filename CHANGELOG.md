@@ -9,6 +9,9 @@ All notable changes to RubyDB are documented here. Versions follow
   Rails compatibility, and SQL compatibility guides with repository maps,
   incident evidence procedures, safe recovery guidance, and deployment
   checklists.
+- Added RubyDB connection URLs (`rubydb://` and TLS-enabled `rubydbs://`) for
+  regular Ruby clients and Rails `database.yml`, including percent-encoded
+  credentials and documented TLS/query options.
 - Added a documentation index and lessons-learned guide covering durability,
   ownership, replication fencing, cancellation, deadlocks, Rails adapters,
   operations, evidence, and security review boundaries.
