@@ -79,4 +79,43 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
 
     expect(projects.map(&:attributes)).to include(hash_including("id" => 10, "name" => "RubyDB", "account_id" => 1))
   end
+
+  it "loads nested associations and ordered join results from populated tables" do
+    stub_const("RubydbAuthor", Class.new(ActiveRecord::Base) do
+      self.table_name = "authors"
+      has_many :rubydb_books, class_name: "RubydbBook", foreign_key: :author_id
+    end)
+    stub_const("RubydbBook", Class.new(ActiveRecord::Base) do
+      self.table_name = "books"
+      belongs_to :rubydb_author, class_name: "RubydbAuthor", foreign_key: :author_id
+      has_many :rubydb_reviews, class_name: "RubydbReview", foreign_key: :book_id
+    end)
+    stub_const("RubydbReview", Class.new(ActiveRecord::Base) do
+      self.table_name = "reviews"
+      belongs_to :rubydb_book, class_name: "RubydbBook", foreign_key: :book_id
+    end)
+
+    connection = ActiveRecord::Base.connection
+    connection.execute("CREATE TABLE authors (id INTEGER PRIMARY KEY, email VARCHAR(255) NOT NULL)")
+    connection.execute("CREATE TABLE books (id INTEGER PRIMARY KEY, author_id INTEGER NOT NULL, title VARCHAR(255) NOT NULL)")
+    connection.execute("CREATE TABLE reviews (id INTEGER PRIMARY KEY, book_id INTEGER NOT NULL, rating INTEGER NOT NULL)")
+    author = RubydbAuthor.create!(id: 1, email: "ada@example.test")
+    other = RubydbAuthor.create!(id: 2, email: "other@example.test")
+    first = RubydbBook.create!(id: 10, author_id: author.id, title: "A")
+    second = RubydbBook.create!(id: 11, author_id: author.id, title: "B")
+    RubydbBook.create!(id: 12, author_id: other.id, title: "C")
+    RubydbReview.create!(id: 20, book_id: first.id, rating: 5)
+    RubydbReview.create!(id: 21, book_id: second.id, rating: 4)
+
+    loaded = RubydbAuthor.includes(rubydb_books: :rubydb_reviews)
+                          .where(email: "ada@example.test").to_a
+    joined_titles = RubydbBook.joins(:rubydb_author)
+                              .where(rubydb_authors: { email: "ada@example.test" })
+                              .order(title: :desc).pluck(:title)
+
+    expect(loaded.first.rubydb_books.map(&:title)).to contain_exactly("A", "B")
+    expect(loaded.first.rubydb_books.flat_map { |book| book.rubydb_reviews.map(&:rating) })
+      .to contain_exactly(5, 4)
+    expect(joined_titles).to eq(["B", "A"])
+  end
 end
