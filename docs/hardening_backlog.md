@@ -36,5 +36,12 @@ these capabilities.
    tests, measured resource limits, alerting, and security review of replication
    endpoints and authorization enforcement.
 
+7. Release engineering: cross-platform Ruby 3.3/3.4 CI, the ActiveRecord
+   adapter CI job, and a deterministic bounded fuzz safety workflow are now
+   wired into GitHub Actions, and release provenance signing is enabled for gem
+   artifacts. Coverage thresholds, property-based generators, RubyGems
+   gem-level signatures, and automated changelog/release publication remain
+   open.
+
 Deployment tests must record the commit, platform, workload and measured
 results. Keep untested features marked as unvalidated.

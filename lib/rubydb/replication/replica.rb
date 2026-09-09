@@ -55,6 +55,8 @@ module RubyDB
         @max_retry_attempts = config[:max_retry_attempts] || 10
         @retry_count = 0
         @state_path = config[:state_path] || "#{@engine.path}.replica_state.json"
+        @state_write_lock = Mutex.new
+        @state_write_sequence = 0
         load_state
         @engine.set_replication_read_only(true) if @engine.respond_to?(:set_replication_read_only)
       end
@@ -277,21 +279,24 @@ module RubyDB
       end
 
       def persist_state
-        FileUtils.mkdir_p(File.dirname(@state_path))
-        temporary = "#{@state_path}.tmp-#{Process.pid}"
-        payload = JSON.generate(
-          last_received_lsn: @last_received_lsn,
-          last_replayed_lsn: @last_replayed_lsn,
-          updated_at: Time.now.iso8601
-        )
-        File.open(temporary, "wb") do |file|
-          file.write(payload)
-          file.flush
-          file.fsync
+        @state_write_lock.synchronize do
+          FileUtils.mkdir_p(File.dirname(@state_path))
+          @state_write_sequence += 1
+          temporary = "#{@state_path}.tmp-#{Process.pid}-#{Thread.current.object_id}-#{@state_write_sequence}"
+          payload = JSON.generate(
+            last_received_lsn: @last_received_lsn,
+            last_replayed_lsn: @last_replayed_lsn,
+            updated_at: Time.now.iso8601
+          )
+          File.open(temporary, "wb") do |file|
+            file.write(payload)
+            file.flush
+            file.fsync
+          end
+          File.rename(temporary, @state_path)
+        ensure
+          File.delete(temporary) if defined?(temporary) && File.file?(temporary)
         end
-        File.rename(temporary, @state_path)
-      ensure
-        File.delete(temporary) if defined?(temporary) && File.file?(temporary)
       end
 
       def reconnect

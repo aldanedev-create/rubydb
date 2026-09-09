@@ -373,7 +373,7 @@ module RubyDB
         filled = (percent / 100 * bar_length).round
         bar = "[" + "=" * filled + " " * (bar_length - filled) + "]"
 
-        print("\rSQL Parser Fuzzing: #{bar} #{percent}% (#{current}/#{total})", nil, false)
+        print("\rSQL Parser Fuzzing: #{bar} #{percent}% (#{current}/#{total})")
         print("\n") if current == total - 1
       end
     end

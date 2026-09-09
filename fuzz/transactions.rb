@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "support"
+
 module RubyDB
   module Fuzz
     # TransactionsFuzzer - Fuzz testing for transaction system
@@ -166,7 +168,7 @@ module RubyDB
             ]
 
             sql = statements.sample
-            @engine.execute(sql)
+            RubyDB::Fuzz::Support.execute(@engine, sql, tx.id)
           end
 
           @transaction_manager.commit_transaction(tx)
@@ -260,21 +262,21 @@ module RubyDB
 
       def setup_test_tables
         begin
-          @engine.execute("CREATE TABLE fuzz_users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER, email TEXT)")
-          @engine.execute("CREATE TABLE fuzz_orders (id INTEGER PRIMARY KEY, user_id INTEGER, product_id INTEGER, quantity INTEGER, price DECIMAL)")
-          @engine.execute("CREATE TABLE fuzz_products (id INTEGER PRIMARY KEY, name TEXT, price DECIMAL, category TEXT)")
+          RubyDB::Fuzz::Support.execute(@engine, "CREATE TABLE fuzz_users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER, email TEXT)")
+          RubyDB::Fuzz::Support.execute(@engine, "CREATE TABLE fuzz_orders (id INTEGER PRIMARY KEY, user_id INTEGER, product_id INTEGER, quantity INTEGER, price DECIMAL)")
+          RubyDB::Fuzz::Support.execute(@engine, "CREATE TABLE fuzz_products (id INTEGER PRIMARY KEY, name TEXT, price DECIMAL, category TEXT)")
 
           # Insert test data
           50.times do |i|
-            @engine.execute("INSERT INTO fuzz_users (name, age, email) VALUES ('user#{i}', #{rand(18..65)}, 'user#{i}@test.com')")
+            RubyDB::Fuzz::Support.execute(@engine, "INSERT INTO fuzz_users (name, age, email) VALUES ('user#{i}', #{rand(18..65)}, 'user#{i}@test.com')")
           end
 
           50.times do |i|
-            @engine.execute("INSERT INTO fuzz_orders (user_id, product_id, quantity, price) VALUES (#{rand(1..50)}, #{rand(1..30)}, #{rand(1..10)}, #{rand(10..1000)})")
+            RubyDB::Fuzz::Support.execute(@engine, "INSERT INTO fuzz_orders (user_id, product_id, quantity, price) VALUES (#{rand(1..50)}, #{rand(1..30)}, #{rand(1..10)}, #{rand(10..1000)})")
           end
 
           30.times do |i|
-            @engine.execute("INSERT INTO fuzz_products (name, price, category) VALUES ('product#{i}', #{rand(10..1000)}.99, 'cat#{rand(1..5)}')")
+            RubyDB::Fuzz::Support.execute(@engine, "INSERT INTO fuzz_products (name, price, category) VALUES ('product#{i}', #{rand(10..1000)}.99, 'cat#{rand(1..5)}')")
           end
         rescue => e
           # Tables might already exist
@@ -283,9 +285,9 @@ module RubyDB
 
       def cleanup_test_tables
         begin
-          @engine.execute("DROP TABLE fuzz_users")
-          @engine.execute("DROP TABLE fuzz_orders")
-          @engine.execute("DROP TABLE fuzz_products")
+          RubyDB::Fuzz::Support.execute(@engine, "DROP TABLE fuzz_users")
+          RubyDB::Fuzz::Support.execute(@engine, "DROP TABLE fuzz_orders")
+          RubyDB::Fuzz::Support.execute(@engine, "DROP TABLE fuzz_products")
         rescue => e
           # Ignore cleanup errors
         end
@@ -344,7 +346,7 @@ module RubyDB
         filled = (percent / 100 * bar_length).round
         bar = "[" + "=" * filled + " " * (bar_length - filled) + "]"
 
-        print("\rTransactions Fuzzing: #{bar} #{percent}% (#{current}/#{total})", nil, false)
+        print("\rTransactions Fuzzing: #{bar} #{percent}% (#{current}/#{total})")
         print("\n") if current == total - 1
       end
     end

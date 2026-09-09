@@ -1,0 +1,63 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Run the repository's fuzzers as a bounded CI or local safety gate.
+# Invalid SQL and intentionally injected WAL corruption are expected inputs;
+# uncaught errors and reported crashes are not.
+
+require "tmpdir"
+
+root = File.expand_path("..", __dir__)
+$LOAD_PATH.unshift(File.join(root, "lib"))
+require "rubydb"
+require_relative "../fuzz/sql_parser"
+require_relative "../fuzz/wal"
+require_relative "../fuzz/storage"
+require_relative "../fuzz/transactions"
+require_relative "../fuzz/query_engine"
+
+iterations = Integer(ENV.fetch("RUBYDB_FUZZ_ITERATIONS", "100"), 10)
+abort "RUBYDB_FUZZ_ITERATIONS must be positive" unless iterations.positive?
+seed = Integer(ENV.fetch("RUBYDB_FUZZ_SEED", "20260909"), 10)
+
+def run_fuzzer(name)
+  stats = yield
+  crashes = stats[:crashes].to_i
+  errors = stats[:errors].to_i
+  abort "#{name} found #{crashes} crash(es) and #{errors} error(s)" if crashes.positive? || errors.positive?
+  puts "#{name}: #{stats.inspect}"
+end
+
+Dir.mktmpdir("rubydb-fuzz-") do |directory|
+  run_fuzzer("SQL parser") do
+    RubyDB::Fuzz::SQLParserFuzzer.new(max_iterations: iterations, seed: seed).fuzz
+  end
+
+  run_fuzzer("WAL") do
+    RubyDB::Fuzz::WALFuzzer.new(
+      max_iterations: iterations,
+      seed: seed,
+      test_dir: File.join(directory, "wal")
+    ).fuzz
+  end
+
+  run_fuzzer("storage") do
+    RubyDB::Fuzz::StorageFuzzer.new(
+      max_iterations: iterations,
+      seed: seed,
+      test_dir: File.join(directory, "storage")
+    ).fuzz
+  end
+
+  engine = RubyDB::Storage::Engine.new(File.join(directory, "engine.rdb"))
+  begin
+    run_fuzzer("transactions") do
+      RubyDB::Fuzz::TransactionsFuzzer.new(engine, max_iterations: iterations, seed: seed).fuzz
+    end
+    run_fuzzer("query engine") do
+      RubyDB::Fuzz::QueryEngineFuzzer.new(engine, max_iterations: iterations, seed: seed).fuzz
+    end
+  ensure
+    engine.close
+  end
+end

@@ -1,0 +1,49 @@
+name: Compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ruby:
+    name: Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        ruby: ["3.3", "3.4"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - run: bundle exec rspec
+
+  rails:
+    name: ActiveRecord adapter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Build current RubyDB gem
+        run: bundle exec rake build
+      - name: Install current RubyDB gem for adapter dependency
+        shell: bash
+        run: gem install "$(ls -t pkg/rubydb-*.gem | head -n 1)" --local --no-document
+      - name: Install adapter dependencies
+        working-directory: adapters/activerecord
+        run: bundle install --jobs 4 --retry 3
+      - name: Run adapter integration suite
+        working-directory: adapters/activerecord
+        run: bundle exec rspec

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require_relative "support"
 
 module RubyDB
   module Fuzz
@@ -271,9 +272,9 @@ module RubyDB
 
       def setup_test_tables
         begin
-          @engine.execute("CREATE TABLE fuzz_users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER, email TEXT)")
-          @engine.execute("CREATE TABLE fuzz_orders (id INTEGER PRIMARY KEY, user_id INTEGER, product_id INTEGER, quantity INTEGER, price DECIMAL)")
-          @engine.execute("CREATE TABLE fuzz_products (id INTEGER PRIMARY KEY, name TEXT, price DECIMAL, category TEXT)")
+          RubyDB::Fuzz::Support.execute(@engine, "CREATE TABLE fuzz_users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER, email TEXT)")
+          RubyDB::Fuzz::Support.execute(@engine, "CREATE TABLE fuzz_orders (id INTEGER PRIMARY KEY, user_id INTEGER, product_id INTEGER, quantity INTEGER, price DECIMAL)")
+          RubyDB::Fuzz::Support.execute(@engine, "CREATE TABLE fuzz_products (id INTEGER PRIMARY KEY, name TEXT, price DECIMAL, category TEXT)")
         rescue => e
           # Tables might already exist
         end
@@ -297,7 +298,7 @@ module RubyDB
         filled = (percent / 100 * bar_length).round
         bar = "[" + "=" * filled + " " * (bar_length - filled) + "]"
 
-        print("\rStorage Fuzzing: #{bar} #{percent}% (#{current}/#{total})", nil, false)
+        print("\rStorage Fuzzing: #{bar} #{percent}% (#{current}/#{total})")
         print("\n") if current == total - 1
       end
     end

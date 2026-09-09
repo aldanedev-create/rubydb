@@ -12,6 +12,17 @@ RUBYDB_PUBLISH=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release
 
 Without `RUBYDB_PUBLISH=1`, `ruby scripts/release` only rebuilds and verifies the gem/checksum.
 
+The tag workflow also creates a signed GitHub build-provenance attestation for
+the exact gem artifact. Verify that attestation in the repository's Actions or
+Releases UI before distributing the package; the SHA-512 file remains available
+for an independent byte-for-byte check.
+
+Pull requests also run the supported Ruby 3.3/3.4 matrix on Linux, macOS, and
+Windows, plus the ActiveRecord adapter suite. A scheduled bounded fuzz job runs
+the SQL parser, WAL, storage, transaction, and query-engine fuzzers. Increase
+`RUBYDB_FUZZ_ITERATIONS` locally when investigating a failure, retaining the
+reported `RUBYDB_FUZZ_SEED` for reproduction.
+
 After publication, install the exact released version in a clean environment and run a smoke test:
 
 ```sh

@@ -1,0 +1,33 @@
+name: Fuzz safety
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Iterations per fuzzer"
+        required: false
+        default: "1000"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Run bounded fuzzers
+        env:
+          RUBYDB_FUZZ_ITERATIONS: ${{ inputs.iterations || '100' }}
+          RUBYDB_FUZZ_SEED: "20260909"
+        run: ruby scripts/fuzz

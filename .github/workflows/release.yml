@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 
 jobs:
   build-and-publish:
@@ -25,6 +27,10 @@ jobs:
         run: |
           bundle exec rspec
           ruby scripts/release
+      - name: Sign release provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "pkg/*.gem"
       - name: Publish to RubyGems
         if: ${{ secrets.RUBYGEMS_API_KEY != '' }}
         env:
