@@ -23,22 +23,26 @@ The repository contains substantial scaffolding for:
 
 ## Tested features
 
-The current suite verifies storage reopen, subprocess crash recovery, MVCC isolation/vacuum, durable visibility version-history traversal, constraints including ON DELETE/ON UPDATE referential actions and nullable values, indexes including deep B-tree splits, SQL execution including idempotent database/table/index DDL and SQL foreign-key actions, schema DDL, views, trigger DDL and dispatch, CREATE TABLE, ALTER TABLE column and constraint changes, transaction before-image rollback and SQL savepoints, and VACUUM, live TCP sessions, TLS transport, password/SCRAM authentication and authorization, metrics updates including Prometheus export, liveness/readiness health reporting through the server request router, live CLI doctor checks with safe repair behavior, truthful CLI status reporting, live CLI branch diff/merge/checkout operations, live CLI inspection values, live CLI snapshot creation/listing and vacuum reporting, live CLI backup creation and restore dry-run validation, live CLI database creation and deletion, the documented SQL compatibility contract, full/snapshot/incremental/differential backup validation, logical replication, durable replica state, guarded failover promotion, durable fencing epochs, replication peer-token authentication, recovery resource checks, migration/schema-diff behavior including executable migration SQL serialization and changed-migration detection, atomic branch checkout, branch state/diff/merge behavior, foreign-key integrity lookup behavior, compound/null/boolean check-constraint evaluation, lock conflict/wait/timeout behavior, complete deadlock cycle detection and victim rollback delegation, concurrency mutex initialization, Rails schema-builder SQL generation including defaults and foreign-key conventions, engine block-based table creation, adapter schema dumps preserving primary keys and defaults, release configuration, upgrade guards, benchmark execution, executor query deadlines, wire-level cancellation of in-flight requests, standalone SCRAM verification, actual WAL checkpoint sizing, typed deserialization-corruption detection, preservation of stored false values when defaults are present, filesystem fault injection with descriptor cleanup, and compaction/reopen validation (254 examples, 0 failures at the latest audit).
+The current suite verifies storage reopen, subprocess crash recovery, MVCC isolation/vacuum, durable visibility version-history traversal, constraints including ON DELETE/ON UPDATE referential actions and nullable values, indexes including deep B-tree splits, SQL execution including idempotent database/table/index DDL and SQL foreign-key actions, schema DDL, views, trigger DDL and dispatch, CREATE TABLE, ALTER TABLE column and constraint changes, transaction before-image rollback and SQL savepoints, and VACUUM, live TCP sessions, TLS transport, password/SCRAM authentication and authorization, metrics updates including Prometheus export, liveness/readiness health reporting through the server request router, live CLI doctor checks with safe repair behavior, truthful CLI status reporting, live CLI branch diff/merge/checkout operations, live CLI inspection values, live CLI snapshot creation/listing and vacuum reporting, live CLI backup creation and restore dry-run validation, live CLI database creation and deletion, the documented SQL compatibility contract, full/snapshot/incremental/differential backup validation, logical replication, durable replica state, guarded failover promotion, durable fencing epochs, replication peer-token authentication, recovery resource checks, migration/schema-diff behavior including executable migration SQL serialization and changed-migration detection, atomic branch checkout, branch state/diff/merge behavior, foreign-key integrity lookup behavior, compound/null/boolean check-constraint evaluation, lock conflict/wait/timeout behavior, complete deadlock cycle detection and victim rollback delegation, concurrency mutex initialization, Rails schema-builder SQL generation including defaults and foreign-key conventions, engine block-based table creation, adapter schema dumps preserving primary keys and defaults, ActiveRecord hash-form ordering and populated-table migration round trips, release configuration, upgrade guards, benchmark execution, executor query deadlines, wire-level cancellation of in-flight requests, standalone SCRAM verification, actual WAL checkpoint sizing, typed deserialization-corruption detection, preservation of stored false values when defaults are present, filesystem fault injection with descriptor cleanup, compaction/reopen validation, and process-level replication failover with stale-writer fencing (261 examples, 0 failures at the latest audit).
 
 ## Known limitations
 
 - The concurrent workload and regression suite verify parallel appends, point
-  reads, scans, and durable reopen reads within one embedded-engine process.
-  This does not certify multi-process writers or server capacity; embedded
-  ownership remains exclusive and multi-process clients must use the server.
+  reads, scans, durable reopen reads, multi-process server clients, and a
+  process-level replication failover drill. This does not certify universal
+  capacity; embedded ownership remains exclusive and multi-process clients must
+  use the server.
 
 - multi-row SQL `VALUES` inserts execute through the parser, binder, planner,
   and executor, including per-row conflict handling and Rails insert IDs
 - incremental backups capture WAL mutations after a verified base LSN; differential backups capture the verified base-relative WAL delta and restore through the same validated delta path
-- replication is limited to the explicit logical row-mutation envelope API
+- replication is limited to the explicit logical row-mutation envelope API;
+  process-level replacement and same-host fencing are tested, while true
+  multi-host partitions and split-brain recovery remain deployment work
 - automatic failover is limited to synchronized candidates; fencing requires a shared durable fence path and still needs multi-host split-brain validation
 - SQL compatibility is narrower than PostgreSQL or SQLite
-- production CA lifecycle, performance, and large-scale workload behavior still require dedicated validation
+- production CA lifecycle, independent security review, performance targets,
+  and large-scale workload behavior still require dedicated validation
 - branch state application and live target-branch merges are supported through the engine reconciliation hook
 
 ## Unsupported SQL
@@ -47,7 +51,7 @@ The supported dialect is defined in [docs/sql/compatibility.md](../sql/compatibi
 
 ## Durability guarantees
 
-WAL framing, reopen behavior, subprocess crash-recovery scenarios, actual checkpoint sizing, and fail-closed visibility-map loading are tested. This is not a substitute for production fault-injection and filesystem-specific validation.
+WAL framing, reopen behavior, subprocess crash-recovery scenarios, actual checkpoint sizing, fail-closed visibility-map loading, filesystem fault injection, compaction/reopen behavior, and verified restore drills are tested. This is not a substitute for real quota, power-loss, and filesystem-specific validation.
 
 ## Transaction guarantees
 
@@ -63,7 +67,7 @@ Full compressed backups restore into a fresh directory and checksum tampering is
 
 ## Replication guarantees
 
-Logical row-mutation streaming, LSN deduplication, acknowledgments, acknowledged-LSN reporting, synchronized-candidate promotion verification, and stale-primary rejection through durable fencing epochs are tested. Multi-host fencing and split-brain recovery still require dedicated validation.
+Logical row-mutation streaming, LSN deduplication, acknowledgments, acknowledged-LSN reporting, synchronized-candidate promotion verification, process replacement, and stale-primary rejection through durable fencing epochs are tested. Multi-host fencing and split-brain recovery still require dedicated validation.
 
 ## TLS guarantees
 
@@ -100,4 +104,6 @@ Main remaining work is to complete the sequence laid out in the repository desig
 
 ## Bottom line
 
-RubyDB is a promising database project with excellent architectural intent, but it does not yet meet the bar for production use with real data.
+RubyDB has a validated production-oriented foundation, but it does not yet meet
+the bar for unrestricted production use with real data outside its documented
+feature set and deployment-specific validation.

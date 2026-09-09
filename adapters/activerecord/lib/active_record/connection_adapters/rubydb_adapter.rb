@@ -868,5 +868,20 @@ module ActiveRecord
   end
 end
 
-# Register the adapter with ActiveRecord
-ActiveRecord::ConnectionAdapters.register("rubydb", "ActiveRecord::ConnectionAdapters::RubyDBAdapter")
+# Rails 7.2 introduced explicit adapter registration. Rails 7.1 loads custom
+# adapters through the conventional `rubydb_connection` hook instead.
+if ActiveRecord::ConnectionAdapters.respond_to?(:register)
+  ActiveRecord::ConnectionAdapters.register("rubydb", "ActiveRecord::ConnectionAdapters::RubyDBAdapter")
+else
+  module ActiveRecord
+    module ConnectionHandling
+      def rubydb_adapter_class
+        ConnectionAdapters::RubyDBAdapter
+      end
+
+      def rubydb_connection(config)
+        rubydb_adapter_class.new(config)
+      end
+    end
+  end
+end

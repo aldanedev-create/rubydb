@@ -1,8 +1,16 @@
 # RubyDB current-state audit
 
+> This document is a dated architecture audit, not a statement that every
+> finding remains open. For current validation evidence, see
+> [production validation](../production_validation.md) and the latest CI runs.
+
 ## Executive summary
 
-RubyDB is a broad and ambitious database project with a substantial amount of architectural scaffolding, but it is not yet a production-grade database. The repository contains a large number of modules covering storage, WAL, MVCC, transactions, catalog, security, server, replication, backup, Rails, and monitoring. That breadth is a strength, but the implementation is uneven and several subsystems are still prototype-level or incomplete.
+RubyDB is a broad database project with integrated storage, WAL, MVCC,
+transactions, catalog, security, server, replication, backup, Rails, and
+monitoring paths. The implementation now has substantial focused validation,
+but several deployment-level capabilities remain environment-specific or
+intentionally bounded.
 
 The primary risk is not that the code is absent; it is that multiple components exist without being integrated into a consistent, correct, durable engine. Existing code needs additional hardening before it can safely store user data.
 
@@ -11,8 +19,10 @@ The primary risk is not that the code is absent; it is that multiple components 
 ### Runtime and package state
 
 - Ruby runtime in the development container: Ruby 3.4.7
-- Package metadata currently claimed Ruby >= 4.0.0, which does not match the actual development environment and prevents dependency installation.
-- The top-level library entrypoint was missing: there is `lib/rubydb/rubydb.rb`, but no `lib/rubydb.rb` file. This makes `require "rubydb"` fail in standard Ruby packaging usage.
+- Package metadata targets Ruby >= 3.3.0; CI covers Ruby 3.3 and 3.4 on Linux,
+  macOS, and Windows.
+- The top-level library entrypoint and gem packaging are covered by
+  `require "rubydb"` and release-artifact tests.
 - The project uses Bundler and RSpec as the base test stack.
 - The repository is organized around a large `lib/rubydb` module tree and includes docs, examples, chaos, and fuzz directories.
 
@@ -31,61 +41,79 @@ The project already contains modules for:
 - replication, backups, and monitoring
 - Rails integration
 
-The actual risk is that many of these modules are not yet proven end-to-end. They are better described as a design skeleton than as a validated implementation.
+The remaining risk is uneven validation breadth: many capabilities are proven
+by focused tests, but multi-host operations, capacity limits, and complete
+external-database dialect compatibility are not yet certified.
 
 ## High-risk findings
 
-### 1. Library loading is broken
+### 1. Library loading (resolved)
 
-The project does not currently allow a standard Ruby consumer to do:
+The standard Ruby consumer path is now tested:
 
 ```ruby
 require "rubydb"
 ```
 
-This prevents the library from installing and loading correctly under standard Ruby conventions.
+Release metadata and the local gem build verify that this loads correctly.
 
-### 2. Storage layer is incomplete
+### 2. Storage layer (partially resolved)
 
-The storage engine already has a page abstraction, page header, buffer pool, page manager, and file manager. However, the implementation still has gaps around: page validation, corruption detection, WAL-before-data durability semantics, crash recovery guarantees, forced fsync behavior, and persistence around record updates and deletions.
+The storage engine now has page validation, corruption detection, WAL/recovery,
+fsync paths, restart tests, subprocess crash tests, filesystem fault injection,
+and compaction/reopen coverage. Real disk-quota and power-loss validation on
+deployment filesystems remains open.
 
-The code does not yet demonstrate end-to-end restart correctness or real crash recovery tests.
+### 3. Transaction and MVCC semantics (validated foundation)
 
-### 3. Transaction and MVCC semantics are not yet proven
+The transaction manager and visibility map exist, transaction rollback restores
+update/delete before-images, and read-committed, repeatable-read, serializable
+conflict, deadlock, and concurrency workload paths have regression coverage.
+Distributed isolation and deployment-specific contention limits remain open.
 
-The transaction manager and visibility map exist, and transaction rollback now restores update/delete before-images with regression coverage. Broader isolation scenarios and workload validation remain part of the production-readiness audit.
+### 4. SQL engine is a documented subset
 
-### 4. SQL engine is partial
+The parser, planner, and executor are covered through end-to-end tests for the
+documented RubyDB SQL subset, including joins, aggregates, CTEs, subqueries,
+set operations, upserts, and window functions. Full PostgreSQL/MySQL/SQLite
+dialect compatibility is intentionally out of scope for this phase.
 
-The parser and planner exist, but SQL execution is not yet proven against a real, end-to-end database workflow. A parser and planner alone do not establish correctness.
+### 5. Security (validated foundation)
 
-### 5. Security is scaffolded but not integrated
+Authentication, TLS, SCRAM, authorization, framing limits, deadlines, and
+resource-limit startup checks are tied to server/query execution and tested.
+An independent security review and production certificate/secret lifecycle
+validation remain open.
 
-The repository has authentication and authorization modules, but they are not fully tied to actual server/query execution, and they are not proven to block unauthorized operations in practice.
+### 6. Production posture is intentionally bounded
 
-### 6. Production docs exceed implementation reality
-
-The README and overall project description promise a mature, production-capable database system. The repository has broad architectural ambition, but the implementation still needs hard proof of durability, crash recovery, server safety, and correctness before it can honestly claim that status.
+The README and production documents now distinguish tested behavior from
+deployment work. RubyDB still needs environment-specific capacity, filesystem,
+multi-host failover, certificate lifecycle, and independent security validation
+before broader production claims are appropriate.
 
 ## Current production posture
 
 RubyDB is best understood as:
 
-- a well-structured database prototype with many planned components,
-- a serious engineering foundation,
-- not yet a trustworthy production database for real data.
+- a serious Ruby database foundation with repeatable local validation,
+- suitable for controlled workloads within the documented feature set,
+- not a drop-in general-purpose database or automatic high-availability service.
 
 The correct short-term operating posture is to treat the project as a pre-production, high-potential codebase that needs disciplined validation and narrower, correctness-first milestones.
 
 ## Immediate action items
 
-1. Fix the top-level library loading path.
-2. Align Ruby compatibility metadata with the actual supported runtime.
-3. Harden the storage file format and page validation.
-4. Add real durability and restart tests.
+1. Run the hosted Ruby/Rails/OS compatibility matrix and retain its evidence.
+2. Validate real disk quota, power-loss, and filesystem behavior on deployment targets.
+3. Validate multi-host partition, split-brain, fencing, and operator failover procedures.
+4. Complete an independent security review and certificate/secret rotation drill.
 5. Implement or intentionally reject unsupported features with explicit errors.
-6. Create truthful production-readiness documentation rather than broad marketing claims.
+6. Establish workload-specific capacity baselines and release sign-off records.
 
 ## Conclusion
 
-RubyDB has a strong architecture and aspirational roadmap, but it is not production-ready yet. The codebase needs deliberate correctness work before it can safely support real application data.
+RubyDB has a substantial production-oriented foundation and repeatable local
+validation. Operators must stay within the documented feature set and complete
+deployment-specific capacity, filesystem, security, and multi-host failover
+validation before entrusting critical data to it.

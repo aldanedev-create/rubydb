@@ -10,6 +10,10 @@ require "active_record"
 require "active_record/connection_adapters/rubydb_adapter"
 
 RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
+  def migration_version
+    "#{ActiveRecord::VERSION::MAJOR}.#{ActiveRecord::VERSION::MINOR}"
+  end
+
   let(:model) do
     Class.new(ActiveRecord::Base) do
       self.table_name = "accounts"
@@ -38,7 +42,7 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
   end
 
   it "runs a Rails migration that creates a table, adds a column, and adds an index" do
-    migration = Class.new(ActiveRecord::Migration[7.2]) do
+    migration = Class.new(ActiveRecord::Migration[migration_version]) do
       def change
         create_table :projects do |table|
           table.string :name, null: false
@@ -128,7 +132,7 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
     connection.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY, email VARCHAR(255) NOT NULL)")
     connection.execute("INSERT INTO accounts (id, email) VALUES (1, 'ada@example.test')")
 
-    migration = Class.new(ActiveRecord::Migration[7.2]) do
+    migration = Class.new(ActiveRecord::Migration[migration_version]) do
       def change
         add_column :accounts, :status, :string, default: "new", null: false
         add_index :accounts, :status
