@@ -57,6 +57,15 @@ module RubyDB
         @heartbeat_thread = nil
         @recovery = nil
         @fencing_lease = FencingLease.new(@config[:fence_path], @config[:node_id]).acquire!
+        @engine_commit_listener = proc do |transaction_id, changes|
+          write(
+            id: "engine_tx_#{transaction_id}",
+            operation: "transaction",
+            transaction_id: transaction_id,
+            operations: changes
+          )
+        end
+        @engine.add_commit_listener(@engine_commit_listener) if @engine.respond_to?(:add_commit_listener)
 
         # Initialize replication slots if enabled
         initialize_slots if @config[:enable_slots]
@@ -68,6 +77,7 @@ module RubyDB
 
           @fencing_lease.assert_valid!
           @replication_log = ReplicationLog.new(@engine, @config) if @replication_log.closed?
+          @engine.add_commit_listener(@engine_commit_listener) if @engine.respond_to?(:add_commit_listener)
 
           @running = true
 
@@ -85,11 +95,13 @@ module RubyDB
       def stop
         @lock.synchronize do
           unless @running
+            @engine.remove_commit_listener(@engine_commit_listener) if @engine.respond_to?(:remove_commit_listener)
             @replication_log.close unless @replication_log.closed?
             return true
           end
 
           @running = false
+          @engine.remove_commit_listener(@engine_commit_listener) if @engine.respond_to?(:remove_commit_listener)
 
           @replication_server&.close
           @replication_server = nil

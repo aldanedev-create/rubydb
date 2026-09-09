@@ -89,6 +89,7 @@ module RubyDB
         @cache_ttl = config[:cache_ttl] || 300  # 5 minutes
         @is_open = true
         @transaction_manager = nil
+        @commit_listeners = []
         @current_transaction_id = 0
         @recovery_in_progress = false
         # A replica must never accept an accidental local mutation. Replay uses
@@ -465,6 +466,10 @@ module RubyDB
       def apply_transaction(transaction_data)
         with_replication_apply do
           data = transaction_data.transform_keys { |key| key.to_sym rescue key }
+          if data[:operations]
+            Array(data[:operations]).each { |operation| apply_transaction(operation) }
+            return true
+          end
           operation = (data[:operation] || data[:type]).to_s.downcase
           table = data[:table_name] || data[:table]
           table = table.to_sym if table && !@table_metadata.key?(table) && @table_metadata.key?(table.to_sym)
@@ -1242,6 +1247,20 @@ module RubyDB
         @transaction_manager
       end
 
+      def add_commit_listener(listener = nil, &block)
+        listener ||= block
+        raise ArgumentError, "Commit listener must respond to call" unless listener.respond_to?(:call)
+
+        @lock.synchronize do
+          @commit_listeners << listener unless @commit_listeners.include?(listener)
+        end
+        listener
+      end
+
+      def remove_commit_listener(listener)
+        @lock.synchronize { @commit_listeners.delete(listener) }
+      end
+
       def commit_transaction(transaction = nil)
         @lock.synchronize do
           @stats[:transaction_commit] += 1
@@ -1276,6 +1295,13 @@ module RubyDB
           tx[:active] = false
           tx[:committed_at] = Time.now
           @current_transaction_id = 0
+
+          committed_changes = tx[:changes].flat_map do |table_name, rows|
+            rows.values.map { |change| change.merge(table: table_name) }
+          end
+          @commit_listeners.dup.each do |listener|
+            listener.call(tx[:id], committed_changes) unless committed_changes.empty?
+          end
           
           true
         end

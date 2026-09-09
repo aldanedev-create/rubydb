@@ -22,9 +22,10 @@ these capabilities.
    operations, targeted `ON CONFLICT DO UPDATE`, and ranking/partition window
    functions are implemented; recursive CTEs, window frames, and broader upsert
    forms remain open.
-4. Replication: synchronized acknowledgements, transaction/WAL integration,
-   and promotion with an explicit recovery point. Primary connections now
-   bootstrap the catalog before row replay, including empty replicas. TCP input now
+4. Replication: synchronized acknowledgements and promotion with an explicit
+   recovery point. Engine commits now package all committed row changes into a
+   single replication envelope after the local WAL commit point. Primary
+   connections bootstrap the catalog before row replay, including empty replicas. TCP input now
    uses bounded newline framing and replay positions are fsynced before ack;
    replica engine mutation entry points are read-only except for internal replay.
    Validate partitions and stale writers before adding automatic election.

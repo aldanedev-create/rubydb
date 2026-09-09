@@ -22,6 +22,9 @@ compatibility.
   local writes. Replication TCP input is newline-frame buffered, rejects
   oversized incomplete frames, bootstraps a new replica's catalog before row
   replay, and persists the replay position before ack.
+- Engine transaction integration: a committed transaction containing multiple
+  row mutations is emitted as one replication envelope only after its local
+  WAL commit and flush complete.
 - Persistence safety at the engine boundary: malformed metadata and failed WAL
   recovery abort startup, metadata publishes are fsynced before atomic rename,
   and the maintenance worker is joined before storage closes.
