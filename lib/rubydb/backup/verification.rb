@@ -115,6 +115,8 @@ module RubyDB
           FileUtils.mkdir_p(temp_dir)
 
           begin
+            manifest_path = File.join(backup_path, "manifest.json")
+            metadata = JSON.parse(File.read(manifest_path), symbolize_names: true)
             # Restore to temporary location
             restore = Restore.new(nil, @config)
             restore_result = restore.restore(backup_path, destination: temp_dir)
@@ -123,10 +125,26 @@ module RubyDB
               return { success: false, error: "Restore failed: #{restore_result[:error]}" }
             end
 
-            # Verify restored database
+            database_path = Dir.glob(File.join(temp_dir, "*.rdb")).first
+            return { success: false, error: "Restored database file not found" } unless database_path
+
+            # Verify that the extracted files can be opened by the real engine,
+            # not merely that their checksums and names look correct.
+            engine = Storage::Engine.new(database_path, auto_cleanup: false, auto_vacuum: false)
+            actual_tables = engine.list_tables.map(&:to_s).sort
+            expected_tables = Array(metadata[:tables]).map(&:to_s).sort
+            unless actual_tables == expected_tables
+              return { success: false, error: "Restored catalog mismatch", expected_tables: expected_tables, actual_tables: actual_tables }
+            end
+            row_counts = actual_tables.to_h do |table|
+              [table, engine.table_row_count(table)]
+            end
+            engine.close
             {
               success: true,
               restored_path: temp_dir,
+              tables: actual_tables,
+              row_counts: row_counts,
               message: "Restore verification successful"
             }
 
@@ -134,6 +152,7 @@ module RubyDB
             { success: false, error: e.message }
 
           ensure
+            engine&.close if defined?(engine) && engine&.open?
             # Clean up temp directory
             FileUtils.rm_rf(temp_dir) if Dir.exist?(temp_dir)
           end

@@ -30,6 +30,8 @@ RSpec.describe "RubyDB backup and restore" do
       expect(backup.verify_backup(created[:backup_path])[:success]).to be(true)
       verification = RubyDB::Backup::Verification.new(verification_dir: File.join(dir, "verification"))
       expect(verification.verify_backup(created[:backup_path])[:success]).to be(true)
+      drill = verification.verify_restore(created[:backup_path])
+      expect(drill).to include(success: true, tables: ["users"], row_counts: { "users" => 1 })
 
       restored = RubyDB::Backup::Restore.new(nil, backup_dir: backup_dir)
       result = restored.restore(created[:backup_path], destination: restored_dir)
