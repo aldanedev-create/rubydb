@@ -30,8 +30,8 @@ these capabilities.
    ranking/partition window functions, explicit `ROWS` window frames, bounded
    recursive CTEs, dependency-aware inner-join reordering, and targetless
    conflict updates using primary/unique definitions are implemented; multi-row
-   insert sources, broader dialect upsert forms, and statistics-driven plan
-   costing remain open.
+   `VALUES` sources are now atomic when executed outside a caller transaction.
+   Broader dialect upsert forms and statistics-driven plan costing remain open.
 4. Replication: synchronized acknowledgements and promotion with an explicit
    recovery point. Engine commits now package all committed row changes into a
    single replication envelope after the local WAL commit point. Primary

@@ -53,8 +53,9 @@ module RubyDB
             end
           end
 
-          # Try different join orders if multiple tables
-          # This is simplified - production would implement join ordering
+          # Join ordering is applied by Planner for inner-join chains. Keep
+          # this alternative generation focused on scan-method choices so it
+          # cannot reorder an outer join accidentally.
         end
 
         alternatives
