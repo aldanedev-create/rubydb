@@ -65,6 +65,11 @@ ruby benchmarks/multiprocess_server_workload.rb
 bundle exec rspec spec/replication_failover_integration_spec.rb
 ```
 
+The scheduled/manual GitHub Actions workflow `.github/workflows/workload.yml`
+also runs the threaded durability, server latency, and multi-process client
+workloads and uploads their JSON results as an artifact. Treat those results as
+environment-specific evidence, not a universal capacity guarantee.
+
 Archive the JSON output from the soak run with the Ruby version, RubyDB commit,
 host resources, and elapsed time. The harness creates a fresh temporary
 database for every round and fails if any round loses durable rows.

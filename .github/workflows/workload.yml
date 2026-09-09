@@ -1,0 +1,50 @@
+name: Sustained workload validation
+
+on:
+  schedule:
+    - cron: "31 3 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: Run sustained threaded durability soak
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p workload-results
+          RUBYDB_SOAK_ROUNDS=3 \
+          RUBYDB_SOAK_THREADS=16 \
+          RUBYDB_SOAK_OPERATIONS=2000 \
+          RUBYDB_SOAK_PAYLOAD_BYTES=512 \
+          ruby benchmarks/concurrent_soak.rb | tee workload-results/threaded.json
+      - name: Run sustained server/client latency workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUBYDB_SERVER_WORKLOAD_CLIENTS=16 \
+          RUBYDB_SERVER_WORKLOAD_OPERATIONS=1000 \
+          ruby -Ilib benchmarks/server_workload.rb | tee workload-results/server.json
+      - name: Run sustained multi-process client workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUBYDB_SERVER_WORKLOAD_PROCESSES=8 \
+          RUBYDB_SERVER_WORKLOAD_OPERATIONS=1000 \
+          ruby benchmarks/multiprocess_server_workload.rb | tee workload-results/multiprocess.json
+      - name: Upload workload metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rubydb-workload-${{ github.sha }}
+          path: workload-results/
