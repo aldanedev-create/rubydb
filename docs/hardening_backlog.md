@@ -58,7 +58,8 @@ these capabilities.
 7. Release engineering: cross-platform Ruby 3.3/3.4 CI, the ActiveRecord
    adapter CI job, and a deterministic bounded fuzz safety workflow are now
    wired into GitHub Actions, and release provenance signing is enabled for gem
-   artifacts. Coverage thresholds, property-based generators, RubyGems
+   artifacts. CI now enforces 25% line and 20% branch coverage (the current
+   audit measured 62.0% line and 32.84% branch). Property-based generators, RubyGems
    gem-level signatures, and automated changelog/release publication remain
    open.
 
