@@ -49,6 +49,12 @@ $env:RUBYDB_SERVER_WORKLOAD_CLIENTS = "16"
 $env:RUBYDB_SERVER_WORKLOAD_OPERATIONS = "1000"
 ruby -Ilib benchmarks/server_workload.rb
 
+# Independent client processes through the server. This validates process
+# isolation and durable rows; scale processes/operations for the deployment.
+$env:RUBYDB_SERVER_WORKLOAD_PROCESSES = "8"
+$env:RUBYDB_SERVER_WORKLOAD_OPERATIONS = "1000"
+ruby benchmarks/multiprocess_server_workload.rb
+
 # Real two-engine replication and promotion validation
 bundle exec rspec spec/replication_failover_integration_spec.rb
 ```
