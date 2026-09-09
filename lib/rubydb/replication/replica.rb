@@ -75,18 +75,30 @@ module RubyDB
       end
 
       def stop
-        @lock.synchronize do
+        thread, connection = @lock.synchronize do
           return unless @running
 
           @running = false
           @state = STATE_DISCONNECTED
-
-          @replication_thread&.kill
-          @replication_thread = nil
-
-          disconnect
-          true
+          [@replication_thread, @connection]
         end
+
+        # Closing the socket wakes a blocked read. Let an in-flight frame finish
+        # its durable state publication before joining the worker; killing it can
+        # interrupt File.open/rename and leave replica state ambiguous.
+        connection&.close
+        thread&.join(5)
+        if thread&.alive?
+          thread.kill
+          thread.join
+        end
+
+        @lock.synchronize do
+          @connection = nil
+          @replication_thread = nil
+          @stats[:last_disconnect_time] = Time.now
+        end
+        true
       end
 
       def running?
@@ -96,16 +108,17 @@ module RubyDB
       def promote_to_primary(recovery_point: nil)
         @lock.synchronize do
           validate_promotion!(recovery_point)
-
-          # Stop replication
-          stop
-
-          # Promotion is an explicit operator action. Re-enable ordinary
-          # mutations only after the replication stream has been stopped.
-          @engine.set_replication_read_only(false) if @engine.respond_to?(:set_replication_read_only)
-          @state = STATE_SYNCED
-          true
         end
+
+        # Stop outside the monitor so the worker can finish without waiting on
+        # the promotion caller's lock.
+        stop
+
+        # Promotion is an explicit operator action. Re-enable ordinary
+        # mutations only after the replication stream has been stopped.
+        @engine.set_replication_read_only(false) if @engine.respond_to?(:set_replication_read_only)
+        @lock.synchronize { @state = STATE_SYNCED }
+        true
       end
 
       def replay_transaction(transaction_data, lsn = nil)
