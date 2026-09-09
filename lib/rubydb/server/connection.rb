@@ -226,6 +226,14 @@ module RubyDB
               response[:request_id] ||= message.id
               @config[:connection_pool]&.record_request(response[:success] != false)
               response_type = response[:type] || "#{message.type}_response"
+              # The request is no longer executing once the session has
+              # produced its response. Clear this before writing so a fast
+              # client can issue the next request as soon as it receives the
+              # frame; keeping it set until after the write creates a
+              # connection-level false "request in flight" rejection.
+              @active_request_lock.synchronize do
+                @active_request_id = nil if message && @active_request_id == message.id
+              end
               begin
                 write_data(protocol, Protocol::Message.new(response_type.to_sym, response))
               rescue IOError, SystemCallError
@@ -331,15 +339,18 @@ module RubyDB
 
       def write_data(protocol, data)
         @write_lock.synchronize do
+          return false if @closed || @client.nil?
+
+          client = @client
           if data.is_a?(String)
-            @client.write(data)
+            client.write(data)
             @bytes_sent += data.bytesize
           else
             encoded = protocol.encoder.encode(data)
-            @client.write(encoded)
+            client.write(encoded)
             @bytes_sent += encoded.bytesize
           end
-          @client.flush
+          client.flush
         end
       end
 

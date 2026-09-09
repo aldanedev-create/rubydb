@@ -20,12 +20,16 @@ the exact gem artifact. Verify that attestation in the repository's Actions or
 Releases UI before distributing the package; the SHA-512 file remains available
 for an independent byte-for-byte check.
 
-For a RubyGems cryptographic signature, provision base64-encoded
+For the tag release workflow, provision base64-encoded
 `RUBYDB_GEM_SIGNING_KEY_B64` and `RUBYDB_GEM_CERT_B64` repository secrets. The
 release job materializes them only on the ephemeral runner and passes the
 protected paths to `gem build`; it never stores them in the repository. GitHub
 release notes are generated from the tag history after publication, so review
 the generated release before announcing it.
+
+The tag workflow fails closed when the signing secrets or RubyGems publication
+key are missing. Local unsigned builds remain available through `rake build`
+and are not publication artifacts.
 
 Pull requests also run the supported Ruby 3.3/3.4 matrix on Linux, macOS, and
 Windows, plus the ActiveRecord adapter suite on Rails 7.1, 7.2, and 8.0. A scheduled bounded fuzz job runs

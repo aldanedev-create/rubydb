@@ -28,9 +28,8 @@ these capabilities.
    cleanup. Compaction now reads the engine's actual record-header layout,
    observes dirty buffer-pool pages, and is covered through reopen validation.
    Real filesystem quota and power-loss tests remain environment work.
-3. SQL correctness: ambiguous identifiers, aggregate edge cases (NULLs,
-   DISTINCT, and expressions), and schema changes on populated tables remain
-   open. Boolean false values, `IS NULL`, NULL comparison behavior, and
+3. SQL correctness: ambiguous identifiers and broader dialect-specific edge
+   cases remain open. Boolean false values, `IS NULL`, NULL comparison behavior, and
    outer-join NULL extension now have regression coverage. Non-recursive CTEs,
    subqueries, set operations, targeted `ON CONFLICT DO UPDATE`, and
    ranking/partition window functions, explicit `ROWS` window frames, bounded
@@ -46,7 +45,10 @@ these capabilities.
    replica engine mutation entry points are read-only except for internal replay.
    Promotion now rejects any received/replayed LSN gap and can require a
    caller-supplied recovery point. Active primary engine mutations validate the
-   fencing lease before writing. Validate partitions and stale writers before
+   fencing lease before writing. Replication shutdown now closes established
+   replica sockets, and a reconnect/catch-up partition test verifies that the
+   replica resumes from the durable log. True multi-host partitions, stale
+   writers, and split-brain recovery still require deployment validation before
    adding automatic election.
 5. Rails: populated migration round trips, eager loading, nested associations,
    and live adapter coverage are present. CI now exercises Rails 7.1, 7.2, and
@@ -67,7 +69,7 @@ these capabilities.
    adapter jobs, and a deterministic bounded fuzz safety workflow are wired
    into GitHub Actions. CI enforces 25% line and 20% branch coverage (the
    current audit measured 62.0% line and 32.84% branch). Release provenance
-   signing is enabled, optional RubyGems gem-level signing accepts protected
+   signing is enabled, RubyGems gem-level signing requires protected
    key/certificate paths, dependency audit runs weekly, and tag releases can
    publish generated GitHub release notes. A maintainer must still provision
    the RubyGems signing secrets and review generated notes before publication.

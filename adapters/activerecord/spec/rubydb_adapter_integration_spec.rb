@@ -122,4 +122,26 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
       .to contain_exactly(5, 4)
     expect(joined_titles).to eq(["B", "A"])
   end
+
+  it "round-trips a migration on a populated table" do
+    connection = ActiveRecord::Base.connection
+    connection.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY, email VARCHAR(255) NOT NULL)")
+    connection.execute("INSERT INTO accounts (id, email) VALUES (1, 'ada@example.test')")
+
+    migration = Class.new(ActiveRecord::Migration[7.2]) do
+      def change
+        add_column :accounts, :status, :string, default: "new", null: false
+        add_index :accounts, :status
+      end
+    end
+
+    migration.new.migrate(:up)
+    loaded = connection.select_one("SELECT status FROM accounts WHERE id = 1")
+
+    expect(loaded["status"] || loaded[:status]).to eq("new")
+    expect(connection.indexes(:accounts)).to include(an_object_having_attributes(columns: ["status"]))
+
+    migration.new.migrate(:down)
+    expect(connection.columns(:accounts).map(&:name)).not_to include("status")
+  end
 end

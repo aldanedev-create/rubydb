@@ -94,17 +94,22 @@ module RubyDB
 
       def get_last_lsn
         @lock.synchronize do
-          return nil unless @current_segment
-
-          @current_segment.rewind
-          @current_segment.each_line.to_a.reverse_each do |line|
+          list_segments.reverse_each do |segment_path|
             begin
-              return JSON.parse(line, symbolize_names: true)[:lsn]
-            rescue JSON::ParserError
-              next
+              File.readlines(segment_path).reverse_each do |line|
+                begin
+                  lsn = JSON.parse(line, symbolize_names: true)[:lsn]
+                  return lsn unless lsn.nil?
+                rescue JSON::ParserError
+                  next
+                end
+              end
+            rescue Errno::ENOENT
+              # A concurrently rotated segment may disappear between the
+              # directory listing and the read. Continue with the remaining
+              # durable segments for LSN recovery.
             end
           end
-          @current_segment.seek(0, IO::SEEK_END)
           nil
         end
       end

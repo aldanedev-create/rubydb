@@ -30,7 +30,8 @@ Dir.mktmpdir("rubydb-server-workload") do |dir|
       gate.pop
       operations.times do |operation|
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        client.query("INSERT INTO workload_rows (id) VALUES (#{client_number * operations + operation + 1})")
+        result = client.query("INSERT INTO workload_rows (id) VALUES (#{client_number * operations + operation + 1})")
+        raise "insert failed: #{result.error || result.inspect}" unless result.success?
         latencies << ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000)
       end
       client.disconnect
@@ -40,18 +41,23 @@ Dir.mktmpdir("rubydb-server-workload") do |dir|
   end
   clients.times { gate << true }
   workers.each(&:join)
-  raise "server workload failures: #{errors.size}" unless errors.empty?
+  failures = []
+  failures << errors.pop until errors.empty?
+  raise "server workload failures: #{failures.inspect}" unless failures.empty?
+  expected = clients * operations
+  in_memory_rows = server.engine.table_row_count(:workload_rows)
+  raise "in-memory row count failed: expected #{expected}, got #{in_memory_rows}" unless in_memory_rows == expected
   server.stop
   reopened = RubyDB::Storage::Engine.new(database_path, auto_cleanup: false, auto_vacuum: false)
   durable_rows = reopened.select_rows(:workload_rows, reopened.table_columns(:workload_rows)).size
   reopened.close
-  expected = clients * operations
   raise "durability check failed: expected #{expected}, got #{durable_rows}" unless durable_rows == expected
   values = []
   values << latencies.pop until latencies.empty?
   values.sort!
   percentile = ->(fraction) { values[[(values.length * fraction).ceil - 1, 0].max].round(3) }
-  puts JSON.generate(clients: clients, operations_per_client: operations, durable_rows: durable_rows,
+  puts JSON.generate(clients: clients, operations_per_client: operations,
+                     in_memory_rows: in_memory_rows, durable_rows: durable_rows,
                      p50_ms: percentile.call(0.50), p95_ms: percentile.call(0.95), p99_ms: percentile.call(0.99))
 ensure
   server&.stop

@@ -44,20 +44,30 @@ module RubyDB
         # Create WAL directory
         FileUtils.mkdir_p(wal_dir) unless Dir.exist?(wal_dir)
 
-        # Initialize components
-        initialize_components(config)
+        begin
+          # Initialize components
+          initialize_components(config)
 
-        # Start checkpoint if configured
-        if config[:auto_checkpoint] != false
-          @checkpoint.start
+          # Start checkpoint if configured
+          if config[:auto_checkpoint] != false
+            @checkpoint.start
+          end
+
+          # Start recovery if needed
+          if config[:recovery] != false
+            recover
+          end
+
+          @running = true
+        rescue StandardError
+          # Recovery can fail after the writer has opened a segment. Close all
+          # partially initialized components before re-raising so callers can
+          # replace/remove a failed WAL directory on every supported platform.
+          @checkpoint&.stop rescue nil
+          @writer&.shutdown rescue nil
+          @reader&.close rescue nil
+          raise
         end
-
-        # Start recovery if needed
-        if config[:recovery] != false
-          recover
-        end
-
-        @running = true
       end
 
       def attach_engine(engine)

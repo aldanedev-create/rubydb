@@ -23,6 +23,7 @@ module RubyDB
           checkpoint_operations: 0,
           recovery_operations: 0,
           corruptions: 0,
+          expected_rejections: 0,
           errors: 0,
           crashes: 0,
           edge_cases_found: []
@@ -40,70 +41,72 @@ module RubyDB
 
       def fuzz(iterations = @max_iterations)
         @lock.synchronize do
-          # Initialize WAL
-          @wal = RubyDB::WAL::WAL.new(@wal_dir, 
-            segment_size: 1024 * 1024,  # 1MB
-            buffer_size: 1024,
-            sync: false,
-            auto_checkpoint: false
-          )
+          begin
+            # Initialize WAL
+            @wal = RubyDB::WAL::WAL.new(@wal_dir,
+              segment_size: 1024 * 1024,  # 1MB
+              buffer_size: 1024,
+              sync: false,
+              auto_checkpoint: false
+            )
 
-          iterations.times do |i|
-            begin
-              @stats[:total_operations] += 1
+            iterations.times do |i|
+              begin
+                @stats[:total_operations] += 1
 
-              # Choose random WAL operation
-              operation = choose_operation
+                # Choose random WAL operation
+                operation = choose_operation
 
-              # Execute operation
-              result = execute_operation(operation)
+                # Execute operation
+                result = execute_operation(operation)
 
-              if result[:success]
-                @stats[:successful_ops] += 1
-                case operation[:type]
-                when :write
-                  @stats[:wal_writes] += 1
-                when :read
-                  @stats[:wal_reads] += 1
-                when :checkpoint
-                  @stats[:checkpoint_operations] += 1
-                when :recovery
-                  @stats[:recovery_operations] += 1
+                if result[:success]
+                  @stats[:successful_ops] += 1
+                  case operation[:type]
+                  when :write
+                    @stats[:wal_writes] += 1
+                  when :read
+                    @stats[:wal_reads] += 1
+                  when :checkpoint
+                    @stats[:checkpoint_operations] += 1
+                  when :recovery
+                    @stats[:recovery_operations] += 1
+                  end
+                else
+                  @stats[:failed_ops] += 1
+                  if result[:error] && result[:error].include?("crash")
+                    @stats[:crashes] += 1
+                    @stats[:edge_cases_found] << {
+                      operation: operation,
+                      error: result[:error],
+                      iteration: i
+                    }
+                  end
                 end
-              else
-                @stats[:failed_ops] += 1
-                if result[:error] && result[:error].include?("crash")
-                  @stats[:crashes] += 1
-                  @stats[:edge_cases_found] << {
-                    operation: operation,
-                    error: result[:error],
-                    iteration: i
-                  }
-                end
+
+              rescue => e
+                @stats[:errors] += 1
+                @stats[:crashes] += 1
+                @stats[:edge_cases_found] << {
+                  operation: operation,
+                  error: e.message,
+                  backtrace: e.backtrace,
+                  iteration: i
+                }
               end
 
-            rescue => e
-              @stats[:errors] += 1
-              @stats[:crashes] += 1
-              @stats[:edge_cases_found] << {
-                operation: operation,
-                error: e.message,
-                backtrace: e.backtrace,
-                iteration: i
-              }
+              # Progress reporting
+              if i % 100 == 0
+                print_progress(i, iterations)
+              end
             end
 
-            # Progress reporting
-            if i % 100 == 0
-              print_progress(i, iterations)
-            end
+            @stats
+          ensure
+            @wal&.shutdown
+            @wal = nil
+            FileUtils.rm_rf(@test_dir) if Dir.exist?(@test_dir)
           end
-
-          # Cleanup
-          @wal.shutdown if @wal
-          FileUtils.rm_rf(@test_dir) if Dir.exist?(@test_dir)
-
-          @stats
         end
       end
 
@@ -221,6 +224,12 @@ module RubyDB
         )
         
         { success: true }
+      rescue RubyDB::RecoveryError => e
+        # A standalone WAL has no attached engine. Recovery must reject redo or
+        # undo records in that state; this is a safety result, not a fuzzer
+        # crash. Keep it visible in the metrics without failing the run.
+        @stats[:expected_rejections] += 1
+        { success: false, error: "expected recovery rejection: #{e.message}" }
       rescue => e
         { success: false, error: "crash: #{e.message}" }
       end

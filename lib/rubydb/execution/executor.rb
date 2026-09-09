@@ -329,7 +329,9 @@ module RubyDB
         rows.each do |row|
           # Apply updates
           assignments.each do |assignment|
-            row[assignment.column] = evaluate_expression(assignment.value, row)
+            column = assignment.is_a?(Hash) ? (assignment[:column] || assignment["column"]) : assignment.column
+            value = assignment.is_a?(Hash) ? (assignment[:value] || assignment["value"]) : assignment.value
+            row[column] = evaluate_expression(value, row)
           end
 
           # Update in engine

@@ -110,14 +110,25 @@ module RubyDB
       end
 
       def shutdown(wait = true)
+        write_thread = nil
         @lock.synchronize do
+          return if @shutdown
+
           @shutdown = true
           @running = false
           @write_thread&.kill if !wait
           flush_buffer
           _sync if @sync_on_write
           @current_segment.close if @current_segment&.open?
+          write_thread = @write_thread
+          @write_thread = nil
         end
+
+        # The async writer can be asleep or flushing while shutdown begins.
+        # Join it before the caller removes the WAL directory; otherwise a
+        # late background flush can race segment close and leave Windows file
+        # handles open during temporary-directory cleanup.
+        write_thread&.join if wait && write_thread != Thread.current
       end
 
       def stats

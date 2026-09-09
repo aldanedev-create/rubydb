@@ -53,6 +53,7 @@ module RubyDB
         @recovery = nil
         @retry_interval = config[:retry_interval] || 5
         @max_retry_attempts = config[:max_retry_attempts] || 10
+        @heartbeat_interval = config[:heartbeat_interval] || 5
         @retry_count = 0
         @state_path = config[:state_path] || "#{@engine.path}.replica_state.json"
         @state_write_lock = Mutex.new
@@ -217,6 +218,18 @@ module RubyDB
           begin
             # Read replication data
             if @connection
+              ready = IO.select([@connection], nil, nil, @heartbeat_interval)
+              unless ready
+                @connection.write(
+                  JSON.generate(
+                    type: "heartbeat",
+                    wal_position: @last_replayed_lsn || 0
+                  ) + "\n"
+                )
+                @connection.flush
+                next
+              end
+
               data = @connection.readpartial(4096)
               @stats[:bytes_received] += data.bytesize
 
@@ -344,7 +357,11 @@ module RubyDB
       end
 
       def validate_promotion!(recovery_point)
-        unless [STATE_STREAMING, STATE_SYNCED].include?(@state)
+        promotable_state = [STATE_STREAMING, STATE_SYNCED, STATE_DISCONNECTED, STATE_CONNECTING].include?(@state)
+        caught_up_after_disconnect = [STATE_DISCONNECTED, STATE_CONNECTING].include?(@state) &&
+                                     @last_replayed_lsn &&
+                                     @last_received_lsn == @last_replayed_lsn
+        unless promotable_state && ([STATE_STREAMING, STATE_SYNCED].include?(@state) || caught_up_after_disconnect)
           raise ReplicationError, "Replica is not synchronized enough for promotion"
         end
 

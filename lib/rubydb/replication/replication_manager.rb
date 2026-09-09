@@ -117,7 +117,18 @@ module RubyDB
           end
 
           status = @replica&.replication_status
-          unless status && [Replica::STATE_STREAMING, Replica::STATE_SYNCED].include?(status[:state])
+          promotable_state = status && [
+            Replica::STATE_STREAMING,
+            Replica::STATE_SYNCED,
+            Replica::STATE_DISCONNECTED,
+            Replica::STATE_CONNECTING
+          ].include?(status[:state])
+          caught_up_after_disconnect = status &&
+                                       status[:last_replayed_lsn] &&
+                                       status[:last_received_lsn] == status[:last_replayed_lsn]
+          unless promotable_state && (status[:state] == Replica::STATE_STREAMING ||
+                                      status[:state] == Replica::STATE_SYNCED ||
+                                      caught_up_after_disconnect)
             return { success: false, error: "Replica is not synchronized enough for manual promotion" }
           end
 

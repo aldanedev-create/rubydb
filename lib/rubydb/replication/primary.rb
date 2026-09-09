@@ -97,26 +97,38 @@ module RubyDB
       end
 
       def stop
+        connections = []
         @lock.synchronize do
-          unless @running
+          if @running
+            @running = false
             @engine.remove_commit_listener(@engine_commit_listener) if @engine.respond_to?(:remove_commit_listener)
-            @replication_log.close unless @replication_log.closed?
-            return true
+
+            @replication_server&.close
+            @replication_server = nil
+
+            @heartbeat_thread&.kill
+            @heartbeat_thread = nil
+
+            puts "Primary replication stopped"
+          else
+            @engine.remove_commit_listener(@engine_commit_listener) if @engine.respond_to?(:remove_commit_listener)
           end
 
-          @running = false
-          @engine.remove_commit_listener(@engine_commit_listener) if @engine.respond_to?(:remove_commit_listener)
-
-          @replication_server&.close
-          @replication_server = nil
-
-          @heartbeat_thread&.kill
-          @heartbeat_thread = nil
-          @replication_log.close
-
-          puts "Primary replication stopped"
-          true
+          # Closing the listener alone does not wake established replica
+          # sessions. Close those sockets as part of shutdown so replicas
+          # observe the partition and can reconnect/catch up from the durable
+          # replication log.
+          connections = @replicas.values.filter_map { |replica| replica[:connection] }
+          @replicas.each_value { |replica| replica[:connection] = nil }
+          @replicas.clear
+          @stats[:active_replicas] = 0
+          @replication_log.close unless @replication_log.closed?
         end
+        connections.each do |connection|
+          connection.shutdown(Socket::SHUT_RDWR) rescue nil
+          connection.close rescue nil
+        end
+        true
       end
 
       def write(transaction_data)
@@ -267,7 +279,25 @@ module RubyDB
         end
 
         replica_id = register_replica(handshake)
-        @lock.synchronize { @replicas[replica_id][:connection] = client }
+        @lock.synchronize do
+          replica = @replicas[replica_id]
+          replica[:connection] = client
+
+          # A reconnecting replica may already have replayed every durable
+          # entry and therefore receive no catch-up frames. Record the
+          # handshake position as an acknowledgement, bounded by the primary
+          # log, so operators can distinguish a caught-up reconnect from a
+          # merely connected socket.
+          reported_lsn = handshake[:wal_position].to_i
+          durable_lsn = @replication_log.get_last_lsn.to_i
+          acknowledged_lsn = [reported_lsn, durable_lsn].min
+          if acknowledged_lsn.positive?
+            replica[:last_ack_lsn] = acknowledged_lsn
+            replica[:slot]&.advance(acknowledged_lsn)
+            persist_slots if replica[:slot]
+            @stats[:replicated_lsn] = [@stats[:replicated_lsn].to_i, acknowledged_lsn].max
+          end
+        end
         client.write(JSON.generate(success: true, replica_id: replica_id, mode: "logical") + "\n")
         client.flush
 
@@ -292,6 +322,10 @@ module RubyDB
           line = client.gets
           break unless line
           message = JSON.parse(line, symbolize_names: true)
+          if message[:type].to_s == "heartbeat"
+            send_heartbeat(replica_id)
+            next
+          end
           next unless message[:type].to_s == "ack"
 
           ack_lsn = message[:lsn].to_i

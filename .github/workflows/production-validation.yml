@@ -1,0 +1,81 @@
+name: Production validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "19 4 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Run production safety regression set
+        run: |
+          bundle exec rspec \
+            spec/server_protocol_spec.rb \
+            spec/server_concurrency_durability_spec.rb \
+            spec/concurrent_soak_harness_spec.rb \
+            spec/multiprocess_server_workload_spec.rb \
+            spec/filesystem_fault_injection_spec.rb \
+            spec/metadata_persistence_safety_spec.rb \
+            spec/index_persistence_spec.rb \
+            spec/compaction_persistence_spec.rb \
+            spec/backup_restore_spec.rb \
+            spec/replication_network_spec.rb \
+            spec/replication_partition_spec.rb \
+            spec/replication_failover_integration_spec.rb \
+            spec/fencing_spec.rb \
+            spec/corruption_repair_spec.rb
+
+      - name: Run sustained threaded workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p production-results
+          RUBYDB_SOAK_ROUNDS=3 \
+          RUBYDB_SOAK_THREADS=16 \
+          RUBYDB_SOAK_OPERATIONS=2000 \
+          RUBYDB_SOAK_PAYLOAD_BYTES=512 \
+          ruby benchmarks/concurrent_soak.rb | tee production-results/threaded.json
+
+      - name: Run server and independent-process workloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUBYDB_SERVER_WORKLOAD_CLIENTS=16 \
+          RUBYDB_SERVER_WORKLOAD_OPERATIONS=1000 \
+          ruby -Ilib benchmarks/server_workload.rb | tee production-results/server.json
+          RUBYDB_SERVER_WORKLOAD_PROCESSES=8 \
+          RUBYDB_SERVER_WORKLOAD_OPERATIONS=1000 \
+          ruby benchmarks/multiprocess_server_workload.rb | tee production-results/multiprocess.json
+
+      - name: Run backup and restore drill
+        run: ruby scripts/restore_drill | tee production-results/restore.txt
+
+      - name: Run bounded fuzzers
+        env:
+          RUBYDB_FUZZ_ITERATIONS: "250"
+          RUBYDB_FUZZ_SEED: "20260909"
+        run: ruby scripts/fuzz | tee production-results/fuzz.txt
+
+      - name: Build and verify release artifact
+        run: |
+          bundle exec rake build
+          ruby scripts/release | tee production-results/release.txt
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rubydb-production-validation-${{ github.sha }}
+          path: production-results/

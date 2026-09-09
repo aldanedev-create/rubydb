@@ -25,6 +25,11 @@ compatibility.
   local writes. Replication TCP input is newline-frame buffered, rejects
   oversized incomplete frames, bootstraps a new replica's catalog before row
   replay, and persists the replay position before ack.
+- A stopped primary closes established replication sockets; a replica detects
+  the interruption, reconnects after the listener returns, and catches up from
+  the durable replication log. A caught-up disconnected replica may be
+  explicitly promoted, while lagging or never-synchronized replicas remain
+  ineligible.
 - Engine transaction integration: a committed transaction containing multiple
   row mutations is emitted as one replication envelope only after its local
   WAL commit and flush complete.
@@ -90,23 +95,23 @@ database for every round and fails if any round loses durable rows.
   target filesystem before release.
 
 - Join support currently covers qualified `INNER`, `LEFT [OUTER]`, `RIGHT`, and
-  `FULL [OUTER] JOIN` with `ON` predicates. Join reordering, correlated
-  subqueries, window frames, and advanced set-operation ordering are not
-  release-validated.
+  `FULL [OUTER] JOIN` with `ON` predicates. Join reordering is limited to safe
+  inner-join plans; correlated subqueries, advanced set-operation ordering,
+  and broader dialect-specific SQL still require dedicated compatibility tests.
 - The ActiveRecord migration test is intentionally scoped. Complex table
   rebuilds, `change_column`, polymorphic references, generated columns, and
   adapter-specific schema dumps require dedicated compatibility tests before
   relying on them.
-- The soak harness uses threads against one embedded engine. It does not prove
-  multi-process writer safety or provide a capacity certification; perform
+- The soak harness and multi-process server workload cover distinct concurrency
+  paths, but they do not provide a universal capacity certification; perform
   environment-specific load, crash, and operational recovery testing.
 - Failover is manual and requires an operator to confirm the replica is caught
   up and that the old primary is fenced. Automatic leader election is not
   enabled.
 - The replica fence covers engine schema, row, branch, vacuum, and compaction
-  mutation entry points. Catalog bootstrap is now covered for an empty replica,
-  but this is not a substitute for partition testing, transaction-integrated
-  replication, or automated election validation.
+  mutation entry points. Empty-replica catalog bootstrap, transaction-integrated
+  replication, and reconnect catch-up are covered; true multi-host partition,
+  split-brain, and automated-election validation remain deployment work.
 
 RubyDB reports unsupported features as unsupported rather than advertising CTE
 or bulk-alter capability to ActiveRecord.
