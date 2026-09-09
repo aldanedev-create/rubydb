@@ -89,6 +89,7 @@ module RubyDB
         @cache_ttl = config[:cache_ttl] || 300  # 5 minutes
         @is_open = true
         @transaction_manager = nil
+        @transaction_context_key = "rubydb_engine_transaction_#{object_id}".to_sym
         @commit_listeners = []
         @current_transaction_id = 0
         @recovery_in_progress = false
@@ -678,7 +679,7 @@ module RubyDB
             row_id: row_id,
             page: data_page,
             values: values
-          }, @current_transaction_id)
+          }, current_transaction_id)
           
           # Calculate required space (row header + data)
           required_space = 16 + row_data.bytesize  # 16 bytes for row header
@@ -724,7 +725,7 @@ module RubyDB
           metadata[:row_count] += 1
           metadata[:updated_at] = Time.now
           record_transaction_change(:insert, table_name, row_id, values: values, columns: columns)
-          record_mvcc_version(table_name, row_id, values, @current_transaction_id)
+          record_mvcc_version(table_name, row_id, values, current_transaction_id)
 
           @index_manager&.insert_row(table_name, values.merge(_row_id: row_id)) if values.is_a?(Hash)
           if values.is_a?(Array)
@@ -811,11 +812,11 @@ module RubyDB
                   row[column.name] = column.default if index >= col_count && column.has_default?
                 end
               end
-              snapshot = @transaction_snapshots[@current_transaction_id]
+              snapshot = @transaction_snapshots[current_transaction_id]
               if snapshot
-                @transaction_reads[@current_transaction_id].add(version_key(table_name, record_id))
+                @transaction_reads[current_transaction_id].add(version_key(table_name, record_id))
                 version = @version_store.get_latest_version(
-                  record_id, @current_transaction_id, snapshot,
+                  record_id, current_transaction_id, snapshot,
                   key: version_key(table_name, record_id)
                 )
                 next if version.nil? && @version_store.keys(version_key(table_name, record_id)).any?
@@ -830,7 +831,7 @@ module RubyDB
               # Active transactions must not read uncommitted or deleted
               # versions. Callers can explicitly disable this only for
               # internal recovery/maintenance operations.
-              transaction_id = conditions[:transaction_id] || @current_transaction_id
+              transaction_id = conditions[:transaction_id] || current_transaction_id
               visibility_check = conditions.key?(:visibility_check) ? conditions[:visibility_check] : in_transaction?
               if visibility_check
                 unless @visibility_map.is_visible?(record_id, transaction_id)
@@ -848,7 +849,7 @@ module RubyDB
           # A physical DELETE removes the row from the normal scan, but an
           # older snapshot may still need the last committed version. Walk the
           # table's version keys to restore those historical rows.
-          snapshot = @transaction_snapshots[@current_transaction_id]
+          snapshot = @transaction_snapshots[current_transaction_id]
           if snapshot
             prefix = "#{table_name}\0"
             @version_store.keys(prefix).each do |key|
@@ -856,7 +857,7 @@ module RubyDB
               next if seen_row_ids[row_id]
 
               version = @version_store.get_latest_version(
-                row_id, @current_transaction_id, snapshot, key: key
+                row_id, current_transaction_id, snapshot, key: key
               )
               next unless version
 
@@ -867,8 +868,8 @@ module RubyDB
             end
           end
 
-          if @transaction_manager && @transaction_manager[:isolation_level].to_sym == :serializable
-            @transaction_predicates[@current_transaction_id].add("#{table_name}\0")
+          if current_transaction_manager && current_transaction_manager[:isolation_level].to_sym == :serializable
+            @transaction_predicates[current_transaction_id].add("#{table_name}\0")
           end
           
           # Apply limit and offset
@@ -917,7 +918,7 @@ module RubyDB
           metadata = @table_metadata[table_name]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
           
-          transaction_id = conditions[:transaction_id] || @current_transaction_id
+          transaction_id = conditions[:transaction_id] || current_transaction_id
           
           updated = false
           old_values = nil
@@ -1056,7 +1057,7 @@ module RubyDB
           metadata = @table_metadata[table_name]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
           
-          transaction_id = conditions[:transaction_id] || @current_transaction_id
+          transaction_id = conditions[:transaction_id] || current_transaction_id
           
           deleted = false
           old_values = nil
@@ -1217,7 +1218,7 @@ module RubyDB
           @stats[:transaction_begin] += 1
           
           transaction_id = next_transaction_id
-          @transaction_manager = {
+          transaction = {
             id: transaction_id,
             started_at: Time.now,
             isolation_level: isolation_level,
@@ -1225,7 +1226,7 @@ module RubyDB
             changes: {},
             savepoints: {}
           }
-          @current_transaction_id = transaction_id
+          Thread.current[@transaction_context_key] = transaction
 
           log_to_wal(WAL::Record::TYPE_BEGIN, {}, transaction_id)
           
@@ -1244,7 +1245,7 @@ module RubyDB
       end
 
       def current_transaction
-        @transaction_manager
+        current_transaction_manager
       end
 
       def add_commit_listener(listener = nil, &block)
@@ -1265,7 +1266,7 @@ module RubyDB
         @lock.synchronize do
           @stats[:transaction_commit] += 1
           
-          tx = transaction || @transaction_manager
+          tx = transaction || current_transaction_manager
           return false unless tx && tx[:active]
 
           # The commit record is the transaction's durable commit point. It
@@ -1294,7 +1295,7 @@ module RubyDB
           
           tx[:active] = false
           tx[:committed_at] = Time.now
-          @current_transaction_id = 0
+          clear_transaction_context(tx)
 
           committed_changes = (tx[:changes] || {}).flat_map do |table_name, rows|
             rows.values.map { |change| change.merge(table: table_name) }
@@ -1311,7 +1312,7 @@ module RubyDB
         @lock.synchronize do
           @stats[:transaction_rollback] += 1
           
-          tx = transaction || @transaction_manager
+          tx = transaction || current_transaction_manager
           return false unless tx && tx[:active]
           
           # Rollback transaction in visibility map
@@ -1352,19 +1353,19 @@ module RubyDB
 
           log_to_wal(WAL::Record::TYPE_ROLLBACK, {}, tx[:id])
           @wal&.sync
-          @current_transaction_id = 0
+          clear_transaction_context(tx)
           
           true
         end
       end
 
       def in_transaction?
-        @transaction_manager && @transaction_manager[:active]
+        current_transaction_manager && current_transaction_manager[:active]
       end
 
       def create_savepoint(name)
         @lock.synchronize do
-          tx = @transaction_manager
+          tx = current_transaction_manager
           raise DatabaseError, "SAVEPOINT requires an active transaction" unless tx && tx[:active]
           name = name.to_s
           tx[:savepoints] ||= {}
@@ -1378,7 +1379,7 @@ module RubyDB
 
       def rollback_to_savepoint(name)
         @lock.synchronize do
-          tx = @transaction_manager
+          tx = current_transaction_manager
           raise DatabaseError, "ROLLBACK TO SAVEPOINT requires an active transaction" unless tx && tx[:active]
           savepoint = tx[:savepoints]&.[](name.to_s)
           raise DatabaseError, "Savepoint '#{name}' does not exist" unless savepoint
@@ -1408,7 +1409,7 @@ module RubyDB
 
       def release_savepoint(name)
         @lock.synchronize do
-          tx = @transaction_manager
+          tx = current_transaction_manager
           raise DatabaseError, "RELEASE SAVEPOINT requires an active transaction" unless tx && tx[:active]
           savepoints = tx[:savepoints] || {}
           raise DatabaseError, "Savepoint '#{name}' does not exist" unless savepoints.delete(name.to_s)
@@ -1427,9 +1428,10 @@ module RubyDB
       end
 
       def record_transaction_change(type, table_name, row_id, details = {})
-        return unless @transaction_manager && @transaction_manager[:active]
+        transaction = current_transaction_manager
+        return unless transaction && transaction[:active]
 
-        (@transaction_manager[:changes][table_name] ||= {})[row_id] =
+        (transaction[:changes][table_name] ||= {})[row_id] =
           details.merge(type: type, table: table_name, row_id: row_id)
       end
 
@@ -1593,7 +1595,7 @@ module RubyDB
       def log_to_wal(type, data, transaction_id = nil)
         return nil unless @wal && !@recovery_in_progress
         
-        transaction_id ||= @current_transaction_id
+        transaction_id ||= current_transaction_id
         record = WAL::Record.new(type, data, transaction_id: transaction_id)
         @stats[:wal_writes] += 1
         
@@ -1601,6 +1603,18 @@ module RubyDB
       end
 
       private
+
+      def current_transaction_manager
+        Thread.current[@transaction_context_key]
+      end
+
+      def current_transaction_id
+        current_transaction_manager&.[](:id) || 0
+      end
+
+      def clear_transaction_context(transaction)
+        Thread.current[@transaction_context_key] = nil if current_transaction_manager.equal?(transaction)
+      end
 
       def ensure_writable!
         return unless @replication_read_only

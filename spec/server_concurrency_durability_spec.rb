@@ -36,4 +36,32 @@ RSpec.describe "server multi-client durability" do
       reopened&.close if reopened&.open?
     end
   end
+
+  it "keeps concurrent client transactions isolated by connection" do
+    Dir.mktmpdir do |dir|
+      probe = TCPServer.new("127.0.0.1", 0)
+      port = probe.addr[1]
+      probe.close
+      server = RubyDB::Server::Server.new(host: "127.0.0.1", port: port, data_dir: dir,
+                                           pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: 4)
+      server.engine.create_table("events", [RubyDB::Catalog::Column.new("id", :integer, primary_key: true, null: false)])
+      server.start
+      client_one = RubyDB::Client::Client.new(host: "127.0.0.1", port: port, timeout: 5, pool_size: 1)
+      client_two = RubyDB::Client::Client.new(host: "127.0.0.1", port: port, timeout: 5, pool_size: 1)
+
+      transaction_one = client_one.begin_transaction
+      transaction_two = client_two.begin_transaction
+      transaction_one.query("INSERT INTO events (id) VALUES (1)")
+      transaction_two.query("INSERT INTO events (id) VALUES (2)")
+      transaction_one.commit
+      transaction_two.rollback
+
+      rows = client_one.query("SELECT * FROM events").rows
+      expect(rows.map { |row| row[:id] || row["id"] }).to eq([1])
+    ensure
+      client_one&.disconnect
+      client_two&.disconnect
+      server&.stop
+    end
+  end
 end

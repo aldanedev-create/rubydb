@@ -15,6 +15,9 @@ compatibility.
   verification.
 - Four independent network clients concurrently inserting through the live
   server, with request metrics and post-restart durable-row verification.
+- Independent concurrent client transactions are isolated by connection:
+  committed work remains visible while a sibling transaction's work is rolled
+  back.
 - Two-engine logical replication of an insert followed by explicit, manual
   promotion of the synchronized replica. Promotion retains the replicated row
   and starts a fenced primary listener. Replicas reject local engine mutations
