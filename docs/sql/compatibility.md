@@ -18,8 +18,9 @@ Supported and tested statements include:
   predicates
 - materialized non-recursive and bounded recursive `WITH` common table
   expressions
-- `INSERT`, `UPDATE`, and `DELETE`, including `ON CONFLICT DO NOTHING` and
-  targeted `ON CONFLICT (...) DO UPDATE SET ...` with `excluded.column`
+- `INSERT`, `UPDATE`, and `DELETE`, including multi-row `VALUES`,
+  `ON CONFLICT DO NOTHING`, and targeted `ON CONFLICT (...) DO UPDATE SET ...`
+  with `excluded.column`
 - `CREATE TABLE` and `DROP TABLE`, including primary keys, unique constraints,
   checks, foreign keys, and referential actions
 - `CREATE INDEX`/`CREATE UNIQUE INDEX` and `DROP INDEX`

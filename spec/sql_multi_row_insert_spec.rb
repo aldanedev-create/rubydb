@@ -54,4 +54,25 @@ RSpec.describe "SQL multi-row INSERT" do
       engine&.close if engine&.open?
     end
   end
+
+  it "rolls back the whole implicit statement when one tuple violates a constraint" do
+    Dir.mktmpdir("rubydb-multi-row-atomicity") do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "atomic.rdb"), auto_cleanup: false, auto_vacuum: false)
+      connection = RubyDB::Rails::Connection.new(engine: engine)
+      connection.connect
+      connection.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name VARCHAR(64))")
+      connection.execute("INSERT INTO users (id, name) VALUES (1, 'existing')")
+
+      expect do
+        connection.execute("INSERT INTO users (id, name) VALUES (2, 'rolled back'), (1, 'duplicate')")
+      end.to raise_error(RubyDB::DatabaseError)
+
+      expect(connection.execute("SELECT id, name FROM users ORDER BY id").to_a).to eq([
+        { "id" => 1, "name" => "existing" }
+      ])
+    ensure
+      connection&.disconnect
+      engine&.close if engine&.open?
+    end
+  end
 end

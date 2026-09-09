@@ -296,7 +296,16 @@ module RubyDB
             file.flush
             file.fsync
           end
-          File.rename(temporary, @state_path)
+          begin
+            File.rename(temporary, @state_path)
+          rescue Errno::EACCES, Errno::EPERM
+            # Windows does not replace an existing destination with rename(2).
+            # FileUtils performs the platform-appropriate forced move while
+            # retaining the fsynced temporary payload as the source.
+            raise unless Gem.win_platform? && File.file?(@state_path)
+
+            FileUtils.mv(temporary, @state_path, force: true)
+          end
         ensure
           File.delete(temporary) if defined?(temporary) && File.file?(temporary)
         end

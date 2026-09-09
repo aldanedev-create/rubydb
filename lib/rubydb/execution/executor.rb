@@ -244,16 +244,26 @@ module RubyDB
         table_name = plan.table_name
         columns = plan.columns
         rows = plan.rows || [plan.values]
+        implicit_transaction = rows.size > 1 && !@engine.in_transaction?
+        @engine.begin_transaction if implicit_transaction
 
-        inserted = rows.map { |values| execute_single_insert(plan, table_name, columns, values) }
+        begin
+          inserted = rows.map { |values| execute_single_insert(plan, table_name, columns, values) }
+          unless !implicit_transaction || @engine.commit_transaction
+            raise ExecutionError, "Implicit multi-row INSERT transaction could not commit"
+          end
 
-        {
-          row_count: inserted.sum { |result| result[:row_count] },
-          affected_rows: inserted.sum { |result| result[:affected_rows] },
-          row_ids: inserted.filter_map { |result| result[:row_id] },
-          row_id: inserted.reverse_each.map { |result| result[:row_id] }.compact.first,
-          message: "INSERT #{inserted.sum { |result| result[:affected_rows] }}"
-        }
+          {
+            row_count: inserted.sum { |result| result[:row_count] },
+            affected_rows: inserted.sum { |result| result[:affected_rows] },
+            row_ids: inserted.filter_map { |result| result[:row_id] },
+            row_id: inserted.reverse_each.map { |result| result[:row_id] }.compact.first,
+            message: "INSERT #{inserted.sum { |result| result[:affected_rows] }}"
+          }
+        rescue Exception
+          @engine.rollback_transaction if implicit_transaction && @engine.in_transaction?
+          raise
+        end
       end
 
       def execute_single_insert(plan, table_name, columns, values)

@@ -7,7 +7,7 @@ module RubyDB
       # SQL statement types
       STATEMENT_TYPES = {
         select: "SELECT ... FROM ... [WHERE ...] [ORDER BY ...] [LIMIT ...] [OFFSET ...]",
-        insert: "INSERT INTO table [(columns)] VALUES (values)",
+        insert: "INSERT INTO table [(columns)] VALUES (values)[, (values)...]",
         update: "UPDATE table SET column = value [WHERE ...]",
         delete: "DELETE FROM table [WHERE ...]",
         create_table: "CREATE TABLE name (column_definitions [, constraints])",
