@@ -90,8 +90,10 @@ module RubyDB
           end
 
           # Type check values
-          node.values.each do |value|
-            type_check_expression(value)
+          node.rows.each do |row|
+            row.each do |value|
+              type_check_expression(value)
+            end
           end
 
           @current_scope = {}

@@ -243,7 +243,20 @@ module RubyDB
       def execute_insert(plan)
         table_name = plan.table_name
         columns = plan.columns
-        values = plan.values
+        rows = plan.rows || [plan.values]
+
+        inserted = rows.map { |values| execute_single_insert(plan, table_name, columns, values) }
+
+        {
+          row_count: inserted.sum { |result| result[:row_count] },
+          affected_rows: inserted.sum { |result| result[:affected_rows] },
+          row_ids: inserted.filter_map { |result| result[:row_id] },
+          row_id: inserted.reverse_each.map { |result| result[:row_id] }.compact.first,
+          message: "INSERT #{inserted.sum { |result| result[:affected_rows] }}"
+        }
+      end
+
+      def execute_single_insert(plan, table_name, columns, values)
 
         # Build row data
         row_data = {}

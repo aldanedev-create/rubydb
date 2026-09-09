@@ -5,13 +5,14 @@ module RubyDB
     module AST
       # INSERT statement AST node
       class Insert < Node
-        attr_reader :table, :columns, :values, :on_conflict
+        attr_reader :table, :columns, :values, :rows, :on_conflict
 
-        def initialize(table, columns = [], values = [], on_conflict: nil, location: nil)
+        def initialize(table, columns = [], values = [], rows: nil, on_conflict: nil, location: nil)
           super(location: location)
           @table = table
           @columns = columns
-          @values = values
+          @rows = rows || [values]
+          @values = @rows.first || []
           @on_conflict = on_conflict
         end
 
@@ -23,7 +24,7 @@ module RubyDB
           Insert.new(
             @table,
             @columns.dup,
-            @values.map(&:clone), on_conflict: @on_conflict,
+            @values.map(&:clone), rows: @rows.map { |row| row.map(&:clone) }, on_conflict: @on_conflict,
             location: @location
           )
         end
@@ -37,7 +38,7 @@ module RubyDB
           end
 
           parts << "VALUES"
-          parts << "(#{@values.map(&:to_sql).join(", ")})"
+          parts << @rows.map { |row| "(#{row.map(&:to_sql).join(", ")})" }.join(", ")
           parts << "ON CONFLICT DO NOTHING" if @on_conflict == :nothing
           if @on_conflict.is_a?(Hash) && @on_conflict[:action] == :update
             target = @on_conflict[:target].any? ? " (#{@on_conflict[:target].join(', ')})" : ""
@@ -50,7 +51,7 @@ module RubyDB
 
         def inspect
           cols = @columns.any? ? @columns.join(", ") : "ALL"
-          vals = @values.map(&:inspect).join(", ")
+          vals = @rows.map { |row| "(#{row.map(&:inspect).join(", ")})" }.join(", ")
           "Insert(table: #{@table}, columns: [#{cols}], values: [#{vals}])"
         end
 
@@ -61,6 +62,10 @@ module RubyDB
 
         def value_count
           @values.size
+        end
+
+        def row_count
+          @rows.size
         end
 
         def column_count

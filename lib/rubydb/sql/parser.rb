@@ -540,14 +540,20 @@ module RubyDB
         end
 
         expect(Token::Type::VALUES)
-        expect(Token::Type::LPAREN)
-        values = []
-        while true
-          values << parse_expression
+        rows = []
+        loop do
+          expect(Token::Type::LPAREN)
+          values = []
+          while true
+            values << parse_expression
+            break unless current_token&.type == Token::Type::COMMA
+            advance
+          end
+          expect(Token::Type::RPAREN)
+          rows << values
           break unless current_token&.type == Token::Type::COMMA
           advance
         end
-        expect(Token::Type::RPAREN)
 
         on_conflict = nil
         if current_token&.type == Token::Type::ON
@@ -583,7 +589,7 @@ module RubyDB
             raise ParserError, "Expected NOTHING or UPDATE after ON CONFLICT DO"
           end
         end
-        AST::Insert.new(table, columns, values, on_conflict: on_conflict)
+        AST::Insert.new(table, columns, rows.first || [], rows: rows, on_conflict: on_conflict)
       end
 
       def parse_update

@@ -84,8 +84,10 @@ module RubyDB
           end
 
           # Bind values
-          node.values.each do |value|
-            value.accept(self)
+          node.rows.each do |row|
+            row.each do |value|
+              value.accept(self)
+            end
           end
 
           @current_scope = {}

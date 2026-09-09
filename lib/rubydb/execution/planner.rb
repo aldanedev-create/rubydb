@@ -156,7 +156,9 @@ module RubyDB
         Plan::Insert.new(
           statement.table,
           statement.columns,
-          statement.values, on_conflict: statement.on_conflict
+          statement.values,
+          rows: statement.rows,
+          on_conflict: statement.on_conflict
         )
       end
 
