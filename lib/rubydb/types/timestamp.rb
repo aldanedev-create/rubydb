@@ -13,6 +13,7 @@ module RubyDB
       end
 
       def serialize(value)
+        value = ::Time.parse(value) if value.is_a?(String)
         validate(value)
         return "\x00" * SIZE if value.nil?
         [value.to_i].pack("q>")

@@ -15,6 +15,11 @@ module RubyDB
       def initialize(config)
         @config = config
         @engine = config[:engine]
+        @engine_owned = false
+        if @engine.nil? && embedded_config?
+          @engine = build_embedded_engine
+          @engine_owned = true
+        end
         @logger = config[:logger]
         @client = nil
         @transaction = nil
@@ -32,6 +37,11 @@ module RubyDB
       def connect
         @lock.synchronize do
           return if @connected
+
+          if @engine.nil? && embedded_config?
+            @engine = build_embedded_engine
+            @engine_owned = true
+          end
 
           if @engine
             if @engine.respond_to?(:open?) && !@engine.open?
@@ -60,6 +70,10 @@ module RubyDB
           return unless @connected
 
           @client&.disconnect unless @engine
+          if @engine_owned && @engine.respond_to?(:open?) && @engine.open?
+            @engine.close
+            @engine = nil
+          end
           @connected = false
           @statements.clear
         end
@@ -233,6 +247,7 @@ module RubyDB
         return sql if params.empty?
 
         index = 0
+        used_indices = []
         quoted = false
         result = +""
         position = 0
@@ -251,13 +266,21 @@ module RubyDB
             raise ArgumentError, "Not enough bind parameters" if index >= params.size
 
             result << quote(params[index])
+            used_indices << index
             index += 1
+          elsif char == "$" && !quoted && (placeholder = sql[position..].match(/\A\$(\d+)/))
+            parameter_index = placeholder[1].to_i - 1
+            raise ArgumentError, "Bind parameter #{parameter_index + 1} is out of range" if parameter_index.negative? || parameter_index >= params.size
+
+            result << quote(params[parameter_index])
+            used_indices << parameter_index
+            position += placeholder[0].length - 1
           else
             result << char
           end
           position += 1
         end
-        raise ArgumentError, "Too many bind parameters" unless index == params.size
+        raise ArgumentError, "Too many bind parameters" unless used_indices.uniq.size == params.size
 
         result
       end
@@ -265,6 +288,17 @@ module RubyDB
       def ensure_connected
         connect unless @connected
         raise ConnectionError, "Not connected" unless @connected
+      end
+
+      def embedded_config?
+        @config[:embedded] || @config["embedded"]
+      end
+
+      def build_embedded_engine
+        database = @config[:database] || @config["database"]
+        raise ConnectionError, "Embedded RubyDB requires a database path" if database.nil? || database.to_s.empty?
+
+        RubyDB::Storage::Engine.new(database.to_s, auto_cleanup: false, auto_vacuum: false)
       end
     end
   end

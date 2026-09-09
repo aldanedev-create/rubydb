@@ -1,0 +1,20 @@
+# The RubyDB ActiveRecord adapter opens this embedded database path. This file
+# keeps Rails tooling and environment names conventional while allowing the
+# example to run without another service.
+
+default: &default
+  adapter: rubydb
+  embedded: true
+  database: <%= ENV.fetch("RUBYDB_DATABASE", Rails.root.join("tmp/rubydb_rails_example.rdb")) %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", 5) %>
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+  database: <%= ENV.fetch("RUBYDB_DATABASE", Rails.root.join("tmp/rubydb_rails_example_test.rdb")) %>
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("RUBYDB_DATABASE", "/var/lib/rubydb/rails_example.rdb") %>

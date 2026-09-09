@@ -436,8 +436,8 @@ module RubyDB
         while true
           expr = parse_expression
           direction = :asc
-          if current_token&.type == Token::Type::DESC
-            direction = :desc
+          if [Token::Type::ASC, Token::Type::DESC].include?(current_token&.type)
+            direction = :desc if current_token.type == Token::Type::DESC
             advance
           end
           order_items << AST::OrderItem.new(expr, direction)

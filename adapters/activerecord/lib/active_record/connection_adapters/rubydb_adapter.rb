@@ -209,7 +209,7 @@ module ActiveRecord
       def exec_query(sql, name = nil, binds = [])
         sql = sql_for_execution(sql)
         log(sql, name) do
-          params = binds.map { |bind| bind.value }
+          params = bind_values(binds)
           active_record_result(@connection.execute(sql, params))
         end
       end
@@ -217,7 +217,7 @@ module ActiveRecord
       def exec_delete(sql, name = nil, binds = [])
         sql = sql_for_execution(sql)
         log(sql, name) do
-          params = binds.map { |bind| bind.value }
+          params = bind_values(binds)
           result = @connection.execute(sql, params)
           result.affected_rows
         end
@@ -226,7 +226,7 @@ module ActiveRecord
       def exec_update(sql, name = nil, binds = [])
         sql = sql_for_execution(sql)
         log(sql, name) do
-          params = binds.map { |bind| bind.value }
+          params = bind_values(binds)
           result = @connection.execute(sql, params)
           result.affected_rows
         end
@@ -235,7 +235,7 @@ module ActiveRecord
       def exec_insert(sql, name = nil, binds = [], pk = nil, sequence_name = nil, returning: nil)
         sql = sql_for_execution(sql)
         log(sql, name) do
-          params = binds.map { |bind| bind.value }
+          params = bind_values(binds)
           result = @connection.execute(sql, params)
           id = result.row_id
           ActiveRecord::Result.new([pk || "id"], id.nil? ? [] : [[id]])
@@ -266,21 +266,25 @@ module ActiveRecord
       end
 
       def select_one(sql, name = nil, binds = [])
+        sql, binds = to_sql_and_binds(sql, binds)
         result = exec_query(sql, name, binds)
         result.first
       end
 
       def select_value(sql, name = nil, binds = [])
+        sql, binds = to_sql_and_binds(sql, binds)
         result = exec_query(sql, name, binds)
         result.first&.values&.first
       end
 
       def select_values(sql, name = nil, binds = [])
+        sql, binds = to_sql_and_binds(sql, binds)
         result = exec_query(sql, name, binds)
         result.map { |row| row.values.first }
       end
 
       def select_rows(sql, name = nil, binds = [])
+        sql, binds = to_sql_and_binds(sql, binds)
         result = exec_query(sql, name, binds)
         result.map { |row| row.values }
       end
@@ -444,6 +448,28 @@ module ActiveRecord
         sql << " ON DELETE #{options[:on_delete]}" if options[:on_delete]
         sql << " ON UPDATE #{options[:on_update]}" if options[:on_update]
         execute(sql)
+      end
+
+      def foreign_keys(table_name)
+        return super unless embedded?
+
+        constraints = @connection.engine.table_metadata[table_name.to_s]&.fetch(:constraints, []) || []
+        constraints.filter_map do |constraint|
+          type = constraint[:type] || constraint["type"]
+          next unless type.to_s.upcase == "FOREIGN_KEY"
+
+          columns = constraint[:columns] || constraint["columns"] || []
+          reference_table = constraint[:reference_table] || constraint["reference_table"]
+          reference_columns = constraint[:reference_columns] || constraint["reference_columns"] || ["id"]
+          options = {
+            column: Array(columns).first.to_s,
+            primary_key: Array(reference_columns).first.to_s,
+            name: constraint[:name] || constraint["name"]
+          }
+          options[:on_delete] = (constraint[:on_delete] || constraint["on_delete"]).to_s if constraint[:on_delete] || constraint["on_delete"]
+          options[:on_update] = (constraint[:on_update] || constraint["on_update"]).to_s if constraint[:on_update] || constraint["on_update"]
+          ActiveRecord::ConnectionAdapters::ForeignKeyDefinition.new(table_name.to_s, reference_table.to_s, options)
+        end
       end
 
       def remove_foreign_key(from_table, **options)
@@ -741,6 +767,24 @@ module ActiveRecord
           columns.map { |column| row[column] || row[column.to_sym] }
         end
         ActiveRecord::Result.new(columns, values)
+      end
+
+      # ActiveRecord normally supplies QueryAttribute objects, but migration
+      # and schema code can also pass raw values or two-element bind pairs.
+      # Normalize all supported forms at the adapter boundary.
+      def bind_values(binds)
+        binds.map do |bind|
+          value = if bind.respond_to?(:value_for_database)
+            bind.value_for_database
+          elsif bind.respond_to?(:value)
+            bind.value
+          elsif bind.is_a?(Array) && bind.length == 2
+            bind.last
+          else
+            bind
+          end
+          value.respond_to?(:value_for_database) ? value.value_for_database : value
+        end
       end
 
       def parse_index_columns(sql)

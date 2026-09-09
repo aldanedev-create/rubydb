@@ -20,4 +20,12 @@ RSpec.describe "documented SQL compatibility" do
       expect(statement).to be_a(expected_class), "expected #{sql} to parse as #{expected_class}"
     end
   end
+
+  it "accepts explicit ascending order direction" do
+    statement = RubyDB::SQL::Parser.new(
+      RubyDB::SQL::Lexer.new("SELECT id FROM users ORDER BY id ASC").tokenize
+    ).parse.first
+
+    expect(statement.order_by.first.direction).to eq(:asc)
+  end
 end

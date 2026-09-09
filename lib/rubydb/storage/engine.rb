@@ -676,6 +676,28 @@ module RubyDB
           metadata = @table_metadata[table_name]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
 
+          # Rails and other SQL clients omit an INTEGER primary key on insert
+          # and expect the database to allocate it. Keep allocation in the
+          # engine so embedded and server connections have identical behavior.
+          if values.is_a?(Hash)
+            primary_key = columns.find { |column| column.primary_key? }
+            primary_key_name = primary_key&.name&.to_sym
+            primary_key_present = primary_key && (values.key?(primary_key_name) || values.key?(primary_key.name.to_s))
+            primary_key_value = if primary_key
+              values.key?(primary_key_name) ? values[primary_key_name] : values[primary_key.name.to_s]
+            end
+            if primary_key && primary_key_name && %i[integer bigint smallint].include?(primary_key.type.to_sym) &&
+               (!primary_key_present || primary_key_value.nil?)
+              existing_rows = select_rows(table_name, metadata[:columns])
+              current_max = existing_rows.filter_map do |row|
+                value = row[primary_key_name] || row[primary_key.name.to_s]
+                value.to_i if value
+              end.max || 0
+              values = values.dup
+              values[primary_key_name] = current_max + 1
+            end
+          end
+
           validate_constraints!(table_name, metadata, columns, values)
           validate_relational_constraints!(table_name, metadata, columns, values)
           row_for_index = if values.is_a?(Hash)

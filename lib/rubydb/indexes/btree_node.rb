@@ -147,7 +147,7 @@ module RubyDB
           
           (start_pos..end_pos).each do |pos|
             break if pos >= @keys.size
-            break if @keys[pos] > end_key
+            break if compare_keys(@keys[pos], end_key).positive?
             results << { key: @keys[pos], value: @values[pos] }
           end
         else
@@ -160,8 +160,8 @@ module RubyDB
           end
           while leaf
             leaf.keys.each_with_index do |key, index|
-              next if key < start_key
-              return results if key > end_key
+              next if compare_keys(key, start_key).negative?
+              return results if compare_keys(key, end_key).positive?
               results << { key: key, value: leaf.values[index] }
             end
             leaf = leaf.next_leaf
@@ -307,16 +307,34 @@ module RubyDB
       end
 
       def find_position(key)
-        @keys.bsearch_index { |k| k >= key } || @keys.size
+        @keys.bsearch_index { |k| compare_keys(k, key) >= 0 } || @keys.size
       end
 
       def find_insert_position(key)
-        @keys.bsearch_index { |k| k >= key } || @keys.size
+        @keys.bsearch_index { |k| compare_keys(k, key) >= 0 } || @keys.size
       end
 
       def find_child_position(key)
-        pos = @keys.bsearch_index { |k| k > key }
+        pos = @keys.bsearch_index { |k| compare_keys(k, key).positive? }
         pos.nil? ? @children.size - 1 : pos
+      end
+
+      def compare_keys(left, right)
+        if left.is_a?(Array) && right.is_a?(Array)
+          left.zip(right).each do |left_value, right_value|
+            comparison = compare_keys(left_value, right_value)
+            return comparison unless comparison.zero?
+          end
+          return left.length <=> right.length
+        end
+
+        if left.is_a?(TrueClass) || left.is_a?(FalseClass) || right.is_a?(TrueClass) || right.is_a?(FalseClass)
+          return 0 if left == right
+          return left == false ? -1 : 1
+        end
+
+        comparison = left <=> right
+        comparison.nil? ? left.to_s <=> right.to_s : comparison
       end
 
       def get_siblings

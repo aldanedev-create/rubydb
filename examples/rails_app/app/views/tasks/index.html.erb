@@ -1,0 +1,18 @@
+<h1>RubyDB Rails tasks</h1>
+<p>Tasks are stored by RubyDB through ActiveRecord.</p>
+
+<% if notice %>
+  <p><%= notice %></p>
+<% end %>
+
+<%= form_with model: @task, local: true do |form| %>
+  <%= form.label :title, "New task" %>
+  <%= form.text_field :title, required: true %>
+  <%= form.submit "Add task" %>
+<% end %>
+
+<ul>
+  <% @tasks.each do |task| %>
+    <li><%= task.title %></li>
+  <% end %>
+</ul>
