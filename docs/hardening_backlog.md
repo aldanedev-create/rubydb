@@ -12,9 +12,10 @@ these capabilities.
    load with latency percentiles. A real multi-process client workload now
    verifies process isolation and durable contents through the server; mixed
    transaction reference-log and restart validation remain open.
-2. Persistence: fault-test disk-full, interrupted checkpoints and schema
-   changes; index metadata load and write errors now fail visibly. Add a durable write-ack protocol so callers
-   cannot observe a failed metadata publication as a committed schema change.
+2. Persistence: fault-test disk-full and interrupted checkpoints/schema changes;
+   index metadata load and write errors now fail visibly, and failed schema
+   publications roll back in-memory state. Add a durable write-ack protocol so
+   callers can distinguish a committed mutation from an uncertain I/O failure.
 3. SQL correctness: ambiguous identifiers, outer-join NULL handling, boolean
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
    schema changes on populated tables. Non-recursive CTEs, subqueries, set

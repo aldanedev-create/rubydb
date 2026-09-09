@@ -73,10 +73,10 @@ database for every round and fails if any round loses durable rows.
   requires a filesystem that implements file locking correctly. Hard-linked
   database aliases and shared custom WAL/metadata paths are unsupported.
 
-- Failed metadata publication leaves the in-memory schema available only for an
-  explicit retry in the same process; callers must treat the failed mutation as
-  not durably committed until that retry succeeds. Exercise disk-full and
-  interrupted-rename fault injection on the target filesystem before release.
+- Failed metadata publication rolls back the in-memory schema and leaves the
+  durable catalog unchanged; callers receive an error and may retry the
+  mutation. Exercise disk-full and interrupted-rename fault injection on the
+  target filesystem before release.
 
 - Join support currently covers qualified `INNER`, `LEFT [OUTER]`, `RIGHT`, and
   `FULL [OUTER] JOIN` with `ON` predicates. Join reordering, correlated
