@@ -4,6 +4,9 @@
 
 RubyDB has verified production-oriented foundations, but it is not yet a general-purpose production database. Supported behavior is backed by the RSpec suite in `spec/`.
 
+Latest local audit: 270 examples, 0 failures. Hosted CI and deployment-specific
+evidence remain separate release gates.
+
 ## Implemented features
 
 The repository contains substantial scaffolding for:
@@ -49,7 +52,7 @@ The current suite verifies storage reopen, subprocess crash recovery, MVCC isola
 
 ## Unsupported SQL
 
-The supported dialect is defined in [docs/sql/compatibility.md](../sql/compatibility.md) and enforced by parser/execution integration coverage. RubyDB provides a tested common SQLite-style profile, not complete SQLite file-format, extension, pragma, or error compatibility.
+The supported dialect is defined in [docs/sql/compatibility.md](sql/compatibility.md) and enforced by parser/execution integration coverage. RubyDB provides a tested common SQLite-style profile, not complete SQLite file-format, extension, pragma, or error compatibility.
 
 ## Durability guarantees
 

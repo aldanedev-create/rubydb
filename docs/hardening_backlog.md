@@ -81,3 +81,13 @@ these capabilities.
 
 Deployment tests must record the commit, platform, workload and measured
 results. Keep untested features marked as unvalidated.
+
+## Latest documentation checkpoint
+
+The current repository also ships a tested common SQLite-style compatibility
+profile, a durability release gate, Prometheus alert rules, a multi-node Docker
+topology manifest, a production runbook, and a release checklist. The lessons
+from these hardening changes are collected in
+[`docs/lessons-learned.md`](lessons-learned.md). These artifacts improve
+repeatability but do not replace hosted multi-host, physical-filesystem, or
+independent security validation.

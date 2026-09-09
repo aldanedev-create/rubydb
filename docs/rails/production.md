@@ -52,7 +52,9 @@ JSON, and recovery time with the release record.
 
 ## Current boundaries
 
-The adapter is not a PostgreSQL, MySQL, or SQLite compatibility layer. Complex
+The adapter is not a complete PostgreSQL, MySQL, or SQLite compatibility layer.
+The tested common SQLite-style profile is documented in
+[`docs/sql/sqlite-compatibility.md`](../sql/sqlite-compatibility.md). Complex
 table rebuilds, generated columns, polymorphic references, adapter-specific
 schema features, and dialect-specific SQL require explicit validation before
 use. Automatic high-availability election is disabled; failover is an

@@ -5,8 +5,8 @@ client/server mode, a Ruby client, and an ActiveRecord adapter.
 
 > **Status: alpha.** RubyDB is suitable for experimentation, development,
 > controlled embedded workloads, and applications that stay within the
-> documented and tested feature set. It is not currently a drop-in
-> replacement for PostgreSQL, MySQL, or SQLite.
+> documented and tested feature set. It provides a tested common SQLite-style
+> profile, but is not a drop-in replacement for PostgreSQL, MySQL, or SQLite.
 
 ## What works today
 
@@ -117,6 +117,8 @@ by the presence of an adapter.
 
 ## Documentation
 
+- [Documentation index](docs/README.md)
+- [Lessons learned](docs/lessons-learned.md)
 - [Getting started](docs/getting-started/quickstart.md)
 - [SQL compatibility](docs/sql/compatibility.md)
 - [SQLite compatibility profile](docs/sql/sqlite-compatibility.md)

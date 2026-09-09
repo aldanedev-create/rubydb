@@ -75,8 +75,10 @@ Distributed isolation and deployment-specific contention limits remain open.
 
 The parser, planner, and executor are covered through end-to-end tests for the
 documented RubyDB SQL subset, including joins, aggregates, CTEs, subqueries,
-set operations, upserts, and window functions. Full PostgreSQL/MySQL/SQLite
-dialect compatibility is intentionally out of scope for this phase.
+set operations, upserts, and window functions. A common SQLite-style profile
+is tested for new Ruby/Rails applications; full PostgreSQL/MySQL/SQLite dialect
+and file-format compatibility remains intentionally out of scope for this
+phase.
 
 ### 5. Security (validated foundation)
 
@@ -110,6 +112,10 @@ The correct short-term operating posture is to treat the project as a pre-produc
 4. Complete an independent security review and certificate/secret rotation drill.
 5. Implement or intentionally reject unsupported features with explicit errors.
 6. Establish workload-specific capacity baselines and release sign-off records.
+
+The latest local audit passed 270 examples with zero failures. Hosted matrix,
+container, filesystem quota/power-loss, multi-host fencing, and independent
+security-review evidence must still be retained for a production deployment.
 
 ## Conclusion
 
