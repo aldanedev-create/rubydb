@@ -7,6 +7,10 @@ RubyDB has verified production-oriented foundations, but it is not yet a general
 Latest local audit: 270 examples, 0 failures. Hosted CI and deployment-specific
 evidence remain separate release gates.
 
+The feature inventory below was written during an earlier checkpoint and its
+parenthetical historical count is not the current total. Use the latest audit
+line above and rerun the suite for release evidence.
+
 ## Implemented features
 
 The repository contains substantial scaffolding for:
