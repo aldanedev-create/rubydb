@@ -26,7 +26,7 @@ RSpec.describe "table metadata persistence" do
     end
   end
 
-  it "surfaces metadata publish errors and permits an explicit retry" do
+  it "surfaces metadata publish errors without exposing an uncommitted schema" do
     Dir.mktmpdir do |dir|
       path = File.join(dir, "retry.rdb")
       engine = RubyDB::Storage::Engine.new(path, auto_cleanup: false, auto_vacuum: false)
@@ -41,9 +41,10 @@ RSpec.describe "table metadata persistence" do
       expect { engine.create_table(:events, columns) }
         .to raise_error(RubyDB::StorageError, /Unable to persist table metadata/)
       expect(Dir.glob("#{metadata_path}.tmp-*")).to be_empty
+      expect(engine.table_exists?(:events)).to be(false)
 
       fail_publish = false
-      expect(engine.send(:save_table_metadata)).to be(true)
+      expect(engine.create_table(:events, columns)).to be(true)
       engine.close
       engine = RubyDB::Storage::Engine.new(path, auto_cleanup: false, auto_vacuum: false)
       expect(engine.table_exists?(:events)).to be(true)

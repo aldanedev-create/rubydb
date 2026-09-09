@@ -192,8 +192,9 @@ module RubyDB
         # create a second physical table for an existing logical table.
         table_name = resolve_table_name(table_name)
 
-        @lock.synchronize do
-          @stats[:table_creates] += 1
+        with_schema_publication do
+          @lock.synchronize do
+            @stats[:table_creates] += 1
           
           # Check if table already exists
           if @table_metadata.key?(table_name)
@@ -268,7 +269,8 @@ module RubyDB
           # Save metadata to disk
           save_table_metadata
           
-          true
+            true
+          end
         end
       end
 
@@ -542,6 +544,29 @@ module RubyDB
       end
 
       private
+
+      # The metadata file is the durable commit record for schema changes.
+      # Keep failed publications invisible to the current process as well as
+      # to future opens. Newly allocated pages are returned to the free list;
+      # the original exception is preserved if cleanup itself encounters an
+      # I/O error.
+      def with_schema_publication
+        table_metadata_snapshot = Marshal.dump(@table_metadata)
+        table_pages_snapshot = Marshal.dump(@table_pages)
+        catalog_snapshot = Marshal.dump(@catalog)
+
+        yield
+      rescue Exception
+        current_metadata = @table_metadata
+        current_pages = @table_pages.values.flatten + current_metadata.values.map { |metadata| metadata[:metadata_page] }
+        previous_metadata = Marshal.load(table_metadata_snapshot)
+        previous_pages = Marshal.load(table_pages_snapshot).values.flatten + previous_metadata.values.map { |metadata| metadata[:metadata_page] }
+        (current_pages - previous_pages).uniq.each { |page| free_page(page) rescue nil }
+        @table_metadata = previous_metadata
+        @table_pages = Marshal.load(table_pages_snapshot)
+        @catalog = Marshal.load(catalog_snapshot)
+        raise
+      end
 
       # Metadata loaded from JSON may contain symbol keys while callers use
       # strings (or vice versa). Keep the original key for catalog/index
