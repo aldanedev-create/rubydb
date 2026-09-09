@@ -62,7 +62,7 @@ module RubyDB
                                 else
                                   deserialize(value_data, col_type)
                                 end
-                row[col_name] ||= (has_default ? col.default : nil)
+                row[col_name] = col.default if row[col_name].nil? && has_default
               # Legacy records did not store variable-length field sizes.
               # Only the final variable-width column can be recovered safely.
               elsif idx == columns.size - 1
@@ -72,7 +72,7 @@ module RubyDB
                                 elsif value_data.bytesize > 0
                                   deserialize(value_data, col_type)
                                 end
-                row[col_name] ||= (has_default ? col.default : nil)
+                row[col_name] = col.default if row[col_name].nil? && has_default
               else
                 row[col_name] = has_default ? col.default : nil
               end
@@ -80,8 +80,8 @@ module RubyDB
           rescue => e
             row[col_name] = col.default if col.has_default?
             row[col_name] = nil if col.nullable?
-            unless row[col_name]
-              raise CorruptionionError, "Failed to deserialize column '#{col_name}': #{e.message}"
+            if row[col_name].nil? && !col.nullable? && !col.has_default?
+              raise CorruptionError, "Failed to deserialize column '#{col_name}': #{e.message}"
             end
           end
         end
