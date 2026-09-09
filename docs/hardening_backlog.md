@@ -21,8 +21,8 @@ these capabilities.
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
    schema changes on populated tables. Non-recursive CTEs, subqueries, set
    operations, targeted `ON CONFLICT DO UPDATE`, and ranking/partition window
-   functions are implemented; recursive CTEs, window frames, and broader upsert
-   forms remain open.
+   functions, explicit `ROWS` window frames, and bounded recursive CTEs are
+   implemented; broader upsert forms remain open.
 4. Replication: synchronized acknowledgements and promotion with an explicit
    recovery point. Engine commits now package all committed row changes into a
    single replication envelope after the local WAL commit point. Primary

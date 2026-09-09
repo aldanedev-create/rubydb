@@ -68,4 +68,32 @@ RSpec.describe "SQL window functions" do
       engine&.close if engine&.open?
     end
   end
+
+  it "respects explicit ROWS window frames" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "window-frames.rdb"), auto_vacuum: false)
+      columns = [
+        RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false),
+        RubyDB::Catalog::Column.new(:score, :integer, null: false)
+      ]
+      engine.create_table(:scores, columns)
+      [[1, 10], [2, 20], [3, 30], [4, 40]].each { |values| engine.insert_row(:scores, columns, values) }
+
+      sql = "SELECT id, SUM(score) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS rolling FROM scores ORDER BY id"
+      statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(sql).tokenize).parse.first
+      result = RubyDB::Execution::Executor.new(engine).execute(
+        RubyDB::Execution::Planner.new(engine).plan(statement)
+      )
+
+      expect(result[:rows]).to eq([
+        { "id" => 1, "rolling" => 10 },
+        { "id" => 2, "rolling" => 30 },
+        { "id" => 3, "rolling" => 50 },
+        { "id" => 4, "rolling" => 70 }
+      ])
+      expect(statement.to_sql).to include("ROWS BETWEEN 1 PRECEDING AND CURRENT ROW")
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
 end

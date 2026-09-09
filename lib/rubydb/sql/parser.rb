@@ -76,9 +76,13 @@ module RubyDB
         end
 
         columns = parse_select_columns
-        expect(Token::Type::FROM)
-        from = parse_table_reference
-        joins = parse_joins
+        from = nil
+        joins = []
+        if current_token&.type == Token::Type::FROM
+          advance
+          from = parse_table_reference
+          joins = parse_joins
+        end
 
         where = nil
         if current_token&.type == Token::Type::WHERE
@@ -131,7 +135,8 @@ module RubyDB
 
       def parse_with
         expect(Token::Type::WITH)
-        raise ParserError, "Recursive CTEs are not supported" if current_token&.type == Token::Type::RECURSIVE
+        recursive = current_token&.type == Token::Type::RECURSIVE
+        advance if recursive
 
         ctes = []
         loop do
@@ -144,7 +149,7 @@ module RubyDB
           break unless current_token&.type == Token::Type::COMMA
           advance
         end
-        AST::With.new(ctes, parse_select)
+        AST::With.new(ctes, parse_select, recursive: recursive)
       end
 
       def parse_select_columns
@@ -453,8 +458,53 @@ module RubyDB
           expect(Token::Type::BY)
           order_by = parse_order_by
         end
+        frame = parse_window_frame if current_token&.type == Token::Type::ROWS
         expect(Token::Type::RPAREN)
-        { partition_by: partition_by, order_by: order_by }
+        { partition_by: partition_by, order_by: order_by, frame: frame }
+      end
+
+      def parse_window_frame
+        expect(Token::Type::ROWS)
+        if current_token&.type == Token::Type::BETWEEN
+          advance
+          start = parse_frame_boundary
+          expect(Token::Type::AND)
+          finish = parse_frame_boundary
+          { start: start, finish: finish }
+        else
+          { start: parse_frame_boundary, finish: { kind: :current_row } }
+        end
+      end
+
+      def parse_frame_boundary
+        case current_token&.type
+        when Token::Type::UNBOUNDED
+          advance
+          direction = current_token&.type
+          unless [Token::Type::PRECEDING, Token::Type::FOLLOWING].include?(direction)
+            raise ParserError, "Expected PRECEDING or FOLLOWING after UNBOUNDED"
+          end
+          advance
+          { kind: direction == Token::Type::PRECEDING ? :unbounded_preceding : :unbounded_following }
+        when Token::Type::CURRENT
+          advance
+          row = expect(Token::Type::IDENTIFIER)
+          raise ParserError, "Expected ROW after CURRENT" unless row.value.to_s.upcase == "ROW"
+          { kind: :current_row }
+        when Token::Type::NUMBER
+          value = expect(Token::Type::NUMBER).value
+          unless value.is_a?(Integer) && value >= 0
+            raise ParserError, "Window frame offset must be a non-negative integer"
+          end
+          direction = current_token&.type
+          unless [Token::Type::PRECEDING, Token::Type::FOLLOWING].include?(direction)
+            raise ParserError, "Expected PRECEDING or FOLLOWING after frame offset"
+          end
+          advance
+          { kind: direction == Token::Type::PRECEDING ? :preceding : :following, value: value }
+        else
+          raise ParserError, "Expected window frame boundary"
+        end
       end
 
       def parse_expression_list

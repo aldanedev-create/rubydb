@@ -94,6 +94,11 @@ module RubyDB
         RECURSIVE = :RECURSIVE
         OVER = :OVER
         PARTITION = :PARTITION
+        ROWS = :ROWS
+        UNBOUNDED = :UNBOUNDED
+        PRECEDING = :PRECEDING
+        FOLLOWING = :FOLLOWING
+        CURRENT = :CURRENT
 
         # Data types
         INTEGER = :INTEGER

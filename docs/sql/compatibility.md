@@ -10,13 +10,14 @@ Supported and tested statements include:
   `DISTINCT` aggregate arguments) with
   `GROUP BY` and `HAVING`
 - window ranking functions `ROW_NUMBER`, `RANK`, and `DENSE_RANK`, plus
-  partition-wide aggregate windows using `OVER (PARTITION BY ... ORDER BY ...)`
+  partition-wide and explicit `ROWS`-framed aggregate windows using
+  `OVER (PARTITION BY ... ORDER BY ...)`
 - `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT` for compatible SELECT
   projections
 - non-correlated scalar subqueries, `IN (SELECT ...)`, and `EXISTS (SELECT ...)`
   predicates
-- materialized non-recursive `WITH` common table expressions; recursive CTEs
-  are rejected explicitly
+- materialized non-recursive and bounded recursive `WITH` common table
+  expressions
 - `INSERT`, `UPDATE`, and `DELETE`, including `ON CONFLICT DO NOTHING` and
   targeted `ON CONFLICT (...) DO UPDATE SET ...` with `excluded.column`
 - `CREATE TABLE` and `DROP TABLE`, including primary keys, unique constraints,

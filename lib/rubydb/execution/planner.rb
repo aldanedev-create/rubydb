@@ -20,7 +20,7 @@ module RubyDB
 
         plan = case statement
         when SQL::AST::With
-          Plan::With.new(statement.ctes.map { |name, query| [name, plan(query)] }, plan(statement.query))
+          Plan::With.new(statement.ctes.map { |name, query| [name, plan(query)] }, plan(statement.query), recursive: statement.recursive)
         when SQL::AST::Select
           plan_select(statement)
         when SQL::AST::SetOperation
@@ -322,6 +322,7 @@ module RubyDB
         return unless plan.type == :select
 
         table_name = plan.table_name
+        return plan.set_scan_type(:sequential) unless table_name
 
         # Check if there's an index that can be used
         if @engine.respond_to?(:index_manager)

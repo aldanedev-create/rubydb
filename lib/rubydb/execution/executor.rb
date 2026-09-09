@@ -106,8 +106,8 @@ module RubyDB
       end
 
       def execute_set_operation(plan)
-        left = self.class.new(@engine).execute(plan.left_plan)[:rows]
-        right = self.class.new(@engine).execute(plan.right_plan)[:rows]
+        left = self.class.new(@engine, cte_rows: @cte_rows).execute(plan.left_plan, @current_transaction)[:rows]
+        right = self.class.new(@engine, cte_rows: @cte_rows).execute(plan.right_plan, @current_transaction)[:rows]
         left_width = left.first&.size || plan.left_plan.columns.size
         right_width = right.first&.size || plan.right_plan.columns.size
         if left_width != right_width
@@ -126,10 +126,47 @@ module RubyDB
       def execute_with(plan)
         available_ctes = @cte_rows.dup
         plan.ctes.each do |name, cte_plan|
-          result = self.class.new(@engine, cte_rows: available_ctes).execute(cte_plan)
-          available_ctes[name.to_s] = result[:rows]
+          available_ctes[name.to_s] = if plan.recursive && cte_plan.is_a?(Plan::SetOperation) && cte_plan.operator == :union
+            execute_recursive_cte(name.to_s, cte_plan, available_ctes)
+          else
+            self.class.new(@engine, cte_rows: available_ctes).execute(cte_plan, @current_transaction)[:rows]
+          end
         end
-        self.class.new(@engine, cte_rows: available_ctes).execute(plan.query_plan)
+        self.class.new(@engine, cte_rows: available_ctes).execute(plan.query_plan, @current_transaction)
+      end
+
+      def execute_recursive_cte(name, cte_plan, available_ctes)
+        unless cte_plan.is_a?(Plan::SetOperation) && cte_plan.operator == :union
+          raise ExecutionError, "Recursive CTE requires UNION or UNION ALL"
+        end
+
+        anchor = self.class.new(@engine, cte_rows: available_ctes).execute(cte_plan.left_plan, @current_transaction)[:rows]
+        accumulated = anchor.dup
+        working = anchor
+        output_columns = anchor.first&.keys || cte_plan.left_plan.columns.map(&:to_s)
+        max_iterations = Integer(@engine.instance_variable_get(:@config)[:max_recursive_iterations] || 10_000)
+        iterations = 0
+
+        while working.any?
+          iterations += 1
+          raise ExecutionError, "Recursive CTE exceeded #{max_iterations} iterations" if iterations > max_iterations
+
+          recursive_scope = available_ctes.merge(name => working)
+          next_rows = self.class.new(@engine, cte_rows: recursive_scope).execute(cte_plan.right_plan, @current_transaction)[:rows]
+          next_rows = next_rows.map do |row|
+            output_columns.zip(row.values).to_h
+          end
+          if cte_plan.all
+            accumulated.concat(next_rows)
+            working = next_rows
+          else
+            existing = accumulated.map { |row| row.to_a }
+            working = next_rows.reject { |row| existing.include?(row.to_a) }
+            accumulated.concat(working)
+          end
+        end
+
+        accumulated
       end
 
       def execute_select(plan)
@@ -486,6 +523,7 @@ module RubyDB
       # Scan operations
       def scan_table(plan)
         table_name = plan.table_name
+        return [{}] unless table_name
         return @cte_rows.fetch(table_name.to_s) if @cte_rows.key?(table_name.to_s)
         if @engine.catalog.respond_to?(:find_view) && (view = @engine.catalog.find_view(table_name))
           statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(view.query).tokenize).parse.first
@@ -862,7 +900,7 @@ module RubyDB
           partitions.each_value do |partition_rows|
             ordered_rows = sort_window_rows(partition_rows, spec[:order_by])
             ordered_rows.each_with_index do |row, index|
-              row[window_key(expression)] = window_value(expression, ordered_rows, index, spec[:order_by])
+              row[window_key(expression)] = window_value(expression, ordered_rows, index, spec[:order_by], spec[:frame])
             end
           end
         end
@@ -896,7 +934,8 @@ module RubyDB
         left <=> right
       end
 
-      def window_value(expression, rows, index, order_by)
+      def window_value(expression, rows, index, order_by, frame = nil)
+        rows = window_frame_rows(rows, index, frame) if frame
         name = expression.name.to_s.upcase
         if %w[ROW_NUMBER RANK DENSE_RANK].include?(name)
           return index + 1 if name == "ROW_NUMBER" || order_by.empty?
@@ -923,6 +962,26 @@ module RubyDB
         when "MAX" then values.max
         else
           raise ExecutionError, "Unsupported window function: #{expression.name}"
+        end
+      end
+
+      def window_frame_rows(rows, index, frame)
+        start_index = window_frame_index(frame[:start], index, rows.size, start: true)
+        finish = frame[:finish] || { kind: :current_row }
+        end_index = window_frame_index(finish, index, rows.size, start: false)
+        return [] if start_index > end_index
+
+        rows[start_index..end_index] || []
+      end
+
+      def window_frame_index(boundary, index, size, start:)
+        case boundary[:kind]
+        when :unbounded_preceding then 0
+        when :unbounded_following then size - 1
+        when :current_row then index
+        when :preceding then [index - boundary[:value], 0].max
+        when :following then [index + boundary[:value], size - 1].min
+        else raise ExecutionError, "Unsupported window frame boundary: #{boundary[:kind]}"
         end
       end
 

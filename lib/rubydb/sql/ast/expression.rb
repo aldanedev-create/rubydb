@@ -358,7 +358,8 @@ module RubyDB
           cloned_window = if @window
             {
               partition_by: @window[:partition_by].map(&:clone),
-              order_by: @window[:order_by].map(&:clone)
+              order_by: @window[:order_by].map(&:clone),
+              frame: @window[:frame]&.transform_values { |value| value.is_a?(Hash) ? value.dup : value }
             }
           end
           FunctionCall.new(@name, @arguments.map(&:clone), distinct: @distinct, window: cloned_window, location: @location)
@@ -374,9 +375,28 @@ module RubyDB
             parts = []
             parts << "PARTITION BY #{partition.map(&:to_sql).join(', ')}" unless partition.empty?
             parts << "ORDER BY #{ordering.map(&:to_sql).join(', ')}" unless ordering.empty?
+            parts << "ROWS #{window_frame_sql(@window[:frame])}" if @window[:frame]
             sql << " OVER (#{parts.join(' ')})"
           end
           sql
+        end
+
+        def window_frame_sql(frame)
+          boundary = lambda do |value|
+            case value[:kind]
+            when :unbounded_preceding then "UNBOUNDED PRECEDING"
+            when :unbounded_following then "UNBOUNDED FOLLOWING"
+            when :current_row then "CURRENT ROW"
+            when :preceding then "#{value[:value]} PRECEDING"
+            when :following then "#{value[:value]} FOLLOWING"
+            else raise ArgumentError, "Unknown window frame boundary: #{value[:kind]}"
+            end
+          end
+          if frame[:start] && frame[:finish]
+            "BETWEEN #{boundary.call(frame[:start])} AND #{boundary.call(frame[:finish])}"
+          else
+            boundary.call(frame[:start])
+          end
         end
 
         def inspect

@@ -113,12 +113,13 @@ module RubyDB
       end
 
       class With < Plan
-        attr_reader :ctes, :query_plan
+        attr_reader :ctes, :query_plan, :recursive
 
-        def initialize(ctes, query_plan)
+        def initialize(ctes, query_plan, recursive: false)
           super(:with)
           @ctes = ctes
           @query_plan = query_plan
+          @recursive = recursive
         end
       end
 

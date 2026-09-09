@@ -26,9 +26,21 @@ RSpec.describe "SQL common table expressions" do
     end
   end
 
-  it "rejects recursive CTEs explicitly" do
-    expect do
-      RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new("WITH RECURSIVE chain AS (SELECT id FROM nodes) SELECT id FROM chain").tokenize).parse
-    end.to raise_error(RubyDB::ParserError, /Recursive CTEs are not supported/)
+  it "evaluates a bounded recursive CTE" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "recursive-cte.rdb"), auto_vacuum: false)
+      sql = "WITH RECURSIVE numbers AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM numbers WHERE n < 4) SELECT n FROM numbers ORDER BY n"
+      statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(sql).tokenize).parse.first
+      result = RubyDB::Execution::Executor.new(engine).execute(
+        RubyDB::Execution::Planner.new(engine).plan(statement)
+      )
+
+      expect(result[:rows]).to eq([
+        { "n" => 1 }, { "n" => 2 }, { "n" => 3 }, { "n" => 4 }
+      ])
+      expect(statement.to_sql).to include("WITH RECURSIVE")
+    ensure
+      engine&.close if engine&.open?
+    end
   end
 end

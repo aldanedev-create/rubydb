@@ -28,7 +28,7 @@ module RubyDB
         def clone
           Select.new(
             @columns.map(&:clone),
-            @from.clone,
+            @from&.clone,
             @where&.clone,
             @order_by.map(&:clone),
             @limit&.clone,
@@ -44,7 +44,7 @@ module RubyDB
           parts << "SELECT"
           parts << "DISTINCT" if @distinct
           parts << @columns.map(&:to_sql).join(", ")
-          parts << "FROM #{@from.to_sql}"
+          parts << "FROM #{@from.to_sql}" if @from
           parts.concat(@joins.map(&:to_sql))
           parts << "WHERE #{@where.to_sql}" if @where
           parts << "GROUP BY #{@group_by.map(&:to_sql).join(', ')}" if @group_by.any?
@@ -80,7 +80,7 @@ module RubyDB
         end
 
         def table_name
-          @from.name
+          @from&.name
         end
       end
     end
