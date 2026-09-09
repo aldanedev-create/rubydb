@@ -36,10 +36,38 @@ RSpec.describe "Rails adapter with a live RubyDB engine" do
       adapter.rollback_db_transaction
 
       expect(adapter.select_values("SELECT name FROM users ORDER BY id")).to eq(["Ada", "O'Connor ?"])
-      expect(adapter.dump_schema).to include('t.boolean "active", default: FALSE, null: false')
+      expect(adapter.dump_schema).to include('t.boolean "active", default: false, null: false')
+      expect(adapter.dump_schema).to include('add_index "users", ["name"], unique: true')
     ensure
       adapter&.close
       engine&.close if engine&.open?
+    end
+  end
+
+  it "round-trips schema dumps including automatic keys, defaults, and indexes" do
+    Dir.mktmpdir do |dir|
+      source_engine = RubyDB::Storage::Engine.new(File.join(dir, "source.rdb"), auto_vacuum: false)
+      source = RubyDB::Rails::Adapter.new(engine: source_engine)
+      source.create_table("accounts") do |table|
+        table.string("email", null: false)
+        table.boolean("active", default: false, null: false)
+      end
+      source.add_index("accounts", "email", unique: true)
+      schema = source.dump_schema
+
+      target_engine = RubyDB::Storage::Engine.new(File.join(dir, "target.rdb"), auto_vacuum: false)
+      target = RubyDB::Rails::Adapter.new(engine: target_engine)
+      target.instance_eval(schema)
+
+      expect(target.columns("accounts").map { |column| column[:name] }).to include("id", "email", "active")
+      expect(target.columns("accounts").find { |column| column[:name] == "active" }).to include(default: false, null: false)
+      expect(target.indexes("accounts")).to include(hash_including(name: "idx_accounts_email", unique: true))
+      expect(schema).not_to include('t.integer "id"')
+    ensure
+      source&.close
+      target&.close
+      source_engine&.close if source_engine&.open?
+      target_engine&.close if target_engine&.open?
     end
   end
 end

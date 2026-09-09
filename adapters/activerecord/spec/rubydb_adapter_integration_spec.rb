@@ -54,6 +54,10 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
     expect(connection.table_exists?(:projects)).to be(true)
     expect(connection.columns(:projects).map(&:name)).to include("id", "name", "active")
     expect(connection.indexes(:projects)).to include(an_object_having_attributes(name: "idx_projects_name", unique: true))
+    schema = connection.dump_schema
+    expect(schema).to include('t.boolean "active", default: true, null: false')
+    expect(schema).to include('add_index "projects", ["name"], unique: true')
+    expect(schema).not_to include('t.integer "id"')
 
     migration.new.migrate(:down)
     expect(connection.table_exists?(:projects)).to be(false)

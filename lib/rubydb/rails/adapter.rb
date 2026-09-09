@@ -132,16 +132,31 @@ module RubyDB
         schema = +""
 
         tables.each do |table|
-          schema << "create_table \"#{table}\" do |t|\n"
-          columns(table).each do |col|
+          table_columns = columns(table)
+          primary_key = table_columns.find { |col| col[:primary_key] }
+          automatic_id = primary_key && primary_key[:name].to_s == "id" && primary_key[:type].to_sym == :integer
+          table_options = automatic_id ? "" : ", id: false"
+          schema << "create_table \"#{table}\"#{table_options} do |t|\n"
+          table_columns.each do |col|
+            next if automatic_id && col[:primary_key]
+
             type = Type.to_rails(col[:type])
             schema << "  t.#{type} \"#{col[:name]}\""
             schema << ", primary_key: true" if col[:primary_key]
-            schema << ", default: #{quote(col[:default])}" if col.key?(:default) && !col[:default].nil?
+            schema << ", default: #{schema_literal(col[:default])}" if col.key?(:default) && !col[:default].nil?
             schema << ", null: false" unless col[:null]
             schema << "\n"
           end
           schema << "end\n\n"
+
+          table_indexes = indexes(table)
+          table_indexes.each do |index|
+            schema << "add_index \"#{table}\", #{index[:columns].map(&:to_s).inspect}"
+            schema << ", unique: true" if index[:unique]
+            schema << ", name: #{index[:name].to_s.inspect}"
+            schema << "\n"
+          end
+          schema << "\n" if table_indexes.any?
         end
 
         schema
@@ -191,6 +206,16 @@ module RubyDB
           $1.split(",").map(&:strip)
         else
           []
+        end
+      end
+
+      def schema_literal(value)
+        case value
+        when true then "true"
+        when false then "false"
+        when nil then "nil"
+        when Numeric then value.to_s
+        else value.to_s.inspect
         end
       end
 

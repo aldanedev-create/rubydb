@@ -529,20 +529,51 @@ module ActiveRecord
       end
 
       def dump_schema
-        schema = ""
+        schema = +""
         tables.each do |table|
-          schema << "create_table \"#{table}\" do |t|\n"
-          columns(table).each do |col|
-            next if col.primary_key?
+          table_columns = columns(table)
+          primary_key_name = if embedded?
+            @connection.engine.table_columns(table).find(&:primary_key?)&.name
+          else
+            primary_key(table)
+          end
+          primary_key = table_columns.find { |column| column.name.to_s == primary_key_name.to_s } if primary_key_name
+          automatic_id = primary_key && primary_key_name.to_s == "id" && primary_key.type.to_sym == :integer
+          table_options = automatic_id ? "" : ", id: false"
+          schema << "create_table \"#{table}\"#{table_options} do |t|\n"
+          table_columns.each do |col|
+            next if automatic_id && primary_key && col.name.to_s == primary_key.name.to_s
+
             type = RubyDB::Rails::Type.to_rails(col.type)
             schema << "  t.#{type} \"#{col.name}\""
-            schema << ", default: #{quote(col.default)}" if col.default
+            schema << ", primary_key: true" if primary_key && col.name.to_s == primary_key.name.to_s
+            schema << ", default: #{schema_literal(col.default, col.type)}" unless col.default.nil?
             schema << ", null: false" unless col.null
             schema << "\n"
           end
           schema << "end\n\n"
+
+          indexes(table).each do |index|
+            schema << "add_index \"#{table}\", #{index.columns.map(&:to_s).inspect}"
+            schema << ", unique: true" if index.unique
+            schema << ", name: #{index.name.to_s.inspect}\n"
+          end
+          schema << "\n" if indexes(table).any?
         end
         schema
+      end
+
+      def schema_literal(value, type = nil)
+        if type.to_sym == :boolean && value.is_a?(String) && %w[true false].include?(value.downcase)
+          return value.downcase
+        end
+
+        case value
+        when true then "true"
+        when false then "false"
+        when Numeric then value.to_s
+        else value.to_s.inspect
+        end
       end
 
       # ==================== CONNECTION MANAGEMENT ====================
