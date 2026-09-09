@@ -20,3 +20,5 @@ jobs:
           bundler-cache: true
       - name: Run backup and restore drill
         run: ruby scripts/restore_drill
+      - name: Run durability fault and recovery drill
+        run: ruby scripts/durability_drill

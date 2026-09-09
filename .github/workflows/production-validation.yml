@@ -36,6 +36,7 @@ jobs:
             spec/replication_failover_integration_spec.rb \
             spec/fencing_spec.rb \
             spec/corruption_repair_spec.rb
+            spec/sqlite_compatibility_spec.rb
 
       - name: Run sustained threaded workload
         shell: bash
@@ -77,6 +78,9 @@ jobs:
       - name: Run backup and restore drill
         run: ruby scripts/restore_drill | tee production-results/restore.txt
 
+      - name: Run durability fault and recovery drill
+        run: ruby scripts/durability_drill | tee production-results/durability.txt
+
       - name: Run bounded fuzzers
         env:
           RUBYDB_FUZZ_ITERATIONS: "250"
@@ -94,3 +98,14 @@ jobs:
         with:
           name: rubydb-production-validation-${{ github.sha }}
           path: production-results/
+
+  container-topology:
+    name: Multi-node container topology
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose topology
+        run: docker compose -f packaging/docker/docker-compose.failover.yml config
+      - name: Build production image
+        run: docker compose -f packaging/docker/docker-compose.failover.yml build primary replica

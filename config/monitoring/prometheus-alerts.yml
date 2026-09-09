@@ -1,0 +1,39 @@
+groups:
+  - name: rubydb-production
+    rules:
+      - alert: RubyDBNotReady
+        expr: rubydb_health_ready == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: RubyDB is not ready to serve traffic
+          description: Readiness has been false for more than two minutes.
+      - alert: RubyDBConnectionsNearLimit
+        expr: rubydb_connections_active / rubydb_connections_max > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: RubyDB connection capacity is nearly exhausted
+      - alert: RubyDBRequestFailures
+        expr: increase(rubydb_requests_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: RubyDB requests are failing
+      - alert: RubyDBReplicationLag
+        expr: rubydb_replication_lag_seconds > 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: RubyDB replica lag exceeds the promotion threshold
+      - alert: RubyDBDiskSpaceLow
+        expr: rubydb_disk_free_ratio < 0.15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: RubyDB storage is running low

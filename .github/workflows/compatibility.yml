@@ -30,6 +30,9 @@ jobs:
           RUBYDB_COVERAGE: "1"
         run: bundle exec rspec
 
+      - name: Validate SQLite compatibility profile
+        run: bundle exec rspec spec/sqlite_compatibility_spec.rb
+
   rails:
     name: ActiveRecord ${{ matrix.rails }}
     runs-on: ubuntu-latest

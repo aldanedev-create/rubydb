@@ -109,6 +109,7 @@ module RubyDB
           parts = [@name]
           parts << type_sql
           parts << "PRIMARY KEY" if @options[:primary_key]
+          parts << "AUTOINCREMENT" if @options[:auto_increment]
           parts << "UNIQUE" if @options[:unique]
           parts << "NOT NULL" if @options[:null] == false
           parts << "NULL" if @options[:null] == true

@@ -1,0 +1,37 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Runs the real crash, filesystem-fault, corruption, compaction, and restore
+# paths as one release gate. Physical quota filling is opt-in because filling a
+# developer's filesystem without an explicit safety flag would be dangerous.
+
+require "json"
+require "rbconfig"
+
+root = File.expand_path("..", __dir__)
+Dir.chdir(root)
+specs = %w[
+  spec/filesystem_fault_injection_spec.rb
+  spec/transaction_crash_recovery_spec.rb
+  spec/crash_recovery_spec.rb
+  spec/crash_recovery_wal_failure_spec.rb
+  spec/corruption_repair_spec.rb
+  spec/compaction_persistence_spec.rb
+  spec/backup_restore_spec.rb
+  spec/incremental_backup_spec.rb
+  spec/delta_restore_spec.rb
+]
+
+command = [RbConfig.ruby, "-Ilib", "-S", "rspec", *specs]
+started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+success = system(*command)
+elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+
+result = {
+  success: success,
+  checks: %w[filesystem_faults crash_recovery corruption_detection compaction backup_restore],
+  physical_quota: ENV["RUBYDB_DURABILITY_QUOTA_DIR"] ? "operator_configured" : "not_run",
+  elapsed_seconds: elapsed.round(3)
+}
+puts JSON.generate(result)
+exit(success ? 0 : 1)

@@ -41,14 +41,15 @@ The current suite verifies storage reopen, subprocess crash recovery, MVCC isola
   tested, while true multi-host partitions and split-brain recovery remain
   deployment work
 - automatic failover is limited to synchronized candidates; fencing requires a shared durable fence path and still needs multi-host split-brain validation
-- SQL compatibility is narrower than PostgreSQL or SQLite
+- the SQLite compatibility profile covers the documented common application
+  surface, but it is not SQLite file-format or extension compatibility
 - production CA lifecycle, independent security review, performance targets,
   and large-scale workload behavior still require dedicated validation
 - branch state application and live target-branch merges are supported through the engine reconciliation hook
 
 ## Unsupported SQL
 
-The supported dialect is defined in [docs/sql/compatibility.md](../sql/compatibility.md) and enforced by parser/execution integration coverage. RubyDB does not claim PostgreSQL or SQLite compatibility beyond that documented subset.
+The supported dialect is defined in [docs/sql/compatibility.md](../sql/compatibility.md) and enforced by parser/execution integration coverage. RubyDB provides a tested common SQLite-style profile, not complete SQLite file-format, extension, pragma, or error compatibility.
 
 ## Durability guarantees
 

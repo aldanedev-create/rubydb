@@ -1,7 +1,9 @@
 # RubyDB SQL compatibility
 
-RubyDB supports a deliberately narrow, RubyDB-native SQL dialect. This is not
-a claim of PostgreSQL or SQLite compatibility.
+RubyDB supports a deliberately documented SQL dialect. It includes a tested
+SQLite-style compatibility profile for common new Ruby/Rails applications (see
+`sqlite-compatibility.md`), but this is not a claim of complete SQLite,
+PostgreSQL, or MySQL compatibility.
 
 Supported and tested statements include:
 

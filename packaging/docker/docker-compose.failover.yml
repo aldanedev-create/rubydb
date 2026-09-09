@@ -1,0 +1,43 @@
+services:
+  primary:
+    build:
+      context: ../..
+      dockerfile: packaging/docker/Dockerfile
+    hostname: rubydb-primary
+    environment:
+      RUBYDB_DATA_DIR: /var/lib/rubydb/data
+      RUBYDB_HOST: 0.0.0.0
+      RUBYDB_PORT: 7432
+    volumes:
+      - primary-data:/var/lib/rubydb
+    networks: [rubydb-cluster]
+
+  replica:
+    build:
+      context: ../..
+      dockerfile: packaging/docker/Dockerfile
+    hostname: rubydb-replica
+    environment:
+      RUBYDB_DATA_DIR: /var/lib/rubydb/data
+      RUBYDB_HOST: 0.0.0.0
+      RUBYDB_PORT: 7432
+    volumes:
+      - replica-data:/var/lib/rubydb
+    networks: [rubydb-cluster]
+
+  observer:
+    image: ruby:3.3-slim
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace:ro
+    command: ["ruby", "scripts/replication_network_failover_drill"]
+    networks: [rubydb-cluster]
+    profiles: [drill]
+
+networks:
+  rubydb-cluster:
+    driver: bridge
+
+volumes:
+  primary-data:
+  replica-data:

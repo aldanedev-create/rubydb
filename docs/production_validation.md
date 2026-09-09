@@ -46,6 +46,8 @@ compatibility.
   and the maintenance worker is joined before storage closes.
 - SQL window ranking (`ROW_NUMBER`, `RANK`, `DENSE_RANK`) and partition-wide
   aggregate windows have focused regression coverage.
+- The SQLite compatibility profile covers common schema, CRUD, transaction,
+  grouped-join, aggregate, and targeted-upsert application paths.
 
 ## Run before a release
 
@@ -93,6 +95,12 @@ ruby scripts/replication_network_failover_drill
 
 # Real two-engine replication and promotion validation
 bundle exec rspec spec/replication_failover_integration_spec.rb
+
+# SQLite-style application compatibility profile
+bundle exec rspec spec/sqlite_compatibility_spec.rb
+
+# Durability, crash, corruption, compaction, and restore release gate
+ruby scripts/durability_drill
 ```
 
 The scheduled/manual GitHub Actions workflow `.github/workflows/workload.yml`

@@ -793,6 +793,16 @@ module RubyDB
             ref_column = expect(Token::Type::IDENTIFIER).value
             expect(Token::Type::RPAREN)
             options[:references] = { table: ref_table, column: ref_column }
+          when Token::Type::IDENTIFIER
+            # SQLite spells an automatically allocated integer primary key
+            # `AUTOINCREMENT`. Keep it as column metadata; RubyDB's durable
+            # integer-primary-key allocator provides the actual behavior.
+            if current_token.value.to_s.upcase == "AUTOINCREMENT"
+              advance
+              options[:auto_increment] = true
+            else
+              break
+            end
           else
             break
           end
