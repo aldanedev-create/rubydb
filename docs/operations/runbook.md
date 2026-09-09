@@ -25,3 +25,10 @@ On corruption, checksum failure, repeated crash recovery, or replication diverge
 ## Security operations
 
 Keep production credentials and TLS private keys outside the repository with restrictive permissions. Rotate certificates by staging the replacement, validating the chain, and restarting during a planned window. Keep TLS enabled and use peer verification when a trusted CA is available.
+
+For replication, configure the same high-entropy `replication_auth_token` on
+each primary and replica. A peer with a missing or incorrect token is rejected;
+rotate the token by draining replicas, updating the protected configuration on
+both sides, and reconnecting them. The replication listener is not a substitute
+for a private network or TLS termination, so restrict its port at the firewall
+and validate certificate/private-network controls during deployment.

@@ -6,6 +6,7 @@ require "thread"
 require "json"
 require "monitor"
 require "fileutils"
+require "digest"
 require_relative "replication_slot"
 require_relative "fencing"
 
@@ -29,6 +30,7 @@ module RubyDB
           wal_keep_segments: config[:wal_keep_segments] || 100,
           replication_timeout: config[:replication_timeout] || 60,
           heartbeat_interval: config[:heartbeat_interval] || 10,
+          replication_auth_token: config[:replication_auth_token] || config[:auth_token],
           enable_slots: config[:enable_slots] != false,
           log_dir: config[:log_dir] || "#{@engine.path}.replication_log",
           fence_path: config[:fence_path] || "#{@engine.path}.fence",
@@ -48,7 +50,8 @@ module RubyDB
           committed_lsn: nil,
           replicated_lsn: nil,
           active_replicas: 0,
-          total_replicas_connected: 0
+          total_replicas_connected: 0,
+          authentication_failures: 0
         }
         @lock = Monitor.new
         @slot_path = config[:slot_path] || "#{@engine.path}.replication_slots.json"
@@ -255,6 +258,14 @@ module RubyDB
           return
         end
 
+        expected_token = @config[:replication_auth_token]
+        if expected_token && !secure_token_match?(expected_token, handshake[:auth_token])
+          @lock.synchronize { @stats[:authentication_failures] += 1 }
+          client.write(JSON.generate(success: false, error: "Replication authentication failed") + "\n")
+          client.flush
+          return
+        end
+
         replica_id = register_replica(handshake)
         @lock.synchronize { @replicas[replica_id][:connection] = client }
         client.write(JSON.generate(success: true, replica_id: replica_id, mode: "logical") + "\n")
@@ -387,6 +398,18 @@ module RubyDB
           raise ReplicationError, "Synchronous replica acknowledgment timed out" if Time.now >= deadline
           sleep(0.01)
         end
+      end
+
+      def secure_token_match?(expected, presented)
+        return false unless presented
+
+        expected_bytes = expected.to_s.b
+        presented_bytes = presented.to_s.b
+        return false unless expected_bytes.bytesize == presented_bytes.bytesize
+
+        mismatch = 0
+        expected_bytes.bytes.each_with_index { |byte, index| mismatch |= byte ^ presented_bytes.getbyte(index) }
+        mismatch.zero?
       end
     end
   end

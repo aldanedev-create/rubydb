@@ -51,8 +51,9 @@ these capabilities.
 6. Operations: backup manifest writes now use durable atomic publication, live
    engines flush WAL/storage before physical backup, and a scheduled restore
    drill reopens restored files. Upgrade tests, measured resource limits,
-   alerting, and security review of replication endpoints and authorization
-   enforcement remain open.
+   alerting, and full security review remain open. Replication peers now
+   support constant-time shared-token authentication when configured; TLS and
+   credential rotation procedures still require deployment validation.
 
 7. Release engineering: cross-platform Ruby 3.3/3.4 CI, the ActiveRecord
    adapter CI job, and a deterministic bounded fuzz safety workflow are now

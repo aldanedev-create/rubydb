@@ -174,7 +174,8 @@ module RubyDB
               type: "replica_handshake",
               replica_id: @config[:replica_id] || "replica_#{Process.pid}",
               protocol_version: 1,
-              wal_position: @last_replayed_lsn || 0
+              wal_position: @last_replayed_lsn || 0,
+              auth_token: @config[:replication_auth_token] || @config[:auth_token]
             }
 
             @connection.write(JSON.generate(handshake) + "\n")
