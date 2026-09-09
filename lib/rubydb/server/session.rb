@@ -212,13 +212,23 @@ module RubyDB
           }
         end
 
+        committed = @config[:engine]&.commit_transaction
+        unless committed
+          return {
+            success: false,
+            error: "Transaction commit failed",
+            commit_ack: @config[:engine]&.last_commit_ack
+          }
+        end
         @transaction[:active] = false
-        @config[:engine]&.commit_transaction
         @transaction = nil
 
         {
           success: true,
           type: "commit_result",
+          committed: true,
+          durable: @config[:engine]&.last_commit_ack&.fetch(:status, nil) == :durable,
+          commit_ack: @config[:engine]&.last_commit_ack,
           timestamp: Time.now.iso8601
         }
       end

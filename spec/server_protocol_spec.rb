@@ -46,10 +46,14 @@ RSpec.describe "RubyDB live server protocol" do
       transaction.query("INSERT INTO users (id) VALUES (2)")
       transaction.rollback
       expect(client.query("SELECT * FROM users").rows.map { |row| row[:id] || row["id"] }).to eq([1])
+      durable_transaction = client.begin_transaction
+      durable_transaction.query("INSERT INTO users (id) VALUES (2)")
+      durable_transaction.commit
+      expect(client.last_commit_ack).to include(status: :durable)
 
       client2 = RubyDB::Client::Client.new(host: "127.0.0.1", port: port, timeout: 5, pool_size: 1)
       concurrent = Thread.new { client2.query("SELECT * FROM users").row_count }
-      expect(concurrent.value).to eq(1)
+      expect(concurrent.value).to eq(2)
       stats = server.stats
       expect(stats[:connections_active]).to be >= 1
       expect(stats[:requests_processed]).to be >= 7

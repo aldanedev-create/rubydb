@@ -15,8 +15,9 @@ these capabilities.
    validation remain open.
 2. Persistence: fault-test disk-full and interrupted checkpoints/schema changes;
    index metadata load and write errors now fail visibly, and failed schema
-   publications roll back in-memory state. Add a durable write-ack protocol so
-   callers can distinguish a committed mutation from an uncertain I/O failure.
+   publications roll back in-memory state. Commit acknowledgements now expose
+   durable versus uncertain WAL state and recovery-required post-WAL flush
+   failures. Fault-injection coverage for checkpoints/schema writes remains.
 3. SQL correctness: ambiguous identifiers, outer-join NULL handling, boolean
    preservation, aggregate edge cases (NULLs, DISTINCT, and expressions), and
    schema changes on populated tables. Non-recursive CTEs, subqueries, set

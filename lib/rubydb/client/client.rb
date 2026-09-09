@@ -18,7 +18,7 @@ module RubyDB
   module Client
     # Client - Main database client
     class Client
-      attr_reader :config, :connection, :pool, :stats
+      attr_reader :config, :connection, :pool, :stats, :last_commit_ack
 
       def initialize(config = {})
         @config = {
@@ -210,7 +210,12 @@ module RubyDB
             raise ClientError, "No active transaction"
           end
 
-          @connection.send_commit
+          response = @connection.send_commit
+          unless response[:success] != false
+            raise ClientError, response[:error] || "Transaction commit failed"
+          end
+          @last_commit_ack = response[:commit_ack]
+          @last_commit_ack[:status] = @last_commit_ack[:status].to_sym if @last_commit_ack && @last_commit_ack[:status]
           @transaction.mark_committed
           @stats[:transactions_committed] += 1
 

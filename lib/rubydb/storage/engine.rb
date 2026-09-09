@@ -58,7 +58,7 @@ module RubyDB
       NULL_BITMAP_FLAG = 0x02
       VARIABLE_LENGTH_PREFIXES_FLAG = 0x04
 
-      attr_reader :storage_manager, :buffer_pool, :page_manager, :catalog, :path
+      attr_reader :storage_manager, :buffer_pool, :page_manager, :catalog, :path, :last_commit_ack
       attr_reader :table_metadata, :transaction_manager, :wal, :crash_recovery, :version_store, :index_manager
 
       def initialize(path, config = {})
@@ -91,6 +91,7 @@ module RubyDB
         @transaction_manager = nil
         @transaction_context_key = "rubydb_engine_transaction_#{object_id}".to_sym
         @commit_listeners = []
+        @last_commit_ack = nil
         @current_transaction_id = 0
         @recovery_in_progress = false
         # A replica must never accept an accidental local mutation. Replay uses
@@ -1269,42 +1270,76 @@ module RubyDB
           tx = transaction || current_transaction_manager
           return false unless tx && tx[:active]
 
-          # The commit record is the transaction's durable commit point. It
-          # must reach the WAL before the transaction is reported committed.
-          if (tx[:isolation_level] || :read_committed).to_sym == :serializable
-            @version_store.validate_serializable!(
-              @transaction_snapshots.fetch(tx[:id]),
-              @transaction_reads[tx[:id]],
-              @transaction_writes[tx[:id]],
-              read_predicates: @transaction_predicates[tx[:id]]
-            )
-          end
-          log_to_wal(WAL::Record::TYPE_COMMIT, {}, tx[:id])
-          @wal&.sync
-          
-          # Commit transaction in visibility map
-          @visibility_map.commit_transaction(tx[:id])
-          commit_mvcc_versions(tx[:id])
-          @transaction_snapshots.delete(tx[:id])
-          @transaction_reads.delete(tx[:id])
-              @transaction_writes.delete(tx[:id])
-          @transaction_predicates.delete(tx[:id])
-          
-          # Flush all changes
-          flush
-          
-          tx[:active] = false
-          tx[:committed_at] = Time.now
-          clear_transaction_context(tx)
+          begin
+            # The commit record is the transaction's durable commit point. It
+            # must be flushed and fsynced before the transaction is reported.
+            if (tx[:isolation_level] || :read_committed).to_sym == :serializable
+              @version_store.validate_serializable!(
+                @transaction_snapshots.fetch(tx[:id]),
+                @transaction_reads[tx[:id]],
+                @transaction_writes[tx[:id]],
+                read_predicates: @transaction_predicates[tx[:id]]
+              )
+            end
+            commit_lsn = log_to_wal(WAL::Record::TYPE_COMMIT, {}, tx[:id])
+            if @wal
+              @wal.flush
+              @wal.sync
+            end
+            @last_commit_ack = {
+              status: :durable,
+              transaction_id: tx[:id],
+              commit_lsn: commit_lsn&.to_i,
+              recovery_required: false
+            }
 
-          committed_changes = (tx[:changes] || {}).flat_map do |table_name, rows|
-            rows.values.map { |change| change.merge(table: table_name) }
+            # Commit transaction in visibility map
+            @visibility_map.commit_transaction(tx[:id])
+            commit_mvcc_versions(tx[:id])
+            @transaction_snapshots.delete(tx[:id])
+            @transaction_reads.delete(tx[:id])
+            @transaction_writes.delete(tx[:id])
+            @transaction_predicates.delete(tx[:id])
+
+            # A page or metadata flush can fail after the WAL commit is
+            # durable. Recovery can replay that commit, so retain a truthful
+            # durable acknowledgement instead of reporting an ambiguous abort.
+            begin
+              flush
+            rescue StandardError => error
+              @last_commit_ack[:recovery_required] = true
+              @last_commit_ack[:flush_error] = "#{error.class}: #{error.message}"
+            end
+
+            tx[:active] = false
+            tx[:committed_at] = Time.now
+            clear_transaction_context(tx)
+
+            committed_changes = (tx[:changes] || {}).flat_map do |table_name, rows|
+              rows.values.map { |change| change.merge(table: table_name) }
+            end
+            listener_errors = []
+            @commit_listeners.dup.each do |listener|
+              next if committed_changes.empty?
+
+              begin
+                listener.call(tx[:id], committed_changes)
+              rescue StandardError => error
+                listener_errors << "#{error.class}: #{error.message}"
+              end
+            end
+            @last_commit_ack[:replication_errors] = listener_errors unless listener_errors.empty?
+
+            true
+          rescue Exception => error
+            @last_commit_ack = {
+              status: :uncertain,
+              transaction_id: tx[:id],
+              error: "#{error.class}: #{error.message}",
+              recovery_required: true
+            }
+            raise
           end
-          @commit_listeners.dup.each do |listener|
-            listener.call(tx[:id], committed_changes) unless committed_changes.empty?
-          end
-          
-          true
         end
       end
 

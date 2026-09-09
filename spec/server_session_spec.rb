@@ -84,4 +84,42 @@ RSpec.describe "server session execution" do
       engine&.close
     end
   end
+
+  it "reports a durable commit acknowledgement after the WAL boundary" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "commit-ack.rdb"), auto_vacuum: false)
+      engine.create_table("users", [RubyDB::Catalog::Column.new("id", :integer, primary_key: true)])
+      session = RubyDB::Server::Session.new(nil, engine: engine)
+      session.authenticate(username: "rubydb", database: "rubydb")
+      expect(session.process(type: "begin")[:success]).to be(true)
+      expect(session.process(type: "query", sql: "INSERT INTO users (id) VALUES (1)")[:success]).to be(true)
+
+      response = session.process(type: "commit")
+
+      expect(response).to include(success: true, committed: true, durable: true)
+      expect(response[:commit_ack]).to include(status: :durable, recovery_required: false)
+      expect(response[:commit_ack][:transaction_id]).to be_a(Integer)
+    ensure
+      engine&.close
+    end
+  end
+
+  it "marks a post-WAL flush failure as durable but recovery-required" do
+    Dir.mktmpdir do |dir|
+      engine = RubyDB::Storage::Engine.new(File.join(dir, "commit-flush-failure.rdb"), auto_vacuum: false)
+      columns = [RubyDB::Catalog::Column.new("id", :integer, primary_key: true)]
+      engine.create_table("users", columns)
+      engine.begin_transaction
+      engine.insert_row("users", columns, [1])
+      original_flush = engine.method(:flush)
+      engine.define_singleton_method(:flush) { raise RubyDB::StorageError, "simulated disk full" }
+
+      expect(engine.commit_transaction).to be(true)
+      expect(engine.last_commit_ack).to include(status: :durable, recovery_required: true)
+      expect(engine.last_commit_ack[:flush_error]).to include("simulated disk full")
+      engine.define_singleton_method(:flush, &original_flush)
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
 end
