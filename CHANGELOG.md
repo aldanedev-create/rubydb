@@ -23,6 +23,13 @@ All notable changes to RubyDB are documented here. Versions follow
   vacuum, maintenance, and release workflows.
 - Clarified the tested common SQLite-style profile and production limits.
 
+## 0.1.1 - 2026-09-09
+
+- Published the Rails connection configuration fixes for embedded database
+  paths and `rubydb://`/`rubydbs://` connection URLs.
+- Kept the patch release compatible with the RubyDB 0.1.x adapter dependency
+  range.
+
 ## 0.1.0 - 2026-09-07
 
 - Initial public release candidate.
