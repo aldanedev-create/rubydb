@@ -37,7 +37,7 @@ module RubyDB
         }
         @lock = Mutex.new
         @flush_thread = nil
-        
+
         create_log_directory
         open_log_file
         start_flush_thread
@@ -117,17 +117,16 @@ module RubyDB
       def recover
         @lock.synchronize do
           @stats[:recovery_runs] += 1
-          
+
           entries = []
           redo_entries = []
-          undo_entries = []
-          
+
           # Read all entries from log
           File.open(@log_path, "r") do |file|
             file.each_line do |line|
               entry = JSON.parse(line, symbolize_names: true)
               entries << entry
-              
+
               case entry[:type]
               when ENTRY_PREPARE, ENTRY_COMMIT
                 redo_entries << entry
@@ -136,10 +135,10 @@ module RubyDB
               end
             end
           end
-          
+
           # Find last checkpoint
           checkpoint = entries.reverse.find { |e| e[:type] == ENTRY_CHECKPOINT }
-          
+
           # REDO: Apply committed transactions
           committed = Set.new
           entries.each do |entry|
@@ -147,38 +146,38 @@ module RubyDB
               committed.add(entry[:transaction_id])
             end
           end
-          
+
           redo_entries.each do |entry|
             if committed.include?(entry[:transaction_id])
               # REDO the changes
             end
           end
-          
+
           # UNDO: Rollback uncommitted transactions
           entries.each do |entry|
             if entry[:type] == ENTRY_START && !committed.include?(entry[:transaction_id])
               # UNDO the changes
             end
           end
-          
+
           @stats[:entries_read] += entries.size
-          
-          { entries: entries, committed: committed, checkpoint: checkpoint }
+
+          {entries: entries, committed: committed, checkpoint: checkpoint}
         end
       end
 
       def flush
         @lock.synchronize do
           flush_buffer
-          @log_file.flush if @log_file
+          @log_file&.flush
         end
       end
 
       def close
         @lock.synchronize do
           flush
-          @log_file.close if @log_file
-          @flush_thread.kill if @flush_thread
+          @log_file&.close
+          @flush_thread&.kill
         end
       end
 
@@ -210,10 +209,10 @@ module RubyDB
         @lock.synchronize do
           @current_lsn += 1
           entry[:lsn] = @current_lsn
-          
+
           @buffer << entry
           @stats[:entries_written] += 1
-          
+
           if @buffer.size >= @buffer_size
             flush_buffer
           end
@@ -222,7 +221,7 @@ module RubyDB
 
       def flush_buffer
         return if @buffer.empty?
-        
+
         @lock.synchronize do
           @buffer.each do |entry|
             @log_file.puts(JSON.generate(entry))
@@ -246,7 +245,7 @@ module RubyDB
             sleep(5)  # Flush every 5 seconds
             begin
               flush
-            rescue => e
+            rescue
               # Log error but continue
             end
           end

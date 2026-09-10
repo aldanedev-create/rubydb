@@ -5,7 +5,7 @@ module RubyDB
     # Lock - Represents a lock on a resource
     class Lock
       attr_reader :key, :type, :holders, :waiters, :created_at
-      
+
       # Lock types
       SHARED = :shared
       EXCLUSIVE = :exclusive
@@ -18,7 +18,7 @@ module RubyDB
         @holders = {}
         @waiters = {}
         @created_at = Time.now
-        
+
         add_holder(holder, type) if holder
       end
 

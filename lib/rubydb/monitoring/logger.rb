@@ -110,8 +110,7 @@ module RubyDB
             @stats[:logs_written] += @buffer.size
             @buffer.clear
             @stats[:buffer_size] = 0
-
-          rescue => e
+          rescue
             @stats[:logs_failed] += 1
           end
         end
@@ -119,16 +118,12 @@ module RubyDB
 
       def close
         flush
-        @file.close if @file
+        @file&.close
       end
 
-      def level=(level)
-        @level = level
-      end
+      attr_writer :level
 
-      def level
-        @level
-      end
+      attr_reader :level
 
       def stats
         @lock.synchronize do
@@ -151,7 +146,7 @@ module RubyDB
       end
 
       def rotate_log
-        @file.close if @file
+        @file&.close
 
         timestamp = Time.now.strftime("%Y%m%d_%H%M%S")
         archive_path = "#{@log_path}.#{timestamp}"
@@ -182,7 +177,7 @@ module RubyDB
             sleep(1)
             begin
               flush
-            rescue => e
+            rescue
               # Continue running
             end
           end

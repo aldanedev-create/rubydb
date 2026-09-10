@@ -8,19 +8,19 @@ RSpec.describe RubyDB::Replication::Replica do
     Dir.mktmpdir do |dir|
       engine_class = Struct.new(:path, :applied) do
         def apply_transaction(data)
-          self.applied << data
+          applied << data
           true
         end
       end
       engine = engine_class.new(File.join(dir, "replica.rdb"), [])
       replica = described_class.new(engine, state_path: File.join(dir, "replica-state.json"))
-      frame = JSON.generate(type: "replication_data", data: [{ lsn: 9, data: { operation: "insert" } }]) + "\n"
+      frame = JSON.generate(type: "replication_data", data: [{lsn: 9, data: {operation: "insert"}}]) + "\n"
 
       replica.send(:process_replication_data, frame[0...12])
       expect(engine.applied).to be_empty
 
       replica.send(:process_replication_data, frame[12..])
-      expect(engine.applied).to eq([{ operation: "insert" }])
+      expect(engine.applied).to eq([{operation: "insert"}])
       expect(replica.replication_status).to include(last_received_lsn: 9, last_replayed_lsn: 9)
     end
   end
@@ -37,14 +37,14 @@ RSpec.describe RubyDB::Replication::Replica do
     Dir.mktmpdir do |dir|
       engine_class = Struct.new(:path, :applied) do
         def apply_transaction(data)
-          self.applied << data
+          applied << data
           true
         end
       end
       engine = engine_class.new(File.join(dir, "replica.rdb"), [])
       state_path = File.join(dir, "replica-state.json")
       replica = described_class.new(engine, state_path: state_path)
-      replica.replay_transaction({ operation: "insert" }, 17)
+      replica.replay_transaction({operation: "insert"}, 17)
 
       restarted = described_class.new(engine, state_path: state_path)
       expect(restarted.replication_status[:last_replayed_lsn]).to eq(17)

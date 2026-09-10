@@ -65,7 +65,7 @@ RSpec.describe "replication partition recovery" do
       primary.stop
       wait_until do
         [RubyDB::Replication::Replica::STATE_DISCONNECTED,
-         RubyDB::Replication::Replica::STATE_FAILED].include?(replica.replication_status[:state])
+          RubyDB::Replication::Replica::STATE_FAILED].include?(replica.replication_status[:state])
       end
 
       primary.start

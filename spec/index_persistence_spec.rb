@@ -48,7 +48,7 @@ RSpec.describe "index persistence and maintenance" do
       expect(index.search("b@example.com")).to eq(2)
       expect(engine.select_rows(:users, columns, email: "b@example.com").map { |row| row[:_row_id] }).to eq([2])
       expect(engine.stats[:index_scans]).to eq(1)
-      engine.update_row(:users, 2, { email: "c@example.com" })
+      engine.update_row(:users, 2, {email: "c@example.com"})
       expect(index.search("b@example.com")).to be_nil
       expect(index.search("c@example.com")).to eq(2)
       engine.delete_row(:users, 1)
@@ -76,7 +76,7 @@ RSpec.describe "index persistence and maintenance" do
       [[1, 10], [2, 20], [3, 30]].each { |row| engine.insert_row(:users, columns, row) }
       engine.index_manager.create_index(:users_age_idx, :users, [:age], type: :btree)
 
-      rows = engine.select_rows(:users, columns, age: { operator: :gte, value: 20 })
+      rows = engine.select_rows(:users, columns, age: {operator: :gte, value: 20})
       expect(rows.map { |row| row[:_row_id] }).to eq([2, 3])
       expect(engine.stats[:index_scans]).to eq(1)
       engine.close

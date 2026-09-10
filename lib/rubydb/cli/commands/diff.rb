@@ -16,9 +16,9 @@ module RubyDB
             opts.on("--table TABLE", "Only show differences for a table") do |table|
               options[:table] = table
             end
-          opts.on("--summary", "Show summary only") do
-            options[:summary] = true
-          end
+            opts.on("--summary", "Show summary only") do
+              options[:summary] = true
+            end
             opts.on("--database PATH", "Database path") { |path| options[:database] = path }
             opts.on("--branch-dir DIR", "Branch metadata directory") { |path| options[:branch_dir] = path }
             opts.on("-h", "--help", "Show help") do
@@ -40,7 +40,7 @@ module RubyDB
           branch_b = manager.current_branch_name || "main" if branch_b == "current"
           result = RubyDB::Branching::Diff.new(database.engine, manager).diff(
             branch_a, branch_b, type: RubyDB::Branching::Diff::DIFF_ALL,
-            tables: (options[:table] && [options[:table]])
+            tables: options[:table] && [options[:table]]
           )
           raise result[:error] unless result[:success]
 
@@ -51,8 +51,8 @@ module RubyDB
             changes: changes
           }
 
+          @output.puts "Differences between #{branch_a} and #{branch_b}:"
           if options[:summary]
-            @output.puts "Differences between #{branch_a} and #{branch_b}:"
             @output.puts "  Added tables: #{diff_data[:added_tables].size}"
             @output.puts "  Removed tables: #{diff_data[:removed_tables].size}"
             @output.puts "  Changed tables: #{diff_data[:changed_tables].size}"
@@ -60,7 +60,6 @@ module RubyDB
             @output.puts "  Removed columns: #{diff_data[:removed_columns].size}"
             @output.puts "  Changed columns: #{diff_data[:changed_columns].size}"
           else
-            @output.puts "Differences between #{branch_a} and #{branch_b}:"
             @output.puts "  Added changes: #{changes[:added].size}"
             @output.puts "  Removed changes: #{changes[:removed].size}"
             changes.each do |kind, entries|

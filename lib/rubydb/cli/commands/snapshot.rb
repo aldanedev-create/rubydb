@@ -64,7 +64,7 @@ module RubyDB
             return 0
           end
 
-          name = options[:name] || "snapshot_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+          name = options[:name] || "snapshot_#{Time.now.strftime("%Y%m%d_%H%M%S")}"
 
           result = snapshots.create_snapshot(name)
           raise result[:error] unless result[:success]

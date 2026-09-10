@@ -24,10 +24,10 @@ def terminate_children(children)
       Process.kill("TERM", pid)
     rescue Errno::ESRCH, Errno::ECHILD
       next
-    rescue StandardError
+    rescue
       begin
         Process.kill("KILL", pid)
-      rescue StandardError
+      rescue
         nil
       end
     end
@@ -49,8 +49,8 @@ Dir.mktmpdir("rubydb-multiprocess-workload") do |dir|
   port = probe.addr[1]
   probe.close
   server = RubyDB::Server::Server.new(host: "127.0.0.1", port: port, data_dir: dir,
-                                      pid_file: File.join(dir, "rubydb.pid"),
-                                      min_workers: 1, max_workers: [processes * 2, 4].max)
+    pid_file: File.join(dir, "rubydb.pid"),
+    min_workers: 1, max_workers: [processes * 2, 4].max)
   server.engine.create_table(:workload_rows, [RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false)])
   database_path = server.engine.path
   server.start
@@ -66,8 +66,8 @@ Dir.mktmpdir("rubydb-multiprocess-workload") do |dir|
       "RUBYDB_SERVER_WORKLOAD_OPERATIONS" => operations.to_s
     }
     pid = Process.spawn(environment, RbConfig.ruby, "-I", lib_path, worker,
-                        out: output_files[process_number].path,
-                        err: output_files[process_number].path)
+      out: output_files[process_number].path,
+      err: output_files[process_number].path)
     [pid, output_files[process_number]]
   end
 
@@ -87,7 +87,15 @@ Dir.mktmpdir("rubydb-multiprocess-workload") do |dir|
     file.rewind
     output = file.read
     raise "worker #{pid} failed: #{output}" unless status.success?
-    JSON.parse(output.lines.last, symbolize_names: true)
+    json_line = output.lines.reverse_each.find do |line|
+      JSON.parse(line)
+      true
+    rescue JSON::ParserError
+      false
+    end
+    raise "worker #{pid} did not emit JSON metrics: #{output}" unless json_line
+
+    JSON.parse(json_line, symbolize_names: true)
   end
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
   server.stop
@@ -96,8 +104,8 @@ Dir.mktmpdir("rubydb-multiprocess-workload") do |dir|
   expected = processes * operations
   raise "durability check failed: expected #{expected}, got #{durable_rows}" unless durable_rows == expected
   puts JSON.generate(processes: processes, operations_per_process: operations,
-                     durable_rows: durable_rows, elapsed_seconds: elapsed.round(3),
-                     workers: results)
+    durable_rows: durable_rows, elapsed_seconds: elapsed.round(3),
+    workers: results)
 ensure
   terminate_children(children || [])
   output_files&.each(&:close!)

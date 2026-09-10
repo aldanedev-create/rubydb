@@ -31,9 +31,9 @@ module RubyDB
       def create_cow(branch_name, base_path)
         @lock.synchronize do
           cow_path = branch_path(branch_name)
-          return { success: false, error: "Invalid branch name" } unless cow_path
+          return {success: false, error: "Invalid branch name"} unless cow_path
           base_root = File.expand_path(base_path)
-          return { success: false, error: "Base path does not exist" } unless Dir.exist?(base_root)
+          return {success: false, error: "Base path does not exist"} unless Dir.exist?(base_root)
           FileUtils.mkdir_p(cow_path)
 
           # Create COW for each file
@@ -64,7 +64,7 @@ module RubyDB
 
           save_cow_data
 
-          { success: true, cow_path: cow_path, file_count: files.size }
+          {success: true, cow_path: cow_path, file_count: files.size}
         end
       end
 
@@ -94,21 +94,21 @@ module RubyDB
         @lock.synchronize do
           cow_path = branch_path(branch_name)
           cow_file = cow_path && nested_path(cow_path, file_path)
-          return { success: false, error: "Invalid branch name or file path" } unless cow_file
+          return {success: false, error: "Invalid branch name or file path"} unless cow_file
           FileUtils.mkdir_p(File.dirname(cow_file))
 
           File.write(cow_file, content)
           @stats[:cow_files_updated] += 1
 
           # Update branch data
-          @branch_data[branch_name] ||= { files: [] }
+          @branch_data[branch_name] ||= {files: []}
           unless @branch_data[branch_name][:files].include?(file_path)
             @branch_data[branch_name][:files] << file_path
           end
 
           save_cow_data
 
-          { success: true, path: cow_file }
+          {success: true, path: cow_file}
         end
       end
 
@@ -116,7 +116,7 @@ module RubyDB
         @lock.synchronize do
           cow_path = branch_path(branch_name)
           cow_file = cow_path && nested_path(cow_path, file_path)
-          return { success: false, error: "Invalid branch name or file path" } unless cow_file
+          return {success: false, error: "Invalid branch name or file path"} unless cow_file
 
           if File.exist?(cow_file)
             File.delete(cow_file)
@@ -128,10 +128,10 @@ module RubyDB
             end
 
             save_cow_data
-            return { success: true }
+            return {success: true}
           end
 
-          { success: false, error: "File not found in COW" }
+          {success: false, error: "File not found in COW"}
         end
       end
 
@@ -150,7 +150,7 @@ module RubyDB
       def delete_branch_cow(branch_name)
         @lock.synchronize do
           cow_path = branch_path(branch_name)
-          return { success: false, error: "Invalid branch name" } unless cow_path
+          return {success: false, error: "Invalid branch name"} unless cow_path
           if Dir.exist?(cow_path)
             size = calculate_dir_size(cow_path)
             FileUtils.rm_rf(cow_path)
@@ -161,39 +161,39 @@ module RubyDB
           @branch_data.delete(branch_name)
           save_cow_data
 
-          { success: true }
+          {success: true}
         end
       end
 
       def snapshot(branch_name, snapshot_name)
         @lock.synchronize do
           cow_path = branch_path(branch_name)
-          return { success: false, error: "Invalid branch name" } unless cow_path
-          return { success: false, error: "Branch COW not found" } unless Dir.exist?(cow_path)
+          return {success: false, error: "Invalid branch name"} unless cow_path
+          return {success: false, error: "Branch COW not found"} unless Dir.exist?(cow_path)
 
           snapshot_path = snapshot_path(snapshot_name)
-          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
+          return {success: false, error: "Invalid snapshot name"} unless snapshot_path
           FileUtils.mkdir_p(File.dirname(snapshot_path))
 
           # Copy all COW files
           FileUtils.cp_r(cow_path, snapshot_path)
 
-          { success: true, snapshot_path: snapshot_path }
+          {success: true, snapshot_path: snapshot_path}
         end
       end
 
       def restore_snapshot(snapshot_name, branch_name)
         @lock.synchronize do
           snapshot_path = snapshot_path(snapshot_name)
-          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
-          return { success: false, error: "Snapshot not found" } unless Dir.exist?(snapshot_path)
+          return {success: false, error: "Invalid snapshot name"} unless snapshot_path
+          return {success: false, error: "Snapshot not found"} unless Dir.exist?(snapshot_path)
 
           cow_path = branch_path(branch_name)
-          return { success: false, error: "Invalid branch name" } unless cow_path
+          return {success: false, error: "Invalid branch name"} unless cow_path
           FileUtils.rm_rf(cow_path) if Dir.exist?(cow_path)
           FileUtils.cp_r(snapshot_path, cow_path)
 
-          { success: true }
+          {success: true}
         end
       end
 

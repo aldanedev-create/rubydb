@@ -54,16 +54,22 @@ module RubyDB
             write_timeout: server_config[:write_timeout],
             idle_timeout: server_config[:idle_timeout],
             max_request_size: server_config[:max_request_size],
-            authentication: (options[:config] || options[:env].to_s == "production") ? configured[:auth] : { method: "none" },
-            ssl: configured[:ssl] || { enabled: false }
+            authentication: (options[:config] || options[:env].to_s == "production") ? configured[:auth] : {method: "none"},
+            ssl: configured[:ssl] || {enabled: false}
           }.compact
           server = RubyDB::Server::Server.new(server_options)
           server.start
           @output.success("RubyDB server started on #{server.config[:host]}:#{server.config[:port]}")
           return 0 if options[:daemon]
 
-          trap("INT") { server.stop; exit(0) }
-          trap("TERM") { server.stop; exit(0) }
+          trap("INT") {
+            server.stop
+            exit(0)
+          }
+          trap("TERM") {
+            server.stop
+            exit(0)
+          }
           sleep
         end
 
@@ -72,7 +78,7 @@ module RubyDB
         def load_runtime_config(options)
           RubyDB::Configuration::Config.environment = options[:env] if options[:env]
           config = RubyDB::Configuration::Config.load(options[:config])
-          raise "Invalid configuration: #{RubyDB::Configuration::Config.errors.join('; ')}" unless config && RubyDB::Configuration::Config.valid?
+          raise "Invalid configuration: #{RubyDB::Configuration::Config.errors.join("; ")}" unless config && RubyDB::Configuration::Config.valid?
 
           config
         end

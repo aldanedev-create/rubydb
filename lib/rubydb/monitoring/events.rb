@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "time"
-require "thread"
 
 module RubyDB
   module Monitoring
@@ -100,11 +99,9 @@ module RubyDB
           @stats[:events_processed] += 1
           listeners = @listeners[event[:type]] || []
           listeners.each do |listener|
-            begin
-              listener.call(event)
-            rescue => e
-              @stats[:errors] += 1
-            end
+            listener.call(event)
+          rescue
+            @stats[:errors] += 1
           end
         end
       end
@@ -145,13 +142,11 @@ module RubyDB
 
       def start_processor
         @processor_thread = Thread.new do
-          while true
-            begin
-              event = @queue.pop
-              process_event(event)
-            rescue => e
-              @stats[:errors] += 1
-            end
+          loop do
+            event = @queue.pop
+            process_event(event)
+          rescue
+            @stats[:errors] += 1
           end
         end
       end

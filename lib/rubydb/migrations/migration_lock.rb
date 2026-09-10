@@ -39,7 +39,7 @@ module RubyDB
 
           # Check if lock exists
           if lock_exists?
-            owner, acquired_at = get_lock_info
+            _, acquired_at = get_lock_info
 
             # Check if lock is stale
             if Time.now - acquired_at > @lock_timeout

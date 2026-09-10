@@ -23,7 +23,7 @@ module RubyDB
 
       def deserialize(bytes)
         return nil if bytes.nil? || bytes.empty?
-        hex = bytes.unpack("H*").first
+        hex = bytes.unpack1("H*")
         # Add hyphens back
         "#{hex[0...8]}-#{hex[8...12]}-#{hex[12...16]}-#{hex[16...20]}-#{hex[20...32]}"
       end

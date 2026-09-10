@@ -111,18 +111,16 @@ module RubyDB
       end
 
       def recover
-        begin
-          # Attempt recovery
-          if @engine.respond_to?(:recover)
-            @engine.recover
-            @stats[:recovered] += 1
-          else
-            @stats[:failed_recoveries] += 1
-          end
-        rescue => e
+        # Attempt recovery
+        if @engine.respond_to?(:recover)
+          @engine.recover
+          @stats[:recovered] += 1
+        else
           @stats[:failed_recoveries] += 1
-          raise ChaosError, "Recovery failed: #{e.message}"
         end
+      rescue => e
+        @stats[:failed_recoveries] += 1
+        raise ChaosError, "Recovery failed: #{e.message}"
       end
     end
   end

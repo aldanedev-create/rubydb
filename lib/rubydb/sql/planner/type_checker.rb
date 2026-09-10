@@ -201,8 +201,6 @@ module RubyDB
           when AST::Star
             # Star has no type
             nil
-          else
-            nil
           end
         end
 
@@ -219,7 +217,7 @@ module RubyDB
                Token::Type::IN
             # Comparison operators return boolean
             expr.type = :boolean
-            return :boolean
+            :boolean
 
           when Token::Type::AND, Token::Type::OR
             # Logical operators require boolean operands
@@ -230,7 +228,7 @@ module RubyDB
               @warnings << "AND requires boolean right operand, got #{right_type}"
             end
             expr.type = :boolean
-            return :boolean
+            :boolean
 
           when Token::Type::PLUS, Token::Type::MINUS,
                Token::Type::STAR, Token::Type::SLASH,
@@ -247,11 +245,11 @@ module RubyDB
             # Result type is numeric
             result_type = left_type || right_type || :integer
             expr.type = result_type
-            return result_type
+            result_type
 
           else
             expr.type = nil
-            return nil
+            nil
           end
         end
 
@@ -264,7 +262,7 @@ module RubyDB
               @warnings << "NOT requires boolean operand, got #{operand_type}"
             end
             expr.type = :boolean
-            return :boolean
+            :boolean
 
           when Token::Type::PLUS, Token::Type::MINUS, Token::Type::TILDE
             numeric_types = [:integer, :bigint, :smallint, :float, :decimal]
@@ -272,11 +270,11 @@ module RubyDB
               @warnings << "Unary #{expr.operator} requires numeric operand, got #{operand_type}"
             end
             expr.type = operand_type || :integer
-            return expr.type
+            expr.type
 
           else
             expr.type = nil
-            return nil
+            nil
           end
         end
 
@@ -320,9 +318,9 @@ module RubyDB
         end
 
         def type_check_between(expr)
-          expr_type = type_check_expression(expr.expression)
-          low_type = type_check_expression(expr.low)
-          high_type = type_check_expression(expr.high)
+          type_check_expression(expr.expression)
+          type_check_expression(expr.low)
+          type_check_expression(expr.high)
 
           # BETWEEN returns boolean
           expr.type = :boolean
@@ -330,7 +328,7 @@ module RubyDB
         end
 
         def type_check_in(expr)
-          expr_type = type_check_expression(expr.expression)
+          type_check_expression(expr.expression)
 
           # Check all values
           expr.values.each do |value|
@@ -421,8 +419,6 @@ module RubyDB
             :integer
           when "JSON_ARRAY", "JSON_OBJECT", "JSON_EXTRACT"
             :json
-          else
-            nil
           end
         end
       end

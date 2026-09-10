@@ -49,14 +49,14 @@ module RubyDB
           inserted_rows = []
           rows_to_insert.each do |row_data|
             row_id = @engine.insert_row(table_name, table_columns, row_data)
-            
+
             # Update indexes
             if @engine.respond_to?(:index_manager)
               row = row_data.merge("_row_id" => row_id)
               @engine.index_manager.insert_row(table_name, row)
             end
 
-            inserted_rows << { row_id: row_id, row: row_data }
+            inserted_rows << {row_id: row_id, row: row_data}
           end
 
           elapsed_ms = ((Time.now - start_time) * 1000).round(2)
@@ -90,13 +90,13 @@ module RubyDB
           inserted_rows = []
           prepared_rows.each do |row_data|
             row_id = @engine.insert_row(table_name, table_columns, row_data)
-            
+
             if @engine.respond_to?(:index_manager)
               row = row_data.merge("_row_id" => row_id)
               @engine.index_manager.insert_row(table_name, row)
             end
 
-            inserted_rows << { row_id: row_id, row: row_data }
+            inserted_rows << {row_id: row_id, row: row_data}
           end
 
           elapsed_ms = ((Time.now - start_time) * 1000).round(2)
@@ -138,10 +138,10 @@ module RubyDB
           columns.each_with_index do |col, idx|
             row_data[col.to_s] = values[idx] if idx < values.size
           end
-        else
-          # Single value - use first column
-          row_data[columns.first.to_s] = values if columns.any?
+        elsif columns.any?
+          row_data[columns.first.to_s] = values
         end
+        # Single value - use first column
 
         # Add default values for missing columns
         table_columns.each do |col|
@@ -209,9 +209,7 @@ module RubyDB
         @engine.update_row(table_name, row_id, new_row)
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

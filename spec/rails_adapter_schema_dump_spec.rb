@@ -8,12 +8,12 @@ RSpec.describe RubyDB::Rails::Adapter do
     adapter.define_singleton_method(:tables) { ["users"] }
     adapter.define_singleton_method(:columns) do |_table|
       [
-        { name: "id", type: :integer, primary_key: true, null: false, default: nil },
-        { name: "active", type: :boolean, primary_key: false, null: false, default: false }
+        {name: "id", type: :integer, primary_key: true, null: false, default: nil},
+        {name: "active", type: :boolean, primary_key: false, null: false, default: false}
       ]
     end
     adapter.define_singleton_method(:quote) do |value|
-      value == false ? "FALSE" : "'#{value}'"
+      (value == false) ? "FALSE" : "'#{value}'"
     end
 
     dump = adapter.dump_schema

@@ -132,7 +132,7 @@ module RubyDB
 
           # Decrypt
           iv = data[0, 16]
-          encrypted = data[16..-1]
+          encrypted = data[16..]
 
           cipher = OpenSSL::Cipher.new("aes-256-cbc")
           cipher.decrypt
@@ -166,29 +166,25 @@ module RubyDB
 
       def load_credentials
         @lock.synchronize do
-          begin
-            if File.exist?(@storage_path)
-              data = File.read(@storage_path)
-              @credentials = JSON.parse(data, symbolize_names: true)
-              @loaded = true
-              @stats[:loaded] += 1
-            end
-          rescue => e
-            @stats[:errors] += 1
-            @credentials = {}
+          if File.exist?(@storage_path)
+            data = File.read(@storage_path)
+            @credentials = JSON.parse(data, symbolize_names: true)
+            @loaded = true
+            @stats[:loaded] += 1
           end
+        rescue
+          @stats[:errors] += 1
+          @credentials = {}
         end
       end
 
       def save_credentials
         @lock.synchronize do
-          begin
-            data = JSON.generate(@credentials)
-            File.write(@storage_path, data)
-            @stats[:saved] += 1
-          rescue => e
-            @stats[:errors] += 1
-          end
+          data = JSON.generate(@credentials)
+          File.write(@storage_path, data)
+          @stats[:saved] += 1
+        rescue
+          @stats[:errors] += 1
         end
       end
     end

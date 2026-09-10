@@ -13,17 +13,17 @@ module RubyDB
       def format_status(status_data)
         @output.heading("RubyDB Status", 1)
 
-        @output.puts "Database: #{status_data[:database] || 'N/A'}"
-        @output.puts "Mode: #{status_data[:mode] || 'N/A'}"
-        @output.puts "Status: #{status_data[:status] || 'N/A'}"
+        @output.puts "Database: #{status_data[:database] || "N/A"}"
+        @output.puts "Mode: #{status_data[:mode] || "N/A"}"
+        @output.puts "Status: #{status_data[:status] || "N/A"}"
         @output.puts "Version: #{status_data[:version] || RubyDB::VERSION}"
-        @output.puts "PID: #{status_data[:pid] || 'N/A'}"
+        @output.puts "PID: #{status_data[:pid] || "N/A"}"
         @output.puts "Uptime: #{format_uptime(status_data[:uptime])}"
         @output.puts "Connections: #{status_data[:connections] || 0}"
         @output.puts "Tables: #{status_data[:tables] || 0}"
         @output.puts "Storage: #{format_size(status_data[:storage_size])}"
         @output.puts "Memory: #{format_size(status_data[:memory_usage])}"
-        @output.puts "WAL: #{status_data[:wal_enabled] ? 'Enabled' : 'Disabled'}"
+        @output.puts "WAL: #{status_data[:wal_enabled] ? "Enabled" : "Disabled"}"
 
         if status_data[:replication]
           @output.puts "\nReplication:"
@@ -155,8 +155,8 @@ module RubyDB
         end
 
         if diff_data[:added_tables].empty? && diff_data[:removed_tables].empty? &&
-           diff_data[:changed_tables].empty? && diff_data[:added_columns].empty? &&
-           diff_data[:removed_columns].empty? && diff_data[:changed_columns].empty?
+            diff_data[:changed_tables].empty? && diff_data[:added_columns].empty? &&
+            diff_data[:removed_columns].empty? && diff_data[:changed_columns].empty?
           @output.puts "No differences found", :green
         end
       end
@@ -176,13 +176,13 @@ module RubyDB
             end
           end
 
-          if check[:errors] && check[:errors].any?
+          if check[:errors]&.any?
             @output.puts "  Errors:", :red
             check[:errors].each { |e| @output.puts "    - #{e}", :red }
           end
         end
 
-        @output.puts "\nOverall: #{results[:passed] ? 'Healthy' : 'Issues Found'}", results[:passed] ? :green : :red
+        @output.puts "\nOverall: #{results[:passed] ? "Healthy" : "Issues Found"}", results[:passed] ? :green : :red
         @output.puts "Checks Passed: #{results[:passed_count]}/#{results[:total_count]}"
       end
 
@@ -192,7 +192,7 @@ module RubyDB
         return "0 B" if bytes.to_i == 0
         units = ["B", "KB", "MB", "GB", "TB"]
         exp = (Math.log(bytes) / Math.log(1024)).floor
-        size = bytes / (1024.0 ** exp)
+        size = bytes / (1024.0**exp)
         "#{size.round(2)} #{units[exp]}"
       end
 

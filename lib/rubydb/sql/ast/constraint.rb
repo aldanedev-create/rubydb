@@ -32,8 +32,10 @@ module RubyDB
           super(name, location: location)
           @columns = Array(columns)
         end
+
         def clone = self.class.new(@name, @columns.dup, location: @location)
-        def to_sql = "CONSTRAINT #{@name} PRIMARY KEY (#{@columns.join(', ')})"
+
+        def to_sql = "CONSTRAINT #{@name} PRIMARY KEY (#{@columns.join(", ")})"
       end
 
       class ForeignKeyConstraint < ConstraintDefinition
@@ -46,11 +48,13 @@ module RubyDB
           @on_delete = on_delete
           @on_update = on_update
         end
+
         def clone = self.class.new(@name, @columns.dup, @reference_table, @reference_columns.dup, on_delete: @on_delete, on_update: @on_update, location: @location)
+
         def to_sql
-          sql = "CONSTRAINT #{@name} FOREIGN KEY (#{@columns.join(', ')}) REFERENCES #{@reference_table} (#{@reference_columns.join(', ')})"
-          sql << " ON DELETE #{@on_delete.to_s.upcase.tr('_', ' ')}" if @on_delete
-          sql << " ON UPDATE #{@on_update.to_s.upcase.tr('_', ' ')}" if @on_update
+          sql = "CONSTRAINT #{@name} FOREIGN KEY (#{@columns.join(", ")}) REFERENCES #{@reference_table} (#{@reference_columns.join(", ")})"
+          sql << " ON DELETE #{@on_delete.to_s.upcase.tr("_", " ")}" if @on_delete
+          sql << " ON UPDATE #{@on_update.to_s.upcase.tr("_", " ")}" if @on_update
           sql
         end
       end
@@ -61,8 +65,10 @@ module RubyDB
           super(name, location: location)
           @columns = Array(columns)
         end
+
         def clone = self.class.new(@name, @columns.dup, location: @location)
-        def to_sql = "CONSTRAINT #{@name} UNIQUE (#{@columns.join(', ')})"
+
+        def to_sql = "CONSTRAINT #{@name} UNIQUE (#{@columns.join(", ")})"
       end
 
       class CheckConstraint < ConstraintDefinition
@@ -71,11 +77,14 @@ module RubyDB
           super(name, location: location)
           @condition = condition
         end
+
         def accept(visitor)
           super
           @condition.accept(visitor) if @condition.respond_to?(:accept)
         end
+
         def clone = self.class.new(@name, @condition.clone, location: @location)
+
         def to_sql = "CONSTRAINT #{@name} CHECK (#{@condition.to_sql})"
       end
     end

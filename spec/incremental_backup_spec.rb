@@ -10,7 +10,7 @@ RSpec.describe RubyDB::Backup::Incremental do
       FileUtils.mkdir_p(base_dir)
       File.write(File.join(base_dir, "manifest.json"), JSON.generate(lsn: 0))
       wal = Object.new
-      record = RubyDB::WAL::Record.new(:insert, { table_name: "users", values: { "id" => 1 } })
+      record = RubyDB::WAL::Record.new(:insert, {table_name: "users", values: {"id" => 1}})
       record.instance_variable_set(:@lsn, RubyDB::WAL::LSN.new(0, 10))
       allow(wal).to receive(:read_all).and_return([record])
       engine = Struct.new(:wal).new(wal)

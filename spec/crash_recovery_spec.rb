@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-require 'spec_helper'
-require 'tmpdir'
-require 'fileutils'
-require 'rbconfig'
+require "spec_helper"
+require "tmpdir"
+require "fileutils"
+require "rbconfig"
 
 RSpec.describe "RubyDB crash recovery" do
   let(:temp_dir) { Dir.mktmpdir }
-  let(:db_path) { File.join(temp_dir, 'crash_test.rdb') }
+  let(:db_path) { File.join(temp_dir, "crash_test.rdb") }
 
   after(:each) do
     FileUtils.remove_entry(temp_dir) if Dir.exist?(temp_dir)
@@ -21,7 +21,7 @@ RSpec.describe "RubyDB crash recovery" do
 
       engine1 = RubyDB::Storage::Engine.new(db_path)
       engine1.create_table(:users, [c1, c2])
-      row_id = engine1.insert_row(:users, [c1, c2], [1, 'alice'])
+      engine1.insert_row(:users, [c1, c2], [1, "alice"])
       engine1.close
 
       # Session 2: Reopen and verify row was persisted
@@ -32,7 +32,7 @@ RSpec.describe "RubyDB crash recovery" do
       expect(tables).to include(:users)
       expect(rows).to have_attributes(length: 1)
       expect(rows.first[:id]).to eq(1)
-      expect(rows.first[:name]).to eq('alice')
+      expect(rows.first[:name]).to eq("alice")
 
       engine2.close
     end
@@ -49,7 +49,7 @@ RSpec.describe "RubyDB crash recovery" do
       engine.create_table(:users, [c1, c2])
       expect(engine.stats[:wal_writes]).to eq(0)  # CREATE_TABLE not logged yet
 
-      engine.insert_row(:users, [c1, c2], [1, 'alice'])
+      engine.insert_row(:users, [c1, c2], [1, "alice"])
       expect(engine.stats[:wal_writes]).to be > 0
 
       engine.close
@@ -61,7 +61,7 @@ RSpec.describe "RubyDB crash recovery" do
 
       engine = RubyDB::Storage::Engine.new(db_path)
       engine.create_table(:users, [c1, c2])
-      engine.insert_row(:users, [c1, c2], [1, 'alice'])
+      engine.insert_row(:users, [c1, c2], [1, "alice"])
 
       # Should create checkpoint on close
       expect(engine.close).to be_truthy
@@ -78,7 +78,7 @@ RSpec.describe "RubyDB crash recovery" do
       c2 = RubyDB::Catalog::Column.new(:name, :text, null: false)
 
       # Create crash script that will be executed in a subprocess
-      crash_script = File.join(temp_dir, 'crash_insert.rb')
+      crash_script = File.join(temp_dir, "crash_insert.rb")
       File.write(crash_script, <<~RUBY)
         require 'rubydb'
         
@@ -103,8 +103,8 @@ RSpec.describe "RubyDB crash recovery" do
       RUBY
 
       # Run the crash script in a subprocess
-      ruby_lib = File.expand_path('../lib', __dir__)
-      pid = spawn(RbConfig.ruby, '-I', ruby_lib, crash_script, chdir: temp_dir)
+      ruby_lib = File.expand_path("../lib", __dir__)
+      pid = spawn(RbConfig.ruby, "-I", ruby_lib, crash_script, chdir: temp_dir)
       Process.wait(pid)
       crash_exit_code = $?.exitstatus
 
@@ -116,7 +116,7 @@ RSpec.describe "RubyDB crash recovery" do
       engine2 = RubyDB::Storage::Engine.new(db_path)
 
       # Check recovery stats
-      recovery_triggered = engine2.stats[:crash_recoveries].to_i > 0
+      engine2.stats[:crash_recoveries].to_i
 
       # Query tables - should work regardless of whether recovery happened
       tables = engine2.list_tables
@@ -142,7 +142,7 @@ RSpec.describe "RubyDB crash recovery" do
       # Create database without WAL
       engine1 = RubyDB::Storage::Engine.new(db_path, recovery: false)
       engine1.create_table(:users, [c1, c2])
-      engine1.insert_row(:users, [c1, c2], [1, 'alice'])
+      engine1.insert_row(:users, [c1, c2], [1, "alice"])
       engine1.close
 
       # Reopen should not crash if WAL doesn't exist

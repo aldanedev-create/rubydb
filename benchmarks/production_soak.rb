@@ -9,7 +9,6 @@ require "json"
 require "socket"
 require "timeout"
 require "tmpdir"
-require "thread"
 require_relative "../lib/rubydb"
 
 def positive_integer(name, default)
@@ -22,7 +21,7 @@ rescue ArgumentError
 end
 
 def percentile(values, fraction)
-  index = [[(values.length * fraction).ceil - 1, 0].max, values.length - 1].min
+  index = ((values.length * fraction).ceil - 1).clamp(0, values.length - 1)
   values[index].round(3)
 end
 
@@ -77,7 +76,7 @@ Dir.mktmpdir("rubydb-production-soak-") do |directory|
 
         latencies << ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000)
       end
-    rescue StandardError => error
+    rescue => error
       errors << "#{error.class}: #{error.message}"
     ensure
       client&.disconnect
@@ -151,11 +150,33 @@ Dir.mktmpdir("rubydb-production-soak-") do |directory|
     deadlocks_detected: lock_manager.stats[:deadlocks_detected]
   }
 ensure
-  extra_socket&.close rescue nil
-  held_sockets&.each { |socket| socket.close rescue nil }
-  deadline_client&.disconnect rescue nil
-  cancellation_client&.disconnect rescue nil
-  server&.stop rescue nil
+  begin
+    extra_socket&.close
+  rescue
+    nil
+  end
+  held_sockets&.each { |socket|
+    begin
+      socket.close
+    rescue
+      nil
+    end
+  }
+  begin
+    deadline_client&.disconnect
+  rescue
+    nil
+  end
+  begin
+    cancellation_client&.disconnect
+  rescue
+    nil
+  end
+  begin
+    server&.stop
+  rescue
+    nil
+  end
 end
 
 puts JSON.generate(result) if result

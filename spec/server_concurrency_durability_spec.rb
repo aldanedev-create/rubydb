@@ -11,7 +11,7 @@ RSpec.describe "server multi-client durability" do
       port = probe.addr[1]
       probe.close
       server = RubyDB::Server::Server.new(host: "127.0.0.1", port: port, data_dir: dir,
-                                           pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: 4)
+        pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: 4)
       server.engine.create_table("events", [RubyDB::Catalog::Column.new("id", :integer, primary_key: true, null: false)])
       server.start
       clients = 4.times.map { RubyDB::Client::Client.new(host: "127.0.0.1", port: port, timeout: 5, pool_size: 1) }
@@ -19,7 +19,7 @@ RSpec.describe "server multi-client durability" do
       clients.each_with_index.map do |client, worker|
         Thread.new do
           20.times { |offset| client.query("INSERT INTO events (id) VALUES (#{worker * 20 + offset + 1})") }
-        rescue StandardError => error
+        rescue => error
           errors << error
         end
       end.each(&:join)
@@ -31,7 +31,13 @@ RSpec.describe "server multi-client durability" do
       reopened = RubyDB::Storage::Engine.new(File.join(dir, "rubydb.rdb"), auto_cleanup: false)
       expect(reopened.select_rows("events", reopened.table_columns("events")).size).to eq(80)
     ensure
-      clients&.each { |client| client.disconnect rescue nil }
+      clients&.each { |client|
+        begin
+          client.disconnect
+        rescue
+          nil
+        end
+      }
       server&.stop
       reopened&.close if reopened&.open?
     end
@@ -43,7 +49,7 @@ RSpec.describe "server multi-client durability" do
       port = probe.addr[1]
       probe.close
       server = RubyDB::Server::Server.new(host: "127.0.0.1", port: port, data_dir: dir,
-                                           pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: 4)
+        pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: 4)
       server.engine.create_table("events", [RubyDB::Catalog::Column.new("id", :integer, primary_key: true, null: false)])
       server.start
       client_one = RubyDB::Client::Client.new(host: "127.0.0.1", port: port, timeout: 5, pool_size: 1)

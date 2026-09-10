@@ -9,14 +9,14 @@ module RubyDB
       attr_reader :root, :order, :height
 
       def initialize(name, table_name, columns, options = {})
-        super(name, table_name, columns, options)
+        super
         @order = options[:order] || 4
         @height = 0
         @root = nil
         @node_pages = {}
         @next_page = 1000
         @lock = Monitor.new
-        
+
         # Initialize root node
         initialize_root
       end
@@ -28,22 +28,22 @@ module RubyDB
           end
 
           result = @root.insert(key, row_id)
-          
+
           # Handle root split
           if result.is_a?(Array) && result.size == 3
             left, right, split_key = result
-            
+
             # Create new root
             new_root = BTreeNode.new(allocate_page, false, @order, method(:allocate_page))
             new_root.keys = [split_key]
             new_root.children = [left, right]
             left.parent = new_root
             right.parent = new_root
-            
+
             @root = new_root
             @height += 1
           end
-          
+
           @entries_count += 1
           @modified_at = Time.now
           true
@@ -53,9 +53,9 @@ module RubyDB
       def delete(key, row_id)
         @lock.synchronize do
           return false if @root.nil?
-          
+
           result = @root.delete(key)
-          
+
           # Handle root underflow
           if result == :underflow && @root.keys.empty?
             if @root.is_leaf
@@ -67,7 +67,7 @@ module RubyDB
               @height -= 1
             end
           end
-          
+
           @entries_count -= 1 if result
           @modified_at = Time.now
           result
@@ -91,13 +91,13 @@ module RubyDB
       def build(rows)
         @lock.synchronize do
           clear
-          
+
           rows.each do |row|
             key = extract_key(row)
             row_id = row[:_row_id] || row["id"] || row[:id]
             insert(key, row_id)
           end
-          
+
           @is_built = true
           @modified_at = Time.now
           true
@@ -117,7 +117,7 @@ module RubyDB
 
       def validate
         return true if @root.nil?
-        
+
         # Check B-Tree properties
         check_node(@root, nil, nil)
         true
@@ -162,21 +162,21 @@ module RubyDB
         (0...node.keys.size - 1).each do |i|
           raise "B-Tree invariant violated: keys out of order" if node.keys[i] > node.keys[i + 1]
         end
-        
+
         # Check min/max constraints
         if min_key && node.keys.first < min_key
           raise "B-Tree invariant violated: key < min"
         end
-        
+
         if max_key && node.keys.last > max_key
           raise "B-Tree invariant violated: key > max"
         end
-        
+
         # Check children
         unless node.is_leaf
           node.children.each_with_index do |child, i|
-            child_min = i == 0 ? min_key : node.keys[i - 1]
-            child_max = i == node.children.size - 1 ? max_key : node.keys[i]
+            child_min = (i == 0) ? min_key : node.keys[i - 1]
+            child_max = (i == node.children.size - 1) ? max_key : node.keys[i]
             check_node(child, child_min, child_max)
           end
         end

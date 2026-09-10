@@ -29,7 +29,7 @@ module RubyDB
         @version = 1
         @is_compressed = false
         @compression_threshold = 1024  # Compress if data > 1KB
-        
+
         # Validate columns
         raise ArgumentError, "Columns cannot be empty" if @columns.empty?
         raise ArgumentError, "Too many columns (max #{MAX_COLUMNS})" if @columns.size > MAX_COLUMNS
@@ -40,42 +40,41 @@ module RubyDB
 
         # Calculate null bitmap
         calculate_null_bitmap
-        
+
         # Serialize each column value
-        column_data = []
         @column_offsets = []
         @column_lengths = []
         @size = HEADER_SIZE
         total_data = StringIO.new("".b)
-        
+
         @columns.each_with_index do |col, idx|
           value = @values[col.name]
-          
+
           # Check if value is NULL
           is_null = value.nil?
-          
+
           # Serialize the value
           serialized = if is_null
             "".b
           else
             serialize_value(col, value)
           end
-          
+
           # Store offset and length
           @column_offsets[idx] = @size
           @column_lengths[idx] = serialized.bytesize
-          
+
           # Write data
           total_data.write(serialized)
           @size += serialized.bytesize
         end
-        
+
         # Build header
         header_data = build_header
-        
+
         # Combine header and data
         @data = header_data + total_data.string
-        
+
         # Check if compression is needed
         if @data.bytesize > @compression_threshold
           compressed = compress_data(@data)
@@ -85,7 +84,7 @@ module RubyDB
             @is_compressed = true
           end
         end
-        
+
         @dirty = false
         @data
       end
@@ -93,20 +92,20 @@ module RubyDB
       def deserialize(data)
         @data = data
         @is_compressed = false
-        
+
         # Check if data is compressed
         if data.bytesize >= 1
           # Peek at flags
-          flags_byte = data[1].unpack("C").first if data.bytesize > 1
+          flags_byte = data[1].unpack1("C") if data.bytesize > 1
           if flags_byte && (flags_byte & 0x01) != 0
             @data = decompress_data(data)
             @is_compressed = true
           end
         end
-        
+
         parse_header(@data)
         parse_column_data(@data)
-        
+
         @dirty = false
         self
       rescue => e
@@ -167,10 +166,10 @@ module RubyDB
 
       def build_header
         header_data = "".b
-        
+
         # Version (1 byte)
         header_data << [@version].pack("C")
-        
+
         # Flags (1 byte)
         # Bit 0: compressed
         # Bit 1: has nulls
@@ -179,80 +178,80 @@ module RubyDB
         flags |= 0x02 if has_nulls?
         flags |= 0x04 if has_defaults?
         header_data << [flags].pack("C")
-        
+
         # Null bitmap (4 bytes)
         header_data << [@null_bitmap].pack("L")
-        
+
         # Column count (2 bytes)
         header_data << [@columns.size].pack("S")
-        
+
         # Tuple size (4 bytes)
         header_data << [@size].pack("L")
-        
+
         # Column offsets (2 bytes each)
         @column_offsets.each do |offset|
           header_data << [offset].pack("S")
         end
-        
+
         header_data
       end
 
       def parse_header(data)
         offset = 0
-        
+
         # Version
-        @version = data[offset].unpack("C").first
+        @version = data[offset].unpack1("C")
         offset += 1
-        
+
         # Flags
-        @flags = data[offset].unpack("C").first
+        @flags = data[offset].unpack1("C")
         offset += 1
-        
+
         # Null bitmap
-        @null_bitmap = data[offset, 4].unpack("L").first
+        @null_bitmap = data[offset, 4].unpack1("L")
         offset += 4
-        
+
         # Column count
-        @column_count = data[offset, 2].unpack("S").first
+        @column_count = data[offset, 2].unpack1("S")
         offset += 2
-        
+
         # Tuple size
-        @size = data[offset, 4].unpack("L").first
+        @size = data[offset, 4].unpack1("L")
         offset += 4
-        
+
         # Column offsets
         @column_offsets = []
         @column_lengths = []
-        
+
         @column_count.times do
-          @column_offsets << data[offset, 2].unpack("S").first
+          @column_offsets << data[offset, 2].unpack1("S")
           offset += 2
         end
-        
+
         # Calculate column lengths
         @column_count.times do |i|
-          if i < @column_count - 1
-            @column_lengths[i] = @column_offsets[i + 1] - @column_offsets[i]
+          @column_lengths[i] = if i < @column_count - 1
+            @column_offsets[i + 1] - @column_offsets[i]
           else
-            @column_lengths[i] = @size - @column_offsets[i]
+            @size - @column_offsets[i]
           end
         end
       end
 
       def parse_column_data(data)
         @values = {}
-        
+
         @column_count.times do |i|
           col = @columns[i]
           offset = @column_offsets[i]
           length = @column_lengths[i]
-          
+
           # Check if value is NULL
           if null_at?(i)
             @values[col.name] = nil
             next
           end
-          
+
           # Read and deserialize value
           value_data = data[offset, length]
           @values[col.name] = deserialize_value(col, value_data)
@@ -261,25 +260,25 @@ module RubyDB
 
       def serialize_value(column, value)
         type_class = column.type_class
-        
+
         # Handle special types
         case type_class
         when :text, :varchar, :char
           value = value.to_s.encode("UTF-8")
           length_prefix = [value.bytesize].pack("S")
           length_prefix + value
-          
+
         when :blob
           value = value.is_a?(String) ? value.b : value.to_s.b
           length_prefix = [value.bytesize].pack("L")
           length_prefix + value
-          
+
         when :json
-          value = value.is_a?(Hash) || value.is_a?(Array) ? value : {}
+          value = (value.is_a?(Hash) || value.is_a?(Array)) ? value : {}
           json_str = JSON.generate(value)
           length_prefix = [json_str.bytesize].pack("S")
           length_prefix + json_str
-          
+
         when :uuid
           # UUID is stored as 16 bytes binary
           if value.nil?
@@ -288,14 +287,14 @@ module RubyDB
             str = value.to_s.gsub("-", "")
             [str].pack("H*")
           end
-          
+
         when :decimal
           require "bigdecimal"
           bd = value.is_a?(BigDecimal) ? value : BigDecimal(value.to_s)
           str = bd.to_s("F")
           length_prefix = [str.bytesize].pack("S")
           length_prefix + str
-          
+
         when :date
           if value.nil?
             [0].pack("L")
@@ -303,7 +302,7 @@ module RubyDB
             days = value - Date.new(1970, 1, 1)
             [days.to_i].pack("L")
           end
-          
+
         when :time
           if value.nil?
             [0].pack("Q")
@@ -313,29 +312,29 @@ module RubyDB
             total = seconds * 1_000_000 + microseconds
             [total].pack("Q")
           end
-          
+
         when :timestamp
           if value.nil?
             [0].pack("Q")
           else
             [value.to_i].pack("Q")
           end
-          
+
         when :integer
           [value.to_i].pack("l>")
-          
+
         when :bigint
           [value.to_i].pack("q>")
-          
+
         when :smallint
           [value.to_i].pack("s>")
-          
+
         when :float
           [value.to_f].pack("E")
-          
+
         when :boolean
           value ? "\x01".b : "\x00".b
-          
+
         else
           # Unknown type - use string representation
           str = value.to_s
@@ -346,16 +345,16 @@ module RubyDB
 
       def deserialize_value(column, data)
         return nil if data.nil? || data.empty?
-        
+
         type_class = column.type_class
-        
+
         case type_class
         when :text, :varchar, :char
           data.force_encoding("UTF-8")
-          
+
         when :blob
           data.b
-          
+
         when :json
           begin
             JSON.parse(data.force_encoding("UTF-8"))
@@ -364,47 +363,47 @@ module RubyDB
           end
 
         when :uuid
-          hex = data.unpack("H*").first
+          hex = data.unpack1("H*")
           "#{hex[0...8]}-#{hex[8...12]}-#{hex[12...16]}-#{hex[16...20]}-#{hex[20...32]}"
-          
+
         when :decimal
           require "bigdecimal"
           BigDecimal(data.force_encoding("UTF-8"))
-          
+
         when :date
           require "date"
-          days = data.unpack("L").first
+          days = data.unpack1("L")
           Date.new(1970, 1, 1) + days
-          
+
         when :time
           require "time"
-          total = data.unpack("Q").first
+          total = data.unpack1("Q")
           seconds = total / 1_000_000
           microseconds = total % 1_000_000
           hour = seconds / 3600
           minute = (seconds % 3600) / 60
           sec = seconds % 60
           Time.new(1970, 1, 1, hour, minute, sec, microseconds)
-          
+
         when :timestamp
           require "time"
-          Time.at(data.unpack("Q").first)
-          
+          Time.at(data.unpack1("Q"))
+
         when :integer
-          data.unpack("l>").first
-          
+          data.unpack1("l>")
+
         when :bigint
-          data.unpack("q>").first
-          
+          data.unpack1("q>")
+
         when :smallint
-          data.unpack("s>").first
-          
+          data.unpack1("s>")
+
         when :float
-          data.unpack("E").first
-          
+          data.unpack1("E")
+
         when :boolean
-          data.unpack("C").first == 1
-          
+          data.unpack1("C") == 1
+
         else
           data.force_encoding("UTF-8")
         end
@@ -433,7 +432,7 @@ module RubyDB
 
       def compress_data(data)
         return data if data.bytesize < 100
-        
+
         begin
           require "zlib"
           Zlib::Deflate.deflate(data, Zlib::BEST_SPEED)
@@ -443,12 +442,10 @@ module RubyDB
       end
 
       def decompress_data(data)
-        begin
-          require "zlib"
-          Zlib::Inflate.inflate(data)
-        rescue LoadError, Zlib::DataError
-          data  # Return original if decompression fails
-        end
+        require "zlib"
+        Zlib::Inflate.inflate(data)
+      rescue LoadError, Zlib::DataError
+        data  # Return original if decompression fails
       end
 
       def validate_tuple_size

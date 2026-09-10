@@ -13,7 +13,7 @@ RSpec.describe RubyDB::Constraints::Validator do
 
   it "revalidates supplied rows before clearing deferred constraints" do
     validator = described_class.new
-    validator.defer_constraint(constraint, "payments", rows: [{ amount: 10 }])
+    validator.defer_constraint(constraint, "payments", rows: [{amount: 10}])
 
     result = validator.validate_deferred("payments")
 
@@ -35,7 +35,7 @@ RSpec.describe RubyDB::Constraints::Validator do
 
   it "accepts a row provider for live table validation" do
     validator = described_class.new
-    validator.defer_constraint(constraint, "payments", row_provider: -> { [{ amount: 5 }] })
+    validator.defer_constraint(constraint, "payments", row_provider: -> { [{amount: 5}] })
 
     expect(validator.validate_deferred("payments")[:valid]).to be(true)
   end
@@ -44,7 +44,7 @@ RSpec.describe RubyDB::Constraints::Validator do
     validator = described_class.new
     validator.defer_constraint(constraint, "payments")
 
-    result = validator.validate_row({ amount: -1 }, "payments")
+    result = validator.validate_row({amount: -1}, "payments")
 
     expect(result[:valid]).to be(true)
     expect(validator.validate_deferred("payments")[:valid]).to be(false)

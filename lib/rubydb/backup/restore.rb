@@ -35,12 +35,12 @@ module RubyDB
           @stats[:restores] += 1
 
           unless Dir.exist?(backup_path)
-            return { success: false, error: "Backup path does not exist" }
+            return {success: false, error: "Backup path does not exist"}
           end
 
           manifest_path = File.join(backup_path, "manifest.json")
           unless File.exist?(manifest_path)
-            return { success: false, error: "Manifest not found" }
+            return {success: false, error: "Manifest not found"}
           end
 
           begin
@@ -73,17 +73,16 @@ module RubyDB
             end
 
             result.merge(elapsed_ms: (Time.now - start_time) * 1000)
-
           rescue => e
             @stats[:failed_restores] += 1
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
 
       def restore_latest(options = {})
         backups = list_available_backups
-        return { success: false, error: "No backups available" } if backups.empty?
+        return {success: false, error: "No backups available"} if backups.empty?
 
         latest = backups.first
         restore(latest[:path], options)
@@ -91,7 +90,7 @@ module RubyDB
 
       def restore_point_in_time(time, options = {})
         backups = list_available_backups
-        return { success: false, error: "No backups available" } if backups.empty?
+        return {success: false, error: "No backups available"} if backups.empty?
 
         # Find the closest backup before the target time
         target = Time.parse(time)
@@ -100,7 +99,7 @@ module RubyDB
         end
 
         if candidates.empty?
-          return { success: false, error: "No backup before the specified time" }
+          return {success: false, error: "No backup before the specified time"}
         end
 
         backup = candidates.first
@@ -163,20 +162,20 @@ module RubyDB
           @engine.execute_schema(schema)
         end
 
-        { success: true, restored_from: metadata[:name] }
+        {success: true, restored_from: metadata[:name]}
       end
 
       def restore_incremental(backup_path, metadata, options)
         base_backup = metadata[:base_backup]
         unless base_backup
-          return { success: false, error: "Base backup not specified" }
+          return {success: false, error: "Base backup not specified"}
         end
 
         # Restore base backup first
         base_path = backup_path_for_name(base_backup)
-        return { success: false, error: "Invalid base backup name" } unless base_path
+        return {success: false, error: "Invalid base backup name"} unless base_path
         unless Dir.exist?(base_path)
-          return { success: false, error: "Base backup not found" }
+          return {success: false, error: "Base backup not found"}
         end
 
         base_metadata = JSON.parse(File.read(File.join(base_path, "manifest.json")), symbolize_names: true)
@@ -184,20 +183,20 @@ module RubyDB
         return base_result unless base_result[:success]
         apply_delta(backup_path, metadata, options)
 
-        { success: true, restored_from: metadata[:name], base: base_backup }
+        {success: true, restored_from: metadata[:name], base: base_backup}
       end
 
       def restore_differential(backup_path, metadata, options)
         base_backup = metadata[:base_backup]
         unless base_backup
-          return { success: false, error: "Base backup not specified" }
+          return {success: false, error: "Base backup not specified"}
         end
 
         # Restore base backup first
         base_path = backup_path_for_name(base_backup)
-        return { success: false, error: "Invalid base backup name" } unless base_path
+        return {success: false, error: "Invalid base backup name"} unless base_path
         unless Dir.exist?(base_path)
-          return { success: false, error: "Base backup not found" }
+          return {success: false, error: "Base backup not found"}
         end
 
         base_metadata = JSON.parse(File.read(File.join(base_path, "manifest.json")), symbolize_names: true)
@@ -205,7 +204,7 @@ module RubyDB
         return base_result unless base_result[:success]
         apply_delta(backup_path, metadata, options)
 
-        { success: true, restored_from: metadata[:name], base: base_backup }
+        {success: true, restored_from: metadata[:name], base: base_backup}
       end
 
       def restore_file(src, dest)
@@ -236,9 +235,9 @@ module RubyDB
 
       def apply_delta(delta_path, metadata, options)
         changes_path = File.join(delta_path, "changes.json")
-        return { success: false, error: "Delta changes file not found" } unless File.file?(changes_path)
+        return {success: false, error: "Delta changes file not found"} unless File.file?(changes_path)
         if metadata[:checksum] && Digest::SHA256.file(changes_path).hexdigest != metadata[:checksum]
-          return { success: false, error: "Delta checksum mismatch" }
+          return {success: false, error: "Delta checksum mismatch"}
         end
 
         engine = @engine
@@ -246,15 +245,15 @@ module RubyDB
         if engine.nil?
           destination = options[:destination]
           database_file = Dir.glob(File.join(destination.to_s, "*.rdb")).first
-          return { success: false, error: "Engine or restored database is required for delta restore" } unless database_file
+          return {success: false, error: "Engine or restored database is required for delta restore"} unless database_file
           engine = Storage::Engine.new(database_file, auto_vacuum: false)
           owned_engine = true
         end
         changes = JSON.parse(File.read(changes_path), symbolize_names: true).fetch(:changes)
         changes.each { |change| apply_delta_change(engine, change) }
-        { success: true }
-      rescue StandardError => error
-        { success: false, error: error.message }
+        {success: true}
+      rescue => error
+        {success: false, error: error.message}
       ensure
         engine&.close if owned_engine
       end
@@ -279,7 +278,7 @@ module RubyDB
       def decompress_file(src, dest)
         Zlib::GzipReader.open(src) do |gz|
           File.open(dest, "wb") do |file|
-            while chunk = gz.read(10 * 1024 * 1024)
+            while (chunk = gz.read(10 * 1024 * 1024))
               file.write(chunk)
             end
           end

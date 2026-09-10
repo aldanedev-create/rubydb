@@ -40,7 +40,7 @@ module RubyDB
           @stats[:total_delay_ms] += ms
           @stats[:max_delay_ms] = [@stats[:max_delay_ms], ms].max
           @stats[:avg_delay_ms] = @stats[:total_delay_ms] / @stats[:delays]
-          @stats[:last_delay] = { time: Time.now, operation: operation, ms: ms }
+          @stats[:last_delay] = {time: Time.now, operation: operation, ms: ms}
           @stats[:operations_affected] << operation unless @stats[:operations_affected].include?(operation)
 
           sleep(ms / 1000.0)

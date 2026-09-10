@@ -15,7 +15,7 @@ Dir.mktmpdir("rubydb-embedded") do |directory|
   engine = RubyDB::Storage::Engine.new(database_path, auto_cleanup: false, auto_vacuum: false)
   begin
     engine.create_table(:greetings, columns)
-    engine.insert_row(:greetings, columns, { id: 1, name: "RubyDB" })
+    engine.insert_row(:greetings, columns, {id: 1, name: "RubyDB"})
     puts engine.select_rows(:greetings, columns).inspect
     engine.close
     engine = nil

@@ -2,7 +2,7 @@ inherit_gem:
   standard: config/base.yml
 
 AllCops:
-  TargetRubyVersion: 4.0
+  TargetRubyVersion: 3.3
   NewCops: enable
   Exclude:
     - 'bin/**/*'
@@ -20,10 +20,13 @@ Style/EndlessMethod:
   Enabled: true
   EnforcedStyle: allow_single_line
 
-Style/PatternMatching:
-  Enabled: true
-
 Lint/ShadowingOuterLocalVariable:
+  Enabled: false
+
+# Several service objects declare a cheap reader with attr_reader and later
+# replace it with a synchronized, computed stats method. The explicit method
+# is the intended public API; RuboCop's duplicate-method warning is expected.
+Lint/DuplicateMethods:
   Enabled: false
 
 Metrics/ClassLength:
@@ -42,3 +45,6 @@ Metrics/BlockLength:
 Naming/FileName:
   Exclude:
     - 'lib/rubydb.rb'
+
+Layout/EndOfLine:
+  EnforcedStyle: lf

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require "time"
 
 module RubyDB
@@ -120,7 +119,7 @@ module RubyDB
 
       def includes_transaction?(transaction_id)
         @active_transactions.include?(transaction_id) ||
-        @committed_transactions.include?(transaction_id)
+          @committed_transactions.include?(transaction_id)
       end
 
       def to_hash

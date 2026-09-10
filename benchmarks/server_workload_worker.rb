@@ -21,13 +21,13 @@ begin
 
   latencies.sort!
   percentile = lambda do |fraction|
-    index = [[(latencies.length * fraction).ceil - 1, 0].max, latencies.length - 1].min
+    index = ((latencies.length * fraction).ceil - 1).clamp(0, latencies.length - 1)
     latencies[index].round(3)
   end
   puts JSON.generate(process: process_number, operations: operations,
-                     p50_ms: percentile.call(0.50), p95_ms: percentile.call(0.95),
-                     p99_ms: percentile.call(0.99))
-rescue StandardError => error
+    p50_ms: percentile.call(0.50), p95_ms: percentile.call(0.95),
+    p99_ms: percentile.call(0.99))
+rescue => error
   warn "process #{process_number} failed: #{error.class}: #{error.message}"
   exit 1
 ensure

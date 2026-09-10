@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "socket"
-require "thread"
 require "time"
 require "json"
 require "fileutils"
@@ -44,8 +43,8 @@ module RubyDB
           log_dir: config[:log_dir] || "log",
           pid_file: config[:pid_file] || "rubydb.pid",
           daemonize: config[:daemonize] || false,
-          authentication: config[:authentication] || { method: "none" },
-          ssl: config[:ssl] || { enabled: false }
+          authentication: config[:authentication] || {method: "none"},
+          ssl: config[:ssl] || {enabled: false}
         }.merge(config)
 
         @stats = {

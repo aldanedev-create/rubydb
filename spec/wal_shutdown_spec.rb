@@ -15,7 +15,7 @@ RSpec.describe "WAL shutdown lifecycle" do
         auto_checkpoint: false,
         recovery: false
       )
-      wal.write(RubyDB::WAL::Record.new(:insert, { table: "events", row_id: 1 }))
+      wal.write(RubyDB::WAL::Record.new(:insert, {table: "events", row_id: 1}))
       wal.shutdown
       wal = nil
 

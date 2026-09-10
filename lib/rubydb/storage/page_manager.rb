@@ -16,8 +16,6 @@ module RubyDB
 
       def allocate_page(page_type = 0)
         @lock.synchronize do
-          page_number = nil
-
           # Try to get from free list
           if @free_list.any?
             page_number = @free_list.pop
@@ -104,18 +102,16 @@ module RubyDB
         @page_type_map = {}
 
         (0...@file_manager.num_pages).each do |page_number|
-          begin
-            data = @file_manager.read_page(page_number)
-            header = PageHeader.deserialize(data[0, PageHeader::SIZE])
+          data = @file_manager.read_page(page_number)
+          header = PageHeader.deserialize(data[0, PageHeader::SIZE])
 
-            if header.page_type == 3  # Free page
-              @free_list << page_number
-            else
-              @page_type_map[page_number] = header.page_type
-            end
-          rescue => e
-            # Ignore errors during free list loading
+          if header.page_type == 3  # Free page
+            @free_list << page_number
+          else
+            @page_type_map[page_number] = header.page_type
           end
+        rescue
+          # Ignore errors during free list loading
         end
 
         # Don't include page 0 (superblock)

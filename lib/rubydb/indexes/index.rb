@@ -60,7 +60,7 @@ module RubyDB
       end
 
       def to_s
-        "#{@type.to_s.upcase} INDEX #{@name} ON #{@table_name}(#{@columns.join(', ')})"
+        "#{@type.to_s.upcase} INDEX #{@name} ON #{@table_name}(#{@columns.join(", ")})"
       end
 
       def inspect

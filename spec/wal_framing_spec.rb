@@ -11,7 +11,7 @@ RSpec.describe RubyDB::WAL::WAL do
       wal = described_class.new(wal_dir, recovery: false, auto_checkpoint: false, async: false)
 
       3.times do |i|
-        wal.write(RubyDB::WAL::Record.new(:insert, { values: [i] }, transaction_id: i))
+        wal.write(RubyDB::WAL::Record.new(:insert, {values: [i]}, transaction_id: i))
       end
       wal.shutdown
 
@@ -30,7 +30,7 @@ RSpec.describe RubyDB::WAL::WAL do
     Dir.mktmpdir do |dir|
       wal_dir = File.join(dir, ".wal")
       wal = described_class.new(wal_dir, recovery: false, auto_checkpoint: false, async: false)
-      wal.write(RubyDB::WAL::Record.new(:insert, { values: [1] }))
+      wal.write(RubyDB::WAL::Record.new(:insert, {values: [1]}))
       wal.shutdown
 
       path = File.join(wal_dir, "wal_00000001.log")

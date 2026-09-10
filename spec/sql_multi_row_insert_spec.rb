@@ -19,9 +19,9 @@ RSpec.describe "SQL multi-row INSERT" do
       expect(result.row_count).to eq(3)
       expect(result.affected_rows).to eq(3)
       expect(connection.execute("SELECT id, name, active FROM users ORDER BY id").to_a).to eq([
-        { "id" => 1, "name" => "Ada", "active" => true },
-        { "id" => 2, "name" => "Grace", "active" => false },
-        { "id" => 3, "name" => "Linus", "active" => true }
+        {"id" => 1, "name" => "Ada", "active" => true},
+        {"id" => 2, "name" => "Grace", "active" => false},
+        {"id" => 3, "name" => "Linus", "active" => true}
       ])
     ensure
       connection&.disconnect
@@ -46,8 +46,8 @@ RSpec.describe "SQL multi-row INSERT" do
       expect(result.row_count).to eq(2)
       expect(result.affected_rows).to eq(2)
       expect(connection.execute("SELECT id, value FROM counters ORDER BY id").to_a).to eq([
-        { "id" => 1, "value" => 20 },
-        { "id" => 2, "value" => 30 }
+        {"id" => 1, "value" => 20},
+        {"id" => 2, "value" => 30}
       ])
     ensure
       connection&.disconnect
@@ -68,7 +68,7 @@ RSpec.describe "SQL multi-row INSERT" do
       end.to raise_error(RubyDB::DatabaseError)
 
       expect(connection.execute("SELECT id, name FROM users ORDER BY id").to_a).to eq([
-        { "id" => 1, "name" => "existing" }
+        {"id" => 1, "name" => "existing"}
       ])
     ensure
       connection&.disconnect

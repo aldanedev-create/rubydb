@@ -76,7 +76,7 @@ module RubyDB
 
       def check_page(page_number)
         @lock.synchronize do
-          result = { corrupted: false, issues: [] }
+          result = {corrupted: false, issues: []}
 
           begin
             page = @engine.read_page(page_number)
@@ -86,31 +86,30 @@ module RubyDB
             header = page.header
             if header.nil?
               result[:corrupted] = true
-              result[:issues] << { type: "page_header", page: page_number, message: "Missing header" }
+              result[:issues] << {type: "page_header", page: page_number, message: "Missing header"}
               return result
             end
 
             # Check page size
             if header.page_size != page.size
               result[:corrupted] = true
-              result[:issues] << { type: "page_size", page: page_number, message: "Invalid page size" }
+              result[:issues] << {type: "page_size", page: page_number, message: "Invalid page size"}
             end
 
             # Check page checksum
             if checksum_mismatch?(page)
               result[:corrupted] = true
-              result[:issues] << { type: "checksum", page: page_number, message: "Checksum mismatch" }
+              result[:issues] << {type: "checksum", page: page_number, message: "Checksum mismatch"}
             end
 
             # Check page data
             if page.data.nil? || page.data.bytesize != page.size
               result[:corrupted] = true
-              result[:issues] << { type: "page_data", page: page_number, message: "Invalid page data" }
+              result[:issues] << {type: "page_data", page: page_number, message: "Invalid page data"}
             end
-
           rescue => e
             result[:corrupted] = true
-            result[:issues] << { type: "page_read", page: page_number, message: e.message }
+            result[:issues] << {type: "page_read", page: page_number, message: e.message}
           end
 
           result
@@ -119,7 +118,7 @@ module RubyDB
 
       def check_record(table_name, row_id)
         @lock.synchronize do
-          result = { corrupted: false, issues: [] }
+          result = {corrupted: false, issues: []}
 
           begin
             columns = @engine.table_columns(table_name)
@@ -143,7 +142,6 @@ module RubyDB
                 }
               end
             end
-
           rescue => e
             result[:corrupted] = true
             result[:issues] << {
@@ -160,7 +158,7 @@ module RubyDB
 
       def check_index(index_name)
         @lock.synchronize do
-          result = { corrupted: false, issues: [] }
+          result = {corrupted: false, issues: []}
 
           begin
             if @engine.respond_to?(:index_manager)
@@ -183,7 +181,6 @@ module RubyDB
                 }
               end
             end
-
           rescue => e
             result[:corrupted] = true
             result[:issues] << {
@@ -199,17 +196,17 @@ module RubyDB
 
       def repair_corruption(corruption_info)
         @lock.synchronize do
-          results = { repaired: false, actions: [] }
+          results = {repaired: false, actions: []}
 
           issues = Array(corruption_info[:issues])
           issues.each do |issue|
             case issue[:type]
             when "page_header"
               repaired = repair_page_header(issue[:page])
-              results[:actions] << { type: "repair_page_header", page: issue[:page], success: repaired }
+              results[:actions] << {type: "repair_page_header", page: issue[:page], success: repaired}
             when "checksum"
               repaired = repair_checksum(issue[:page])
-              results[:actions] << { type: "repair_checksum", page: issue[:page], success: repaired }
+              results[:actions] << {type: "repair_checksum", page: issue[:page], success: repaired}
             when "record_value"
               repaired = repair_record(issue[:table], issue[:row], issue[:column])
               results[:actions] << {
@@ -221,7 +218,7 @@ module RubyDB
               }
             when "index_entries"
               repaired = repair_index(issue[:index])
-              results[:actions] << { type: "repair_index", index: issue[:index], success: repaired }
+              results[:actions] << {type: "repair_index", index: issue[:index], success: repaired}
             else
               results[:actions] << {
                 type: "unsupported_repair",
@@ -249,7 +246,7 @@ module RubyDB
       private
 
       def check_pages(scan_all)
-        result = { corrupted: [], issues: [] }
+        result = {corrupted: [], issues: []}
 
         begin
           page_manager = @engine.page_manager
@@ -264,16 +261,15 @@ module RubyDB
               result[:issues].concat(page_result[:issues])
             end
           end
-
         rescue => e
-          result[:issues] << { type: "page_scan", message: e.message }
+          result[:issues] << {type: "page_scan", message: e.message}
         end
 
         result
       end
 
       def check_records(scan_all)
-        result = { corrupted: [], issues: [] }
+        result = {corrupted: [], issues: []}
 
         begin
           tables = @engine.list_tables
@@ -288,21 +284,20 @@ module RubyDB
               row_id = row[:_row_id] || row["_row_id"]
               record_result = check_record(table_name, row_id)
               if record_result[:corrupted]
-                result[:corrupted] << { table: table_name, row: row_id }
+                result[:corrupted] << {table: table_name, row: row_id}
                 result[:issues].concat(record_result[:issues])
               end
             end
           end
-
         rescue => e
-          result[:issues] << { type: "record_scan", message: e.message }
+          result[:issues] << {type: "record_scan", message: e.message}
         end
 
         result
       end
 
       def check_indexes(scan_all)
-        result = { corrupted: [], issues: [] }
+        result = {corrupted: [], issues: []}
 
         begin
           if @engine.respond_to?(:index_manager)
@@ -317,9 +312,8 @@ module RubyDB
               end
             end
           end
-
         rescue => e
-          result[:issues] << { type: "index_scan", message: e.message }
+          result[:issues] << {type: "index_scan", message: e.message}
         end
 
         result
@@ -328,7 +322,11 @@ module RubyDB
       def checksum_mismatch?(page)
         # Calculate page checksum
         current_checksum = calculate_checksum(page.data)
-        stored_checksum = page.header.checksum rescue 0
+        stored_checksum = begin
+          page.header.checksum
+        rescue
+          0
+        end
 
         current_checksum != stored_checksum
       end
@@ -361,69 +359,61 @@ module RubyDB
       end
 
       def repair_page_header(page_number)
-        begin
-          page = @engine.read_page(page_number)
-          return false unless page
+        page = @engine.read_page(page_number)
+        return false unless page
 
-          # Rebuild header
-          page.header.page_number = page_number
-          page.header.page_size = page.size
-          page.header.header_size = 64
-          page.header.data_end = 64
-          page.header.flags = 0
-          page.header.checksum = calculate_checksum(page.data)
-          page.header.version = 1
-          page.header.page_type = 0
+        # Rebuild header
+        page.header.page_number = page_number
+        page.header.page_size = page.size
+        page.header.header_size = 64
+        page.header.data_end = 64
+        page.header.flags = 0
+        page.header.checksum = calculate_checksum(page.data)
+        page.header.version = 1
+        page.header.page_type = 0
 
-          page.write_header
-          @engine.write_page(page)
-          true
-        rescue
-          false
-        end
+        page.write_header
+        @engine.write_page(page)
+        true
+      rescue
+        false
       end
 
       def repair_checksum(page_number)
-        begin
-          page = @engine.read_page(page_number)
-          return false unless page
+        page = @engine.read_page(page_number)
+        return false unless page
 
-          page.header.checksum = calculate_checksum(page.data)
-          page.write_header
-          @engine.write_page(page)
-          true
-        rescue
-          false
-        end
+        page.header.checksum = calculate_checksum(page.data)
+        page.write_header
+        @engine.write_page(page)
+        true
+      rescue
+        false
       end
 
       def repair_record(table, row_id, column)
-        begin
-          columns = @engine.table_columns(table)
-          row = @engine.select_row(table, row_id, columns)
-          return false unless row
+        columns = @engine.table_columns(table)
+        row = @engine.select_row(table, row_id, columns)
+        return false unless row
 
-          col_def = columns.find { |c| c.name == column }
-          return false unless col_def && col_def.has_default?
+        col_def = columns.find { |c| c.name == column }
+        return false unless col_def&.has_default?
 
-          row[column] = col_def.default
+        row[column] = col_def.default
 
-          !!@engine.update_row(table, row_id, row)
-        rescue
-          false
-        end
+        !!@engine.update_row(table, row_id, row)
+      rescue
+        false
       end
 
       def repair_index(index_name)
-        begin
-          if @engine.respond_to?(:index_manager)
-            !!@engine.index_manager.rebuild_index(index_name)
-          else
-            false
-          end
-        rescue
+        if @engine.respond_to?(:index_manager)
+          !!@engine.index_manager.rebuild_index(index_name)
+        else
           false
         end
+      rescue
+        false
       end
 
       def generate_recommendations(results)

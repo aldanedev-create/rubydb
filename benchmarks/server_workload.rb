@@ -17,7 +17,7 @@ Dir.mktmpdir("rubydb-server-workload") do |dir|
   port = probe.addr[1]
   probe.close
   server = RubyDB::Server::Server.new(host: "127.0.0.1", port: port, data_dir: dir,
-                                        pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: [clients, 4].max)
+    pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: [clients, 4].max)
   server.engine.create_table(:workload_rows, [RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false)])
   database_path = server.engine.path
   server.start
@@ -35,7 +35,7 @@ Dir.mktmpdir("rubydb-server-workload") do |dir|
         latencies << ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000)
       end
       client.disconnect
-    rescue StandardError => error
+    rescue => error
       errors << "#{error.class}: #{error.message}"
     end
   end
@@ -57,8 +57,8 @@ Dir.mktmpdir("rubydb-server-workload") do |dir|
   values.sort!
   percentile = ->(fraction) { values[[(values.length * fraction).ceil - 1, 0].max].round(3) }
   puts JSON.generate(clients: clients, operations_per_client: operations,
-                     in_memory_rows: in_memory_rows, durable_rows: durable_rows,
-                     p50_ms: percentile.call(0.50), p95_ms: percentile.call(0.95), p99_ms: percentile.call(0.99))
+    in_memory_rows: in_memory_rows, durable_rows: durable_rows,
+    p50_ms: percentile.call(0.50), p95_ms: percentile.call(0.95), p99_ms: percentile.call(0.99))
 ensure
   server&.stop
   reopened&.close if defined?(reopened) && reopened&.open?

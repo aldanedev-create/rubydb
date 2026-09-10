@@ -21,7 +21,7 @@ module RubyDB
 
       def deserialize(bytes)
         return nil if bytes.nil? || bytes.empty?
-        seconds = bytes.unpack("q>").first
+        seconds = bytes.unpack1("q>")
         ::Time.at(seconds)
       end
 

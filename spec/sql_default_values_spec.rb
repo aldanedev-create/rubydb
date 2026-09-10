@@ -21,7 +21,7 @@ RSpec.describe "SQL DEFAULT VALUES" do
 
       expect(result.affected_rows).to eq(1)
       expect(connection.execute("SELECT label, enabled FROM settings").to_a).to eq([
-        { "label" => "", "enabled" => true }
+        {"label" => "", "enabled" => true}
       ])
     ensure
       connection&.disconnect

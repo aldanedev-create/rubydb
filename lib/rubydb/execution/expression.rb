@@ -5,7 +5,7 @@ module RubyDB
     # Expression - Represent values, columns, and operations
     class Expression
       attr_reader :type, :value, :name, :left, :right, :operator,
-                  :operand, :alias, :arguments
+        :operand, :alias, :arguments
 
       def initialize(type, **attrs)
         @type = type
@@ -30,7 +30,7 @@ module RubyDB
         when :unary_op
           "#{@operator} #{@operand}"
         when :function
-          "#{@name}(#{@arguments.map(&:to_s).join(', ')})"
+          "#{@name}(#{@arguments.map(&:to_s).join(", ")})"
         when :parameter
           "?"
         else
@@ -97,8 +97,8 @@ module RubyDB
           when :plus then left_val + right_val
           when :minus then left_val - right_val
           when :multiply then left_val * right_val
-          when :divide then right_val != 0 ? left_val / right_val : nil
-          when :modulo then right_val != 0 ? left_val % right_val : nil
+          when :divide then (right_val != 0) ? left_val / right_val : nil
+          when :modulo then (right_val != 0) ? left_val % right_val : nil
           when :concat then left_val.to_s + right_val.to_s
           when :eq then left_val == right_val
           when :ne then left_val != right_val
@@ -106,7 +106,6 @@ module RubyDB
           when :lte then left_val <= right_val
           when :gt then left_val > right_val
           when :gte then left_val >= right_val
-          else nil
           end
         end
 
@@ -161,7 +160,6 @@ module RubyDB
           when "NOW" then Time.now
           when "CURRENT_DATE" then Date.today
           when "CURRENT_TIME" then Time.now
-          else nil
           end
         end
 

@@ -34,7 +34,7 @@ module RubyDB
 
       def archive_segment(segment)
         @lock.synchronize do
-          start_time = Time.now
+          Time.now
 
           begin
             # Check if segment exists
@@ -63,9 +63,8 @@ module RubyDB
             # Clean old archives if needed
             clean_old_archives
 
-            { path: archive_path, size: archive_size }
-
-          rescue => e
+            {path: archive_path, size: archive_size}
+          rescue
             @stats[:archive_failures] += 1
             raise
           end
@@ -75,7 +74,7 @@ module RubyDB
       def restore_archive(segment_id)
         @lock.synchronize do
           # Find archive file
-          archive_path = File.join(@archive_dir, "wal_#{segment_id.to_s.rjust(8, '0')}.log")
+          archive_path = File.join(@archive_dir, "wal_#{segment_id.to_s.rjust(8, "0")}.log")
 
           unless File.exist?(archive_path)
             # Try compressed
@@ -95,7 +94,7 @@ module RubyDB
           end
 
           # Copy to WAL directory
-          wal_path = File.join(@wal_dir, "wal_#{segment_id.to_s.rjust(8, '0')}.log")
+          wal_path = File.join(@wal_dir, "wal_#{segment_id.to_s.rjust(8, "0")}.log")
           FileUtils.cp(archive_path, wal_path)
 
           @stats[:archives_restored] += 1
@@ -183,9 +182,7 @@ module RubyDB
 
       def decompress_file(source, destination)
         Zlib::GzipReader.open(source) do |input|
-          File.open(destination, "wb") do |output|
-            output.write(input.read)
-          end
+          File.binwrite(destination, input.read)
         end
       end
     end

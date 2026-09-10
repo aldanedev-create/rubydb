@@ -2,6 +2,7 @@
 
 require "securerandom"
 require "time"
+require_relative "../protocol/parameter_binder"
 
 module RubyDB
   module Server
@@ -64,7 +65,7 @@ module RubyDB
         @lock.synchronize do
           @last_activity = Time.now
           if request[:deadline_at] && Time.now >= Time.parse(request[:deadline_at].to_s)
-            return { success: false, error: "Request deadline exceeded before execution", code: "deadline_exceeded" }
+            return {success: false, error: "Request deadline exceeded before execution", code: "deadline_exceeded"}
           end
 
           request_id = request[:request_id].to_s
@@ -79,27 +80,27 @@ module RubyDB
             case request[:type]
             when "query"
               process_query(request[:sql], request[:params] || [], request[:deadline_at], cancellation)
-          when "prepare"
-            process_prepare(request[:sql])
+            when "prepare"
+              process_prepare(request[:sql])
             when "execute"
               process_execute(request[:statement_id], request[:params] || [], request[:deadline_at], cancellation)
-          when "close"
-            process_close(request[:statement_id])
-          when "begin"
-            process_begin
-          when "commit"
-            process_commit
-          when "rollback"
-            process_rollback
-          when "ping"
-            process_ping
+            when "close"
+              process_close(request[:statement_id])
+            when "begin"
+              process_begin
+            when "commit"
+              process_commit
+            when "rollback"
+              process_rollback
+            when "ping"
+              process_ping
             else
-              { success: false, error: "Unknown request type: #{request[:type]}" }
+              {success: false, error: "Unknown request type: #{request[:type]}"}
             end
           rescue RubyDB::ExecutionError => error
             raise unless %w[deadline_exceeded cancelled].include?(error.code.to_s)
 
-            { success: false, error: error.message, code: error.code.to_s }
+            {success: false, error: error.message, code: error.code.to_s}
           ensure
             @operations_lock.synchronize { @operations.delete(request_id) }
           end
@@ -124,19 +125,19 @@ module RubyDB
 
           # Close all prepared statements
           @prepared_statements.each do |id, stmt|
-            stmt[:close].call if stmt[:close]
+            stmt[:close]&.call
           end
           @prepared_statements.clear
 
           # Close all cursors
           @cursors.each do |id, cursor|
-            cursor[:close].call if cursor[:close]
+            cursor[:close]&.call
           end
           @cursors.clear
 
           # Rollback transaction if active
           if @transaction && @transaction[:active]
-            @transaction[:rollback].call if @transaction[:rollback]
+            @transaction[:rollback]&.call
           end
           @transaction = nil
 
@@ -329,6 +330,7 @@ module RubyDB
         engine = @config[:engine]
         raise RubyDB::ServerError, "Session has no database engine" unless engine
 
+        sql = RubyDB::Protocol::ParameterBinder.bind(sql, params)
         tokens = RubyDB::SQL::Lexer.new(sql).tokenize
         statements = RubyDB::SQL::Parser.new(tokens).parse
         results = statements.map do |statement|
@@ -339,7 +341,7 @@ module RubyDB
             cancellation: cancellation
           ).execute(plan)
         end
-        results.size == 1 ? results.first : results
+        (results.size == 1) ? results.first : results
       end
 
       def resolve_permissions(username)

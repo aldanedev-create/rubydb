@@ -13,7 +13,7 @@ RSpec.describe "RubyDB security boundaries" do
     user = Struct.new(:username, :password_hash, :salt).new("alice", "hash", "salt")
     authentication = RubyDB::Security::Authentication.new(
       method: RubyDB::Security::Authentication::METHOD_SCRAM_SHA256,
-      user_store: { "alice" => user }
+      user_store: {"alice" => user}
     )
 
     result = authentication.authenticate(username: "alice", scram_data: "arbitrary")

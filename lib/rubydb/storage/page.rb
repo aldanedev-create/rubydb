@@ -36,9 +36,7 @@ module RubyDB
         @header = PageHeader.deserialize(header_data)
       end
 
-      def header
-        @header
-      end
+      attr_reader :header
 
       def free_space
         @size - (@header.header_size + @header.data_end)

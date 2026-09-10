@@ -121,7 +121,7 @@ module RubyDB
         chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         index = 0
         thread = Thread.new do
-          while true
+          loop do
             print("\r#{chars[index % chars.length]} #{message}", nil, false)
             index += 1
             sleep(0.1)
@@ -138,9 +138,9 @@ module RubyDB
       def heading(text, level = 1)
         case level
         when 1
-          puts "#{'=' * text.length}", :bold
+          puts ("=" * text.length), :bold
           puts text, :bold
-          puts "#{'=' * text.length}", :bold
+          puts ("=" * text.length), :bold
         when 2
           puts text, :bold
           puts "-" * text.length, :gray

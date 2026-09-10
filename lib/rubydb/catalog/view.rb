@@ -17,7 +17,7 @@ module RubyDB
       end
 
       def add_column(name, type)
-        @columns << { name: name, type: type }
+        @columns << {name: name, type: type}
         @modified_at = Time.now
       end
 

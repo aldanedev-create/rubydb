@@ -32,8 +32,8 @@ module RubyDB
           default_auth: "none"
         }.merge(server_info || {})
         @challenge = nil
-        @scram_salt = (@credentials[:scram_salt] || @credentials["scram_salt"])
-        @scram_salt = SecureRandom.random_bytes(16) unless @scram_salt
+        @scram_salt = @credentials[:scram_salt] || @credentials["scram_salt"]
+        @scram_salt ||= SecureRandom.random_bytes(16)
         @scram_iterations = Integer(@credentials[:scram_iterations] || @credentials["scram_iterations"] || 120_000)
         @scram_server_signature = nil
         @authenticated = false
@@ -270,9 +270,10 @@ module RubyDB
         password = @credentials[:password] || @credentials["password"]
         stored_key = @credentials[:scram_stored_key] || @credentials["scram_stored_key"]
         server_key = @credentials[:scram_server_key] || @credentials["scram_server_key"]
-        return false unless password || (stored_key && server_key)
+        credentials_available = password || (stored_key && server_key)
+        return false unless credentials_available
 
-        salted = OpenSSL::PKCS5.pbkdf2_hmac(password.to_s, @scram_salt, @scram_iterations, 32, OpenSSL::Digest::SHA256.new) if password
+        salted = OpenSSL::PKCS5.pbkdf2_hmac(password.to_s, @scram_salt, @scram_iterations, 32, OpenSSL::Digest.new("SHA256")) if password
         stored_key ||= Digest::SHA256.digest(OpenSSL::HMAC.digest("SHA256", salted, "Client Key"))
         server_key ||= OpenSSL::HMAC.digest("SHA256", salted, "Server Key")
         stored_key = Base64.decode64(stored_key) if stored_key.is_a?(String) && stored_key.match?(/\A[A-Za-z0-9+\/=]+\z/) && stored_key.bytesize != 32

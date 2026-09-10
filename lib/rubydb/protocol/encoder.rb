@@ -33,7 +33,7 @@ module RubyDB
           @stats[:messages_encoded] += 1
 
           begin
-          data = case @format
+            data = case @format
             when FORMAT_JSON
               encode_json(message)
             when FORMAT_MSGPACK
@@ -60,7 +60,6 @@ module RubyDB
 
             @stats[:bytes_encoded] += data.bytesize
             data
-
           rescue => e
             @stats[:errors] += 1
             raise ProtocolError, "Encoding failed: #{e.message}"
@@ -73,12 +72,10 @@ module RubyDB
       end
 
       def encode_msgpack(message)
-        begin
-          require "msgpack"
-          MessagePack.pack(message.to_hash)
-        rescue LoadError
-          message.to_json
-        end
+        require "msgpack"
+        MessagePack.pack(message.to_hash)
+      rescue LoadError
+        message.to_json
       end
 
       def encode_binary(message)
@@ -117,9 +114,7 @@ module RubyDB
         end
       end
 
-      def format
-        @format
-      end
+      attr_reader :format
 
       def stats
         @lock.synchronize do
@@ -127,7 +122,7 @@ module RubyDB
             format: @format,
             compression: @compression,
             encryption: @encryption,
-            bytes_per_message: @stats[:messages_encoded] > 0 ? @stats[:bytes_encoded] / @stats[:messages_encoded] : 0
+            bytes_per_message: (@stats[:messages_encoded] > 0) ? @stats[:bytes_encoded] / @stats[:messages_encoded] : 0
           })
         end
       end

@@ -1,10 +1,7 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Transactions
-
     # Import lock and transaction classes
     require_relative "lock"
     require_relative "transaction"
@@ -39,22 +36,22 @@ module RubyDB
           return false unless transaction.active?
 
           key = lock_key(table_name, row_id)
-          
+
           # Check if transaction already has lock
           if has_lock?(transaction, key)
             return upgrade_lock(transaction, key, lock_type)
           end
-          
+
           # Check if lock is available
           current_lock = @locks[key]
-          
+
           if current_lock.nil?
             # No lock exists - acquire
             @locks[key] = Lock.new(key, lock_type, transaction)
             @stats[:locks_acquired] += 1
             return true
           end
-          
+
           # Check compatibility
           if compatible?(current_lock, lock_type, transaction)
             # Add transaction to lock
@@ -62,11 +59,11 @@ module RubyDB
             @stats[:locks_acquired] += 1
             return true
           end
-          
+
           # Lock conflict - wait
           @stats[:lock_waits] += 1
           result = wait_for_lock(transaction, key, lock_type, timeout)
-          
+
           result
         end
       end
@@ -77,11 +74,11 @@ module RubyDB
             if lock.holders.key?(transaction.id)
               lock.remove_holder(transaction)
               @stats[:locks_released] += 1
-              
+
               # Remove empty lock
               if lock.holders.empty?
                 @locks.delete(key)
-                
+
                 # Wake up waiting transactions
                 wake_waiting_transactions(key)
                 @condition.broadcast
@@ -171,12 +168,12 @@ module RubyDB
         # Check if any holder has incompatible lock
         lock.holders.each do |holder_id, holder_type|
           next if holder_id == transaction.id
-          
+
           if !compatible_lock_types(holder_type, lock_type)
             return false
           end
         end
-        
+
         true
       end
 
@@ -185,22 +182,22 @@ module RubyDB
         if type1 == :shared && type2 == :shared
           return true
         end
-        
+
         # Exclusive locks are incompatible with any other
         if type1 == :exclusive || type2 == :exclusive
           return false
         end
-        
+
         true
       end
 
       def upgrade_lock(transaction, key, new_type)
         lock = @locks[key]
         current_type = lock.holders[transaction.id]
-        
+
         # Check if upgrade is needed
         return true if current_type == new_type
-        
+
         # Check if upgrade is possible
         if new_type == :exclusive && current_type == :shared
           # Need to check if other transactions hold shared locks
@@ -211,20 +208,20 @@ module RubyDB
             return true
           end
         end
-        
+
         false
       end
 
       def wait_for_lock(transaction, key, lock_type, timeout)
         start_time = Time.now
-        
+
         # Add to waiters
         @waiting[transaction.id] ||= {}
         @waiting[transaction.id][key] = {
           lock_type: lock_type,
           start_time: start_time
         }
-        
+
         # Wait loop
         while (remaining = timeout - (Time.now - start_time)) > 0
           if !transaction.active? || @deadlock_victims.key?(transaction.id)
@@ -239,7 +236,7 @@ module RubyDB
             # Remove from waiting
             @waiting[transaction.id].delete(key)
             @waiting.delete(transaction.id) if @waiting[transaction.id].empty?
-            
+
             # Acquire lock
             @locks[key] ||= Lock.new(key, lock_type)
             @locks[key].add_holder(transaction, lock_type)
@@ -251,7 +248,7 @@ module RubyDB
           # current holder to release its lock and wake this waiter.
           @condition.wait(@lock, remaining)
         end
-        
+
         # Detect while the timed-out waiter is still in the wait graph. The
         # previous ordering removed it first, making a two-transaction cycle
         # impossible to observe. Resolution is performed by the unlocked
@@ -280,7 +277,7 @@ module RubyDB
 
         # Detect cycles
         cycles = detect_cycles(graph)
-        
+
         if cycles.any?
           @stats[:deadlocks_detected] += 1
           # Resolve by aborting the lowest-priority transaction. The victim is
@@ -298,11 +295,11 @@ module RubyDB
         visited = Set.new
         active = Set.new
         path = []
-        
+
         graph.keys.each do |node|
           detect_cycle_dfs(node, graph, visited, active, path, cycles) unless visited.include?(node)
         end
-        
+
         cycles
       end
 
@@ -314,15 +311,15 @@ module RubyDB
           return
         end
         return if visited.include?(node)
-        
+
         visited.add(node)
         active.add(node)
         path << node
-        
+
         graph[node]&.each do |neighbor|
           detect_cycle_dfs(neighbor, graph, visited, active, path, cycles)
         end
-        
+
         path.pop
         active.delete(node)
       end

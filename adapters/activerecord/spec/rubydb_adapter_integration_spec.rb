@@ -117,7 +117,7 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
     account = RubydbAccount.create!(id: 1, email: "ada@example.test")
     RubydbProject.create!(id: 10, account_id: account.id, name: "RubyDB")
 
-    projects = RubydbProject.joins(:rubydb_account).where(accounts: { email: "ada@example.test" }).to_a
+    projects = RubydbProject.joins(:rubydb_account).where(accounts: {email: "ada@example.test"}).to_a
 
     expect(projects.map(&:attributes)).to include(hash_including("id" => 10, "name" => "RubyDB", "account_id" => 1))
   end
@@ -150,10 +150,10 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
     RubydbReview.create!(id: 21, book_id: second.id, rating: 4)
 
     loaded = RubydbAuthor.includes(rubydb_books: :rubydb_reviews)
-                          .where(email: "ada@example.test").to_a
+      .where(email: "ada@example.test").to_a
     joined_titles = RubydbBook.joins(:rubydb_author)
-                              .where(rubydb_authors: { email: "ada@example.test" })
-                              .order(title: :desc).pluck(:title)
+      .where(rubydb_authors: {email: "ada@example.test"})
+      .order(title: :desc).pluck(:title)
 
     expect(loaded.first.rubydb_books.map(&:title)).to contain_exactly("A", "B")
     expect(loaded.first.rubydb_books.flat_map { |book| book.rubydb_reviews.map(&:rating) })

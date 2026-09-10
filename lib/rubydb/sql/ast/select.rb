@@ -47,7 +47,7 @@ module RubyDB
           parts << "FROM #{@from.to_sql}" if @from
           parts.concat(@joins.map(&:to_sql))
           parts << "WHERE #{@where.to_sql}" if @where
-          parts << "GROUP BY #{@group_by.map(&:to_sql).join(', ')}" if @group_by.any?
+          parts << "GROUP BY #{@group_by.map(&:to_sql).join(", ")}" if @group_by.any?
           parts << "HAVING #{@having.to_sql}" if @having
           parts << "ORDER BY #{@order_by.map(&:to_sql).join(", ")}" if @order_by.any?
           parts << "LIMIT #{@limit.to_sql}" if @limit
@@ -58,7 +58,7 @@ module RubyDB
         def inspect
           cols = @columns.map(&:inspect).join(", ")
           str = "Select(columns: [#{cols}], from: #{@from.inspect}"
-          str << ", joins: #{@joins.map(&:inspect).join(', ')}" if @joins.any?
+          str << ", joins: #{@joins.map(&:inspect).join(", ")}" if @joins.any?
           str << ", where: #{@where.inspect}" if @where
           str << ", order_by: #{@order_by.map(&:inspect).join(", ")}" if @order_by.any?
           str << ", limit: #{@limit.inspect}" if @limit

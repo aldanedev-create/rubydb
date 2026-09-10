@@ -2,7 +2,6 @@
 
 require "socket"
 require "time"
-require "thread"
 require "json"
 require "monitor"
 require "fileutils"
@@ -110,8 +109,8 @@ module RubyDB
             @heartbeat_thread = nil
 
             puts "Primary replication stopped"
-          else
-            @engine.remove_commit_listener(@engine_commit_listener) if @engine.respond_to?(:remove_commit_listener)
+          elsif @engine.respond_to?(:remove_commit_listener)
+            @engine.remove_commit_listener(@engine_commit_listener)
           end
 
           # Closing the listener alone does not wake established replica
@@ -125,8 +124,16 @@ module RubyDB
           @replication_log.close unless @replication_log.closed?
         end
         connections.each do |connection|
-          connection.shutdown(Socket::SHUT_RDWR) rescue nil
-          connection.close rescue nil
+          begin
+            connection.shutdown(Socket::SHUT_RDWR)
+          rescue
+            nil
+          end
+          begin
+            connection.close
+          rescue
+            nil
+          end
         end
         true
       end
@@ -156,7 +163,7 @@ module RubyDB
 
       def fencing_status
         @lock.synchronize do
-          { node_id: @fencing_lease.node_id, epoch: @fencing_lease.epoch, valid: @fencing_lease.valid? }
+          {node_id: @fencing_lease.node_id, epoch: @fencing_lease.epoch, valid: @fencing_lease.valid?}
         end
       end
 
@@ -255,7 +262,7 @@ module RubyDB
             begin
               client = @replication_server.accept
               Thread.new { handle_replica_connection(client) }
-            rescue => e
+            rescue
               # Log error but continue
             end
           end
@@ -339,8 +346,12 @@ module RubyDB
             end
           end
         end
-      rescue StandardError
-        client.close rescue nil
+      rescue
+        begin
+          client.close
+        rescue
+          nil
+        end
       ensure
         if replica_id
           unregister_replica(replica_id)
@@ -395,7 +406,7 @@ module RubyDB
 
       def persist_slots
         FileUtils.mkdir_p(File.dirname(@slot_path))
-        payload = { slots: @replication_slots.transform_values { |slot| { confirmed_lsn: slot.confirmed_lsn } } }
+        payload = {slots: @replication_slots.transform_values { |slot| {confirmed_lsn: slot.confirmed_lsn} }}
         temporary = "#{@slot_path}.tmp-#{Process.pid}"
         File.write(temporary, JSON.generate(payload))
         File.rename(temporary, @slot_path)
@@ -405,14 +416,14 @@ module RubyDB
 
       def notify_replicas(transaction_data, lsn)
         @stats[:replicated_lsn] = lsn
-        entry = { lsn: lsn, timestamp: Time.now.iso8601, transaction_id: transaction_data[:id], data: transaction_data }
+        entry = {lsn: lsn, timestamp: Time.now.iso8601, transaction_id: transaction_data[:id], data: transaction_data}
         @replicas.each_value do |replica|
           connection = replica[:connection]
           next unless connection
           next if replica[:last_lsn] && replica[:last_lsn] >= lsn
           send_replication_entry(connection, entry)
           replica[:last_lsn] = lsn
-        rescue StandardError
+        rescue
           unregister_replica(replica[:id])
         end
       end

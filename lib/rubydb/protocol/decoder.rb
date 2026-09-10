@@ -49,7 +49,6 @@ module RubyDB
 
             @stats[:messages_decoded] += 1
             message
-
           rescue => e
             @stats[:errors] += 1
             raise ProtocolError, "Decoding failed: #{e.message}"
@@ -62,35 +61,33 @@ module RubyDB
       end
 
       def decode_msgpack(data)
-        begin
-          require "msgpack"
-          hash = MessagePack.unpack(data)
-          msg = Message.new(hash[:type], hash[:payload] || {})
-          msg.instance_variable_set(:@id, hash[:id])
-          msg.instance_variable_set(:@created_at, Time.parse(hash[:created_at]))
-          msg
-        rescue LoadError
-          decode_json(data)
-        end
+        require "msgpack"
+        hash = MessagePack.unpack(data)
+        msg = Message.new(hash[:type], hash[:payload] || {})
+        msg.instance_variable_set(:@id, hash[:id])
+        msg.instance_variable_set(:@created_at, Time.parse(hash[:created_at]))
+        msg
+      rescue LoadError
+        decode_json(data)
       end
 
       def decode_binary(data)
         offset = 0
 
-        type_len = data[offset].unpack("C").first
+        type_len = data[offset].unpack1("C")
         offset += 1
         type = data[offset, type_len].to_sym
         offset += type_len
 
-        id_len = data[offset].unpack("C").first
+        id_len = data[offset].unpack1("C")
         offset += 1
         id = data[offset, id_len]
         offset += id_len
 
-        timestamp = data[offset, 8].unpack("Q>").first
+        timestamp = data[offset, 8].unpack1("Q>")
         offset += 8
 
-        payload_len = data[offset, 4].unpack("L>").first
+        payload_len = data[offset, 4].unpack1("L>")
         offset += 4
         payload_data = data[offset, payload_len]
         payload = JSON.parse(payload_data, symbolize_names: true)
@@ -121,7 +118,7 @@ module RubyDB
         begin
           require "openssl"
           iv = data[0, 16]
-          encrypted_data = data[16..-1]
+          encrypted_data = data[16..]
 
           cipher = OpenSSL::Cipher.new("aes-256-cbc")
           cipher.decrypt
@@ -136,7 +133,7 @@ module RubyDB
       def stats
         @lock.synchronize do
           @stats.merge({
-            bytes_per_message: @stats[:messages_decoded] > 0 ? @stats[:bytes_decoded] / @stats[:messages_decoded] : 0
+            bytes_per_message: (@stats[:messages_decoded] > 0) ? @stats[:bytes_decoded] / @stats[:messages_decoded] : 0
           })
         end
       end

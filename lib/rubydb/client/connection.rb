@@ -106,7 +106,6 @@ module RubyDB
             perform_handshake
 
             @connected = true
-
           rescue => e
             raise ConnectionError, "Connection failed: #{e.message}"
           end
@@ -124,7 +123,7 @@ module RubyDB
             # Ignore errors on disconnect
           end
 
-          @socket.close if @socket
+          @socket&.close
           @socket = nil
           @connected = false
           @authenticated = false
@@ -139,7 +138,7 @@ module RubyDB
         @lock.synchronize do
           ensure_connected
 
-          payload = { sql: sql, params: params }
+          payload = {sql: sql, params: params}
           payload[:deadline_at] = deadline_at if deadline_at
           message = Protocol::Message.new(
             Protocol::Message::TYPE_QUERY,
@@ -156,7 +155,7 @@ module RubyDB
       # must not be used for another application request until wait returns.
       def send_query_async(sql, params = [], deadline_at: nil)
         ensure_connected
-        payload = { sql: sql, params: params }
+        payload = {sql: sql, params: params}
         payload[:deadline_at] = deadline_at if deadline_at
         message = Protocol::Message.new(Protocol::Message::TYPE_QUERY, payload)
         @lock.synchronize { send_message(message) }
@@ -176,7 +175,7 @@ module RubyDB
         ensure_connected
         message = Protocol::Message.new(
           Protocol::Message::TYPE_CANCEL,
-          { target_request_id: request_id.to_s }
+          {target_request_id: request_id.to_s}
         )
         @lock.synchronize { send_message(message) }
         true
@@ -188,7 +187,7 @@ module RubyDB
 
           message = Protocol::Message.new(
             Protocol::Message::TYPE_PREPARE,
-            { sql: sql }
+            {sql: sql}
           )
 
           send_message(message)
@@ -202,7 +201,7 @@ module RubyDB
 
           message = Protocol::Message.new(
             Protocol::Message::TYPE_EXECUTE,
-            { statement_id: statement_id, params: params }
+            {statement_id: statement_id, params: params}
           )
 
           send_message(message)
@@ -216,7 +215,7 @@ module RubyDB
 
           message = Protocol::Message.new(
             Protocol::Message::TYPE_CLOSE,
-            { statement_id: statement_id }
+            {statement_id: statement_id}
           )
 
           send_message(message)
@@ -371,7 +370,7 @@ module RubyDB
               # until it receives this synchronization frame.
               sync_msg = Protocol::Message.new(
                 Protocol::Message::TYPE_SYNCHRONIZE,
-                { capabilities: Protocol::Capabilities.default_client.to_hash }
+                {capabilities: Protocol::Capabilities.default_client.to_hash}
               )
               send_message(sync_msg)
               ready_response = receive_message
@@ -395,7 +394,7 @@ module RubyDB
         server_nonce = client_nonce + challenge
         client_final = "c=biws,r=#{server_nonce}"
         salt = Base64.decode64(encoded_salt)
-        salted = OpenSSL::PKCS5.pbkdf2_hmac(password, salt, iterations, 32, OpenSSL::Digest::SHA256.new)
+        salted = OpenSSL::PKCS5.pbkdf2_hmac(password, salt, iterations, 32, OpenSSL::Digest.new("SHA256"))
         auth_message = [client_first_bare, "r=#{server_nonce},s=#{encoded_salt},i=#{iterations}", client_final].join(",")
         client_key = OpenSSL::HMAC.digest("SHA256", salted, "Client Key")
         stored_key = OpenSSL::Digest::SHA256.digest(client_key)

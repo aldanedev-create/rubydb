@@ -87,8 +87,7 @@ module RubyDB
             break if request.nil?
 
             process_request(request)
-
-          rescue => e
+          rescue
             @stats[:requests_failed] += 1
           end
         end
@@ -102,14 +101,11 @@ module RubyDB
           result = handle_request(request)
 
           # Send response back through connection
-          if request[:connection]
-            request[:connection].send_response(result)
-          end
+          request[:connection]&.send_response(result)
 
           @stats[:requests_processed] += 1
           @last_activity = Time.now
-
-        rescue => e
+        rescue
           @stats[:requests_failed] += 1
           raise
         ensure
@@ -158,7 +154,7 @@ module RubyDB
         sql = request[:sql]
         stmt_id = "stmt_#{Time.now.to_i}_#{@id}"
 
-        success_response({ statement_id: stmt_id, sql: sql })
+        success_response({statement_id: stmt_id, sql: sql})
       end
 
       def handle_execute(request, connection)
@@ -173,21 +169,21 @@ module RubyDB
 
       def handle_begin(request, connection)
         @transaction_manager.begin_transaction
-        success_response({ transaction_id: @transaction_manager.current_transaction&.id })
+        success_response({transaction_id: @transaction_manager.current_transaction&.id})
       end
 
       def handle_commit(request, connection)
         @transaction_manager.commit_transaction
-        success_response({ committed: true })
+        success_response({committed: true})
       end
 
       def handle_rollback(request, connection)
         @transaction_manager.rollback_transaction
-        success_response({ rolled_back: true })
+        success_response({rolled_back: true})
       end
 
       def handle_ping(request, connection)
-        success_response({ pong: true })
+        success_response({pong: true})
       end
 
       def success_response(data)

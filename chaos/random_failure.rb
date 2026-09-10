@@ -52,14 +52,14 @@ module RubyDB
           return unless @enabled
 
           component = @components[failure_type]
-          if component && component.respond_to?(:inject)
+          if component&.respond_to?(:inject)
             begin
               component.inject
               @stats[:total_failures] += 1
               @stats[:by_type][failure_type] += 1
               @stats[:successes] += 1
-              @stats[:last_failure] = { type: failure_type, time: Time.now }
-            rescue => e
+              @stats[:last_failure] = {type: failure_type, time: Time.now}
+            rescue
               @stats[:failures] += 1
             end
           end
@@ -116,15 +116,15 @@ module RubyDB
         failure_type = @failure_types.sample
         component = @components[failure_type]
 
-        if component && component.respond_to?(:inject)
+        if component&.respond_to?(:inject)
           begin
             component.inject
             @stats[:total_failures] += 1
             @stats[:by_type][failure_type] += 1
             @stats[:successes] += 1
-            @stats[:last_failure] = { type: failure_type, time: Time.now }
+            @stats[:last_failure] = {type: failure_type, time: Time.now}
             @stats[:components_affected] << failure_type unless @stats[:components_affected].include?(failure_type)
-          rescue => e
+          rescue
             @stats[:failures] += 1
           end
         end

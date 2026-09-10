@@ -12,9 +12,9 @@ RSpec.describe "integer primary key allocation" do
         RubyDB::Catalog::Column.new("name", :text, null: false)
       ])
 
-      first = engine.insert_row("items", engine.table_columns("items"), { name: "first" })
+      first = engine.insert_row("items", engine.table_columns("items"), {name: "first"})
       engine.delete_row("items", first)
-      second = engine.insert_row("items", engine.table_columns("items"), { name: "second" })
+      second = engine.insert_row("items", engine.table_columns("items"), {name: "second"})
 
       expect([first, second]).to eq([1, 2])
     ensure

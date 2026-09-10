@@ -115,7 +115,7 @@ module RubyDB
 
         def execute_scalar(args)
           return nil if args[0].nil? || args[1].nil?
-          args[0] == args[1] ? nil : args[0]
+          (args[0] == args[1]) ? nil : args[0]
         end
       end
 
@@ -153,11 +153,23 @@ module RubyDB
           when "text", "string", "varchar"
             value.to_s
           when "date"
-            Date.parse(value.to_s) rescue nil
+            begin
+              Date.parse(value.to_s)
+            rescue
+              nil
+            end
           when "timestamp", "datetime"
-            Time.parse(value.to_s) rescue nil
+            begin
+              Time.parse(value.to_s)
+            rescue
+              nil
+            end
           when "json"
-            JSON.parse(value.to_s) rescue {}
+            begin
+              JSON.parse(value.to_s)
+            rescue
+              {}
+            end
           else
             value
           end

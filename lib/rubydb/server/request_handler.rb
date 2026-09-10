@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "monitor"
+require_relative "../protocol/parameter_binder"
 
 module RubyDB
   module Server
@@ -54,7 +55,6 @@ module RubyDB
             @stats[:avg_processing_time_ms] = @stats[:total_processing_time_ms] / @stats[:requests_processed] if @stats[:requests_processed] > 0
 
             result
-
           rescue => e
             @stats[:requests_failed] += 1
             error_response(e.message)
@@ -102,7 +102,7 @@ module RubyDB
       def close_statement(stmt_id)
         @lock.synchronize do
           @prepared_statements.delete(stmt_id)
-          success_response({ closed: true })
+          success_response({closed: true})
         end
       end
 
@@ -155,7 +155,7 @@ module RubyDB
         register_handler(:liveness) { |_request| success_response(@health.liveness) }
         register_handler(:readiness) { |_request| success_response(@health.readiness) }
         register_handler(:health) { |_request| success_response(@health.check) }
-        register_handler(:metrics) { |_request| success_response({ format: "prometheus", body: @metrics.to_prometheus }) }
+        register_handler(:metrics) { |_request| success_response({format: "prometheus", body: @metrics.to_prometheus}) }
       end
 
       def route_request(request)
@@ -226,29 +226,30 @@ module RubyDB
         @stats[:transaction_requests] += 1
         @transaction_manager.commit_transaction
 
-        success_response({ committed: true })
+        success_response({committed: true})
       end
 
       def handle_rollback(request)
         @stats[:transaction_requests] += 1
         @transaction_manager.rollback_transaction
 
-        success_response({ rolled_back: true })
+        success_response({rolled_back: true})
       end
 
       def handle_ping(request)
         @stats[:other_requests] += 1
-        success_response({ pong: true, timestamp: Time.now.iso8601 })
+        success_response({pong: true, timestamp: Time.now.iso8601})
       end
 
       def execute_sql(sql, params, deadline_at: nil)
+        sql = RubyDB::Protocol::ParameterBinder.bind(sql, params)
         tokens = RubyDB::SQL::Lexer.new(sql).tokenize
         statements = RubyDB::SQL::Parser.new(tokens).parse
         results = statements.map do |statement|
           plan = RubyDB::Execution::Planner.new(@engine).plan(statement)
           RubyDB::Execution::Executor.new(@engine, deadline_at: deadline_at).execute(plan)
         end
-        results.size == 1 ? results.first : results
+        (results.size == 1) ? results.first : results
       end
 
       def extract_params(sql)

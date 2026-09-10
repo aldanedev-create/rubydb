@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Concurrency
     # DeadlockDetector - Detects and resolves deadlocks
@@ -140,7 +138,7 @@ module RubyDB
           sleep(@timeout)
           begin
             detect_deadlocks
-          rescue => e
+          rescue
             # Log error but continue
           end
         end

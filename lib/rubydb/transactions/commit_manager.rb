@@ -2,10 +2,9 @@
 
 module RubyDB
   module Transactions
-
     # Import dependencies
-require_relative "transaction"
-require_relative "transaction_log"
+    require_relative "transaction"
+    require_relative "transaction_log"
 
     # CommitManager - Manages two-phase commit and commit coordination
     class CommitManager
@@ -25,7 +24,7 @@ require_relative "transaction_log"
         }
         @lock = Mutex.new
         @commit_thread = nil
-        
+
         start_commit_thread if config[:async_commit] != false
       end
 
@@ -44,17 +43,17 @@ require_relative "transaction_log"
         @lock.synchronize do
           # Validate that transaction can be prepared
           return false unless transaction.active?
-          
+
           # Write prepare record to log
           @transaction_manager.transaction_log.log_prepare(transaction)
-          
+
           # Store prepared transaction
           @prepared_transactions[transaction.id] = {
             transaction: transaction,
             prepared_at: Time.now,
             resources: transaction.modified_rows.keys
           }
-          
+
           @stats[:prepared_count] += 1
           true
         end
@@ -64,13 +63,13 @@ require_relative "transaction_log"
         @lock.synchronize do
           prepared = @prepared_transactions[transaction.id]
           return false unless prepared
-          
+
           # Write commit record
           @transaction_manager.transaction_log.log_commit(transaction)
-          
+
           # Commit changes
           commit_changes(transaction)
-          
+
           @prepared_transactions.delete(transaction.id)
           @stats[:committed_count] += 1
           true
@@ -81,13 +80,13 @@ require_relative "transaction_log"
         @lock.synchronize do
           prepared = @prepared_transactions[transaction.id]
           return false unless prepared
-          
+
           # Write rollback record
           @transaction_manager.transaction_log.log_rollback(transaction)
-          
+
           # Rollback changes
           rollback_changes(transaction)
-          
+
           @prepared_transactions.delete(transaction.id)
           @stats[:rolled_back_count] += 1
           true
@@ -98,7 +97,7 @@ require_relative "transaction_log"
         @lock.synchronize do
           @prepared_transactions.each do |id, prepared|
             next unless prepared[:transaction].in_doubt?
-            
+
             # Try to resolve by checking if commit was successful
             if can_commit?(prepared[:transaction])
               commit_prepared(prepared[:transaction])
@@ -130,15 +129,15 @@ require_relative "transaction_log"
 
       def two_phase_commit(transaction)
         @stats[:two_phase_commits] += 1
-        
+
         # Phase 1: Prepare
         unless prepare(transaction)
           return false
         end
-        
+
         # Phase 2: Commit
         commit_prepared(transaction)
-        
+
         true
       end
 
@@ -151,7 +150,7 @@ require_relative "transaction_log"
             info[:new]
           )
         end
-        
+
         # Update indexes
         if @transaction_manager.engine.respond_to?(:index_manager)
           transaction.modified_rows.each do |row_id, info|
@@ -187,7 +186,7 @@ require_relative "transaction_log"
             end
           end
         end
-        
+
         true
       end
 
@@ -195,17 +194,17 @@ require_relative "transaction_log"
         @commit_thread = Thread.new do
           loop do
             sleep(1)  # Process every second
-            
+
             begin
               # Process commit queue
-              while !@commit_queue.empty?
+              until @commit_queue.empty?
                 entry = @commit_queue.shift
                 commit(entry[:transaction])
               end
-              
+
               # Resolve in-doubt transactions
               resolve_in_doubt
-            rescue => e
+            rescue
               # Log error but continue
             end
           end

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require "time"
 
 module RubyDB
@@ -124,7 +123,7 @@ module RubyDB
         when :except then left.reject { |row| right.any? { |other| key.call(other) == key.call(row) } }.uniq { |row| key.call(row) }
         else raise ExecutionError, "Unsupported set operation: #{plan.operator}"
         end
-        { rows: rows, row_count: rows.size, column_names: rows.first&.keys || [] }
+        {rows: rows, row_count: rows.size, column_names: rows.first&.keys || []}
       end
 
       def execute_with(plan)
@@ -231,7 +230,7 @@ module RubyDB
           offset = plan.offset || 0
           rows = rows[offset, plan.limit] || []
         elsif plan.offset
-          rows = rows[plan.offset..-1] || []
+          rows = rows[plan.offset..] || []
         end
 
         {
@@ -263,14 +262,16 @@ module RubyDB
             inserted_id: inserted.reverse_each.map { |result| result[:inserted_id] }.compact.first,
             message: "INSERT #{inserted.sum { |result| result[:affected_rows] }}"
           }
+        # Roll back even when the request is interrupted, then re-raise it.
+        # rubocop:disable Lint/RescueException
         rescue Exception
           @engine.rollback_transaction if implicit_transaction && @engine.in_transaction?
           raise
+          # rubocop:enable Lint/RescueException
         end
       end
 
       def execute_single_insert(plan, table_name, columns, values)
-
         # Build row data
         row_data = {}
         columns.each_with_index do |col, idx|
@@ -295,7 +296,7 @@ module RubyDB
         }
       rescue DatabaseError => error
         raise unless error.message.match?(/duplicate|unique|primary key/i)
-        return { row_count: 0, affected_rows: 0, message: "INSERT 0 (conflict ignored)" } if plan.on_conflict == :nothing
+        return {row_count: 0, affected_rows: 0, message: "INSERT 0 (conflict ignored)"} if plan.on_conflict == :nothing
         raise unless plan.on_conflict.is_a?(Hash) && plan.on_conflict[:action] == :update
 
         target = plan.on_conflict[:target]
@@ -322,7 +323,7 @@ module RubyDB
         row_id = existing[:_row_id] || existing["_row_id"]
         @engine.update_row(table_name, row_id, values)
         inserted_id = target.map { |column| existing[column] || existing[column.to_sym] }.first
-        { row_count: 1, affected_rows: 1, row_id: row_id, inserted_id: inserted_id, message: "INSERT 0 UPDATE 1" }
+        {row_count: 1, affected_rows: 1, row_id: row_id, inserted_id: inserted_id, message: "INSERT 0 UPDATE 1"}
       end
 
       def execute_update(plan)
@@ -406,69 +407,69 @@ module RubyDB
 
       def execute_create_database(plan)
         @engine.catalog.create_database(plan.database_name, **(plan.options || {}))
-        { row_count: 0, message: "CREATE DATABASE #{plan.database_name}" }
+        {row_count: 0, message: "CREATE DATABASE #{plan.database_name}"}
       end
 
       def execute_drop_database(plan)
         @engine.catalog.drop_database(plan.database_name, **(plan.options || {}))
-        { row_count: 0, message: "DROP DATABASE #{plan.database_name}" }
+        {row_count: 0, message: "DROP DATABASE #{plan.database_name}"}
       end
 
       def execute_create_schema(plan)
         @engine.catalog.create_schema(plan.schema_name, **(plan.options || {}))
-        { row_count: 0, message: "CREATE SCHEMA #{plan.schema_name}" }
+        {row_count: 0, message: "CREATE SCHEMA #{plan.schema_name}"}
       end
 
       def execute_drop_schema(plan)
         @engine.catalog.drop_schema(plan.schema_name, **(plan.options || {}))
-        { row_count: 0, message: "DROP SCHEMA #{plan.schema_name}" }
+        {row_count: 0, message: "DROP SCHEMA #{plan.schema_name}"}
       end
 
       def execute_create_view(plan)
         query = plan.query.respond_to?(:to_sql) ? plan.query.to_sql : plan.query
         @engine.catalog.create_view(plan.view_name, query, **(plan.options || {}))
-        { row_count: 0, message: "CREATE VIEW #{plan.view_name}" }
+        {row_count: 0, message: "CREATE VIEW #{plan.view_name}"}
       end
 
       def execute_drop_view(plan)
         @engine.catalog.drop_view(plan.view_name, **(plan.options || {}))
-        { row_count: 0, message: "DROP VIEW #{plan.view_name}" }
+        {row_count: 0, message: "DROP VIEW #{plan.view_name}"}
       end
 
       def execute_create_trigger(plan)
         definition = "EXECUTE FUNCTION #{plan.function_name}()"
         @engine.catalog.create_trigger(plan.trigger_name, plan.event, plan.target_table, definition, timing: plan.timing, function_name: plan.function_name)
-        { row_count: 0, message: "CREATE TRIGGER #{plan.trigger_name}" }
+        {row_count: 0, message: "CREATE TRIGGER #{plan.trigger_name}"}
       end
 
       def execute_drop_trigger(plan)
         @engine.catalog.drop_trigger(plan.trigger_name, **(plan.options || {}))
-        { row_count: 0, message: "DROP TRIGGER #{plan.trigger_name}" }
+        {row_count: 0, message: "DROP TRIGGER #{plan.trigger_name}"}
       end
 
       def execute_vacuum(_plan)
         result = @engine.vacuum
-        { row_count: 0, vacuum: result, message: "VACUUM" }
+        {row_count: 0, vacuum: result, message: "VACUUM"}
       end
 
       def execute_alter_table_add_column(plan)
         @engine.add_column(plan.table_name, plan.column_name, plan.column_type, plan.options)
-        { row_count: 0, message: "ALTER TABLE #{plan.table_name} ADD COLUMN #{plan.column_name}" }
+        {row_count: 0, message: "ALTER TABLE #{plan.table_name} ADD COLUMN #{plan.column_name}"}
       end
 
       def execute_alter_table_drop_column(plan)
         @engine.drop_column(plan.table_name, plan.column_name)
-        { row_count: 0, message: "ALTER TABLE #{plan.table_name} DROP COLUMN #{plan.column_name}" }
+        {row_count: 0, message: "ALTER TABLE #{plan.table_name} DROP COLUMN #{plan.column_name}"}
       end
 
       def execute_alter_table_add_constraint(plan)
         @engine.add_constraint(plan.table_name, plan.constraint)
-        { row_count: 0, message: "ALTER TABLE #{plan.table_name} ADD CONSTRAINT #{plan.constraint.name}" }
+        {row_count: 0, message: "ALTER TABLE #{plan.table_name} ADD CONSTRAINT #{plan.constraint.name}"}
       end
 
       def execute_alter_table_drop_constraint(plan)
         @engine.drop_constraint(plan.table_name, plan.constraint_name)
-        { row_count: 0, message: "ALTER TABLE #{plan.table_name} DROP CONSTRAINT #{plan.constraint_name}" }
+        {row_count: 0, message: "ALTER TABLE #{plan.table_name} DROP CONSTRAINT #{plan.constraint_name}"}
       end
 
       def execute_create_index(plan)
@@ -532,17 +533,17 @@ module RubyDB
 
       def execute_savepoint(plan)
         @engine.create_savepoint(plan.name)
-        { row_count: 0, message: "SAVEPOINT #{plan.name}" }
+        {row_count: 0, message: "SAVEPOINT #{plan.name}"}
       end
 
       def execute_rollback_to_savepoint(plan)
         @engine.rollback_to_savepoint(plan.name)
-        { row_count: 0, message: "ROLLBACK TO SAVEPOINT #{plan.name}" }
+        {row_count: 0, message: "ROLLBACK TO SAVEPOINT #{plan.name}"}
       end
 
       def execute_release_savepoint(plan)
         @engine.release_savepoint(plan.name)
-        { row_count: 0, message: "RELEASE SAVEPOINT #{plan.name}" }
+        {row_count: 0, message: "RELEASE SAVEPOINT #{plan.name}"}
       end
 
       def execute_explain(plan)
@@ -562,13 +563,13 @@ module RubyDB
           result = execute(analyzed_plan)
           elapsed_ms = ((Time.now - start_time) * 1000).round(2)
 
-          plan_text = "EXPLAIN ANALYZE:\n#{plan_text}\n" +
-                      "Execution Time: #{elapsed_ms}ms\n" +
-                      "Rows: #{result[:row_count]}"
+          plan_text = "EXPLAIN ANALYZE:\n#{plan_text}\n" \
+            "Execution Time: #{elapsed_ms}ms\n" \
+            "Rows: #{result[:row_count]}"
         end
 
         {
-          rows: [{ "QUERY PLAN" => plan_text }],
+          rows: [{"QUERY PLAN" => plan_text}],
           row_count: 1,
           column_names: ["QUERY PLAN"]
         }
@@ -728,8 +729,6 @@ module RubyDB
           apply_function(expr.name, args)
         when Expression::Parameter
           expr.value
-        else
-          nil
         end
       end
 
@@ -758,7 +757,6 @@ module RubyDB
         when :divide then left / right if right != 0
         when :modulo then left % right if right != 0
         when :concat then left.to_s + right.to_s
-        else nil
         end
       end
 
@@ -777,8 +775,8 @@ module RubyDB
         case operator
         # SQL comparisons involving NULL evaluate to UNKNOWN, represented by
         # nil here. WHERE filtering already treats UNKNOWN as non-matching.
-        when SQL::Token::Type::EQ then left.nil? || right.nil? ? nil : left == right
-        when SQL::Token::Type::NE then left.nil? || right.nil? ? nil : left != right
+        when SQL::Token::Type::EQ then (left.nil? || right.nil?) ? nil : left == right
+        when SQL::Token::Type::NE then (left.nil? || right.nil?) ? nil : left != right
         when SQL::Token::Type::LT then !left.nil? && !right.nil? && left < right
         when SQL::Token::Type::LTE then !left.nil? && !right.nil? && left <= right
         when SQL::Token::Type::GT then !left.nil? && !right.nil? && left > right
@@ -790,7 +788,6 @@ module RubyDB
         when SQL::Token::Type::STAR then apply_binary_op(left, right, :multiply)
         when SQL::Token::Type::SLASH then apply_binary_op(left, right, :divide)
         when SQL::Token::Type::PERCENT then apply_binary_op(left, right, :modulo)
-        else nil
         end
       end
 
@@ -871,8 +868,6 @@ module RubyDB
           Date.today
         when "CURRENT_TIME"
           Time.now
-        else
-          nil
         end
       end
 
@@ -884,8 +879,8 @@ module RubyDB
 
         # Convert SQL LIKE pattern to regex
         regex_str = Regexp.escape(pat)
-          .gsub('%', '.*')
-          .gsub('_', '.')
+          .gsub("%", ".*")
+          .gsub("_", ".")
         Regexp.new("^#{regex_str}$").match?(str)
       end
 
@@ -1064,7 +1059,7 @@ module RubyDB
 
       def window_frame_rows(rows, index, frame)
         start_index = window_frame_index(frame[:start], index, rows.size, start: true)
-        finish = frame[:finish] || { kind: :current_row }
+        finish = frame[:finish] || {kind: :current_row}
         end_index = window_frame_index(finish, index, rows.size, start: false)
         return [] if start_index > end_index
 
@@ -1109,7 +1104,6 @@ module RubyDB
         when "AVG" then values.empty? ? 0 : values.sum / values.size.to_f
         when "MIN" then values.min
         when "MAX" then values.max
-        else nil
         end
       end
 
@@ -1121,14 +1115,14 @@ module RubyDB
             val_a = a[col]
             val_b = b[col]
 
-            if val_a.nil? && val_b.nil?
-              comparison = 0
+            comparison = if val_a.nil? && val_b.nil?
+              0
             elsif val_a.nil?
-              comparison = -1
+              -1
             elsif val_b.nil?
-              comparison = 1
+              1
             else
-              comparison = val_a <=> val_b
+              val_a <=> val_b
             end
 
             direction = order.is_a?(Hash) ? order[:direction] : order.direction
@@ -1169,17 +1163,17 @@ module RubyDB
         lines << "QUERY PLAN"
         lines << "=" * 40
 
-        if plan.scan_type == :index
-          lines << "Index Scan on #{plan.table_name} using #{plan.index.name}"
+        lines << if plan.scan_type == :index
+          "Index Scan on #{plan.table_name} using #{plan.index.name}"
         else
-          lines << "Seq Scan on #{plan.table_name}"
+          "Seq Scan on #{plan.table_name}"
         end
 
         if plan.predicate
-          lines << "  Filter: #{plan.predicate.to_s}"
+          lines << "  Filter: #{plan.predicate}"
         end
 
-        if plan.order_by && plan.order_by.any?
+        if plan.order_by&.any?
           order_str = plan.order_by.map { |o| "#{o.column} #{o.direction}" }.join(", ")
           lines << "  Order By: #{order_str}"
         end

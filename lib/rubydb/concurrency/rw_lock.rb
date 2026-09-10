@@ -34,10 +34,10 @@ module RubyDB
 
           # Wait if there are writers or pending writers
           while (@writers > 0 || (@prefer_writer && @pending_writers > 0)) ||
-                (@fair && @pending_writers > 0 && @pending_readers > @pending_writers)
+              (@fair && @pending_writers > 0 && @pending_readers > @pending_writers)
             @stats[:read_waits] += 1
             @stats[:contention] += 1
-            
+
             if timeout
               deadline = Time.now + timeout
               @cond.wait(@lock, [deadline - Time.now, 0.1].max)
@@ -57,7 +57,7 @@ module RubyDB
 
       def write_lock(timeout = nil)
         @lock.synchronize do
-          start_time = Time.now
+          Time.now
           @stats[:write_locks] += 1
           @pending_writers += 1
 

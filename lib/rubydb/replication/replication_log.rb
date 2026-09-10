@@ -69,21 +69,19 @@ module RubyDB
           segments.each do |segment_path|
             File.open(segment_path, "r") do |file|
               file.each_line do |line|
-                begin
-                  entry = JSON.parse(line, symbolize_names: true)
+                entry = JSON.parse(line, symbolize_names: true)
 
-                  # Filter by LSN range
-                  if from_lsn && entry[:lsn] < from_lsn
-                    next
-                  end
-                  if to_lsn && entry[:lsn] > to_lsn
-                    next
-                  end
-
-                  transactions << entry
-                rescue JSON::ParserError
-                  # Skip malformed entries
+                # Filter by LSN range
+                if from_lsn && entry[:lsn] < from_lsn
+                  next
                 end
+                if to_lsn && entry[:lsn] > to_lsn
+                  next
+                end
+
+                transactions << entry
+              rescue JSON::ParserError
+                # Skip malformed entries
               end
             end
           end
@@ -95,20 +93,16 @@ module RubyDB
       def get_last_lsn
         @lock.synchronize do
           list_segments.reverse_each do |segment_path|
-            begin
-              File.readlines(segment_path).reverse_each do |line|
-                begin
-                  lsn = JSON.parse(line, symbolize_names: true)[:lsn]
-                  return lsn unless lsn.nil?
-                rescue JSON::ParserError
-                  next
-                end
-              end
-            rescue Errno::ENOENT
-              # A concurrently rotated segment may disappear between the
-              # directory listing and the read. Continue with the remaining
-              # durable segments for LSN recovery.
+            File.readlines(segment_path).reverse_each do |line|
+              lsn = JSON.parse(line, symbolize_names: true)[:lsn]
+              return lsn unless lsn.nil?
+            rescue JSON::ParserError
+              next
             end
+          rescue Errno::ENOENT
+            # A concurrently rotated segment may disappear between the
+            # directory listing and the read. Continue with the remaining
+            # durable segments for LSN recovery.
           end
           nil
         end
@@ -177,7 +171,7 @@ module RubyDB
 
       def open_current_segment
         @segment_counter += 1
-        segment_name = "replication_#{Time.now.strftime('%Y%m%d_%H%M%S')}_#{@segment_counter}.log"
+        segment_name = "replication_#{Time.now.strftime("%Y%m%d_%H%M%S")}_#{@segment_counter}.log"
         segment_path = File.join(@log_dir, segment_name)
 
         @current_segment = File.open(segment_path, "a+")

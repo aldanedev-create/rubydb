@@ -5,9 +5,9 @@ module RubyDB
     # Plan - Query execution plan
     class Plan
       attr_reader :type, :table_name, :columns, :projections, :predicate,
-                  :order_by, :group_by, :aggregates, :limit, :offset,
-                  :distinct, :having, :scan_type, :index, :estimated_cost,
-                  :estimated_rows, :joins, :source_reference
+        :order_by, :group_by, :aggregates, :limit, :offset,
+        :distinct, :having, :scan_type, :index, :estimated_cost,
+        :estimated_rows, :joins, :source_reference
 
       def initialize(type, table_name = nil, columns = [])
         @type = type
@@ -175,7 +175,8 @@ module RubyDB
           @database_name = name
           @options = options
         end
-        def database_name = @database_name
+
+        attr_reader :database_name
       end
 
       class DropDatabase < Plan
@@ -185,7 +186,8 @@ module RubyDB
           @database_name = name
           @options = options
         end
-        def database_name = @database_name
+
+        attr_reader :database_name
       end
 
       class CreateSchema < Plan

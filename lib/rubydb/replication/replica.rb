@@ -178,38 +178,35 @@ module RubyDB
 
       def connect_to_primary
         @lock.synchronize do
-          begin
-            @connection = TCPSocket.new(@primary_host, @replication_port)
-            @state = STATE_CONNECTING
-            @stats[:last_connect_time] = Time.now
+          @connection = TCPSocket.new(@primary_host, @replication_port)
+          @state = STATE_CONNECTING
+          @stats[:last_connect_time] = Time.now
 
-            # Send replica handshake
-            handshake = {
-              type: "replica_handshake",
-              replica_id: @config[:replica_id] || "replica_#{Process.pid}",
-              protocol_version: 1,
-              wal_position: @last_replayed_lsn || 0,
-              auth_token: @config[:replication_auth_token] || @config[:auth_token]
-            }
+          # Send replica handshake
+          handshake = {
+            type: "replica_handshake",
+            replica_id: @config[:replica_id] || "replica_#{Process.pid}",
+            protocol_version: 1,
+            wal_position: @last_replayed_lsn || 0,
+            auth_token: @config[:replication_auth_token] || @config[:auth_token]
+          }
 
-            @connection.write(JSON.generate(handshake) + "\n")
-            response = JSON.parse(@connection.readline)
+          @connection.write(JSON.generate(handshake) + "\n")
+          response = JSON.parse(@connection.readline)
 
-            if response["success"]
-              @state = STATE_STREAMING
-              @stats[:reconnect_attempts] = 0
-              @retry_count = 0
-              puts "Connected to primary as replica"
-            else
-              @state = STATE_FAILED
-            end
-
-          rescue => e
-            @stats[:last_error] = "#{e.class}: #{e.message}"
+          if response["success"]
+            @state = STATE_STREAMING
+            @stats[:reconnect_attempts] = 0
+            @retry_count = 0
+            puts "Connected to primary as replica"
+          else
             @state = STATE_FAILED
-            @stats[:reconnect_attempts] += 1
-            raise
           end
+        rescue => e
+          @stats[:last_error] = "#{e.class}: #{e.message}"
+          @state = STATE_FAILED
+          @stats[:reconnect_attempts] += 1
+          raise
         end
       end
 
@@ -242,7 +239,7 @@ module RubyDB
           rescue EOFError, Errno::ECONNRESET
             @state = STATE_DISCONNECTED
             break
-          rescue => e
+          rescue
             @state = STATE_FAILED
             break
           end
@@ -278,10 +275,10 @@ module RubyDB
 
       def catch_up
         @state = if @last_received_lsn && @last_received_lsn == @last_replayed_lsn
-                   STATE_SYNCED
-                 else
-                   STATE_STREAMING
-                 end
+          STATE_SYNCED
+        else
+          STATE_STREAMING
+        end
       end
 
       def apply_bootstrap_schema(schema)
@@ -294,7 +291,7 @@ module RubyDB
             RubyDB::Execution::Executor.new(@engine).execute(plan)
           end
         end
-      rescue StandardError => error
+      rescue => error
         raise RubyDB::ReplicationError, "Replica bootstrap failed: #{error.message}"
       end
 
@@ -359,16 +356,17 @@ module RubyDB
       def validate_promotion!(recovery_point)
         promotable_state = [STATE_STREAMING, STATE_SYNCED, STATE_DISCONNECTED, STATE_CONNECTING].include?(@state)
         caught_up_after_disconnect = [STATE_DISCONNECTED, STATE_CONNECTING].include?(@state) &&
-                                     @last_replayed_lsn &&
-                                     @last_received_lsn == @last_replayed_lsn
-        unless promotable_state && ([STATE_STREAMING, STATE_SYNCED].include?(@state) || caught_up_after_disconnect)
+          @last_replayed_lsn &&
+          @last_received_lsn == @last_replayed_lsn
+        synchronized_state = [STATE_STREAMING, STATE_SYNCED].include?(@state) || caught_up_after_disconnect
+        unless promotable_state && synchronized_state
           raise ReplicationError, "Replica is not synchronized enough for promotion"
         end
 
         if @last_received_lsn != @last_replayed_lsn
           raise ReplicationError,
-                "Replica has unapplied replication data (received=#{@last_received_lsn.inspect}, " \
-                "replayed=#{@last_replayed_lsn.inspect})"
+            "Replica has unapplied replication data (received=#{@last_received_lsn.inspect}, " \
+            "replayed=#{@last_replayed_lsn.inspect})"
         end
 
         return true if recovery_point.nil?

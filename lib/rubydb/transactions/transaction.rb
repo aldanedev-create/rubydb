@@ -3,7 +3,6 @@
 require "securerandom"
 require "time"
 
-
 # Import dependencies
 require_relative "savepoint"      # For Savepoint class
 require_relative "transaction_id"
@@ -119,7 +118,7 @@ module RubyDB
           return false unless index
 
           # Rollback changes after this savepoint
-          @savepoints[index + 1..-1].each do |sp|
+          @savepoints[index + 1..].each do |sp|
             sp.rollback
           end
           @savepoints = @savepoints[0..index]

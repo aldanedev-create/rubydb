@@ -9,7 +9,7 @@ RSpec.describe "WAL checkpoint sizing" do
       RubyDB::WAL::Writer,
       current_segment: segment,
       current_lsn: RubyDB::WAL::LSN.new(3, 12_345),
-      stats: { buffer_bytes: 0 }
+      stats: {buffer_bytes: 0}
     )
     allow(writer).to receive(:flush)
     allow(writer).to receive(:sync)
@@ -25,7 +25,7 @@ RSpec.describe "WAL checkpoint sizing" do
       RubyDB::WAL::Writer,
       current_segment: instance_double("segment", segment_id: 1, size: 100),
       current_lsn: RubyDB::WAL::LSN.new(1, 100),
-      stats: { buffer_bytes: 0 }
+      stats: {buffer_bytes: 0}
     )
     allow(writer).to receive(:flush)
     allow(writer).to receive(:write_record).and_raise(Errno::ENOSPC, "checkpoint disk full")

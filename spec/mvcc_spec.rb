@@ -41,7 +41,7 @@ RSpec.describe "RubyDB MVCC visibility" do
     Dir.mktmpdir do |dir|
       path = File.join(dir, "versions.json")
       store = RubyDB::MVCC::VersionStore.new(persistence_path: path)
-      version = store.create_version(7, { name: "first" }, 1)
+      version = store.create_version(7, {name: "first"}, 1)
       store.commit_version(version, 1)
       store.persist
 
@@ -80,22 +80,22 @@ RSpec.describe "RubyDB MVCC visibility" do
 
   it "vacuum removes only history older than the active safe point" do
     store = RubyDB::MVCC::VersionStore.new
-    first = store.create_version(7, { name: "first" }, 1)
+    first = store.create_version(7, {name: "first"}, 1)
     store.commit_version(first, 1)
-    second = store.create_version(7, { name: "second" }, 2)
+    second = store.create_version(7, {name: "second"}, 2)
     store.commit_version(second, 2)
-    active = store.create_version(7, { name: "active" }, 3)
+    active = store.create_version(7, {name: "active"}, 3)
 
     expect(store.vacuum(min_active_transaction_id: 3)).to eq(1)
-    expect(store.get_all_versions(7).map(&:data)).to eq([{ name: "second" }, { name: "active" }])
+    expect(store.get_all_versions(7).map(&:data)).to eq([{name: "second"}, {name: "active"}])
     expect(store.get_version(active.version_id)).to be(active)
   end
 
   it "uses a snapshot to hide versions committed after the snapshot" do
-    old = RubyDB::MVCC::Version.new(7, { name: "old" }, 1)
+    old = RubyDB::MVCC::Version.new(7, {name: "old"}, 1)
     old.commit(1)
     snapshot = RubyDB::MVCC::Snapshot.new(2, [2], [1])
-    newer = RubyDB::MVCC::Version.new(7, { name: "new" }, 3)
+    newer = RubyDB::MVCC::Version.new(7, {name: "new"}, 3)
     newer.commit(3)
 
     expect(snapshot.visible?(old, 2)).to be(true)
@@ -104,10 +104,10 @@ RSpec.describe "RubyDB MVCC visibility" do
 
   it "keeps a row visible to a snapshot after a later committed delete" do
     store = RubyDB::MVCC::VersionStore.new
-    first = store.create_version(7, { name: "before" }, 1)
+    first = store.create_version(7, {name: "before"}, 1)
     store.commit_version(first, 1)
     snapshot = RubyDB::MVCC::Snapshot.new(2, [], [1])
-    deleted = store.create_version(7, { name: "before", _deleted: true }, 3)
+    deleted = store.create_version(7, {name: "before", _deleted: true}, 3)
     deleted.mark_deleted
     store.commit_version(deleted, 3)
 
@@ -143,23 +143,23 @@ RSpec.describe "RubyDB MVCC visibility" do
 
   it "detects a concurrent commit that conflicts with a serializable snapshot" do
     store = RubyDB::MVCC::VersionStore.new
-    original = store.create_version(8, { value: 1 }, 1, key: "items\0#{8}")
+    original = store.create_version(8, {value: 1}, 1, key: "items\0" + 8.to_s)
     store.commit_version(original, 1)
     snapshot = RubyDB::MVCC::Snapshot.new(2, [], [1])
-    concurrent = store.create_version(8, { value: 2 }, 3, key: "items\0#{8}")
+    concurrent = store.create_version(8, {value: 2}, 3, key: "items\0" + 8.to_s)
     store.commit_version(concurrent, 3)
 
     expect do
-      store.validate_serializable!(snapshot, ["items\0#{8}"], [])
+      store.validate_serializable!(snapshot, ["items\0" + 8.to_s], [])
     end.to raise_error(RubyDB::DatabaseError, /serialization failure/)
   end
 
   it "detects a newer write covered by a table predicate" do
     store = RubyDB::MVCC::VersionStore.new
-    original = store.create_version(9, { value: 1 }, 1, key: "items\0#{9}")
+    original = store.create_version(9, {value: 1}, 1, key: "items\0" + 9.to_s)
     store.commit_version(original, 1)
     snapshot = RubyDB::MVCC::Snapshot.new(2, [], [1])
-    concurrent = store.create_version(10, { value: 2 }, 3, key: "items\0#{10}")
+    concurrent = store.create_version(10, {value: 2}, 3, key: "items\0" + 10.to_s)
     store.commit_version(concurrent, 3)
 
     expect do

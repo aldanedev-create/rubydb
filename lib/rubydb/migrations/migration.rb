@@ -123,8 +123,7 @@ module RubyDB
           description: data[:description],
           author: data[:author],
           dependencies: data[:dependencies] || [],
-          metadata: data[:metadata] || {}
-        )
+          metadata: data[:metadata] || {})
         migration.instance_variable_set(:@created_at, Time.parse(data[:created_at]))
         migration.instance_variable_set(:@applied_at, Time.parse(data[:applied_at])) if data[:applied_at]
         migration.instance_variable_set(:@state, data[:state].to_sym)
@@ -153,7 +152,7 @@ module RubyDB
           definitions = columns.map { |column_name, type, column_options| column_sql(column_name, type, column_options) }
           statement = +"CREATE TABLE"
           statement << " IF NOT EXISTS" if options[:if_not_exists]
-          statement << " #{identifier(name)} (#{definitions.join(', ')})"
+          statement << " #{identifier(name)} (#{definitions.join(", ")})"
           @statements << "#{statement};"
         end
 
@@ -182,13 +181,13 @@ module RubyDB
         end
 
         def add_index(table, columns, options = {})
-          name = options[:name] || "idx_#{table}_#{Array(columns).join('_')}"
+          name = options[:name] || "idx_#{table}_#{Array(columns).join("_")}"
           unique = options[:unique] ? " UNIQUE" : ""
-          @statements << "CREATE#{unique} INDEX #{identifier(name)} ON #{identifier(table)} (#{Array(columns).map { |column| identifier(column) }.join(', ')});"
+          @statements << "CREATE#{unique} INDEX #{identifier(name)} ON #{identifier(table)} (#{Array(columns).map { |column| identifier(column) }.join(", ")});"
         end
 
         def remove_index(table, options = {})
-          name = options[:name] || "idx_#{table}_#{Array(options[:column] || options[:columns]).join('_')}"
+          name = options[:name] || "idx_#{table}_#{Array(options[:column] || options[:columns]).join("_")}"
           @statements << "DROP INDEX #{identifier(name)};"
         end
 

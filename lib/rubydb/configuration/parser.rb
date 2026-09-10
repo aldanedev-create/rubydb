@@ -57,7 +57,7 @@ module RubyDB
           next unless key.start_with?(prefix)
 
           # Convert RUBYDB_SERVER_HOST to server.host
-          path = key[prefix.length..-1].downcase.split("_").join(".")
+          path = key[prefix.length..].downcase.split("_").join(".")
           set_nested_value(config, path, parse_value(value))
         end
 
@@ -72,7 +72,7 @@ module RubyDB
           arg = args[i]
 
           if arg.start_with?("--")
-            key = arg[2..-1]
+            key = arg[2..]
             value = args[i + 1] if i + 1 < args.length
 
             if value && !value.start_with?("--")
@@ -83,7 +83,7 @@ module RubyDB
               i += 1
             end
           elsif arg.start_with?("-")
-            key = arg[1..-1]
+            key = arg[1..]
             value = args[i + 1] if i + 1 < args.length
 
             if value && !value.start_with?("-")
@@ -171,10 +171,10 @@ module RubyDB
         result = hash1.dup
 
         hash2.each do |key, value|
-          if value.is_a?(Hash) && result[key].is_a?(Hash)
-            result[key] = deep_merge(result[key], value)
+          result[key] = if value.is_a?(Hash) && result[key].is_a?(Hash)
+            deep_merge(result[key], value)
           else
-            result[key] = value
+            value
           end
         end
 

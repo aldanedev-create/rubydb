@@ -95,7 +95,11 @@ module RubyDB
 
       def calculate_select_cost(plan)
         table_name = plan.table_name
-        row_count = @engine.table_row_count(table_name) rescue 1000
+        row_count = begin
+          @engine.table_row_count(table_name)
+        rescue
+          1000
+        end
 
         base_cost = case plan.scan_type
         when :sequential
@@ -113,12 +117,12 @@ module RubyDB
         end
 
         # Add order by cost
-        if plan.order_by && plan.order_by.any?
+        if plan.order_by&.any?
           base_cost += row_count * Math.log2(row_count)
         end
 
         # Add group by cost
-        if plan.group_by && plan.group_by.any?
+        if plan.group_by&.any?
           base_cost += row_count * 1.5
         end
 
@@ -132,7 +136,11 @@ module RubyDB
 
       def calculate_update_cost(plan)
         table_name = plan.table_name
-        row_count = @engine.table_row_count(table_name) rescue 1000
+        row_count = begin
+          @engine.table_row_count(table_name)
+        rescue
+          1000
+        end
 
         cost = row_count
 
@@ -146,7 +154,11 @@ module RubyDB
 
       def calculate_delete_cost(plan)
         table_name = plan.table_name
-        row_count = @engine.table_row_count(table_name) rescue 1000
+        row_count = begin
+          @engine.table_row_count(table_name)
+        rescue
+          1000
+        end
 
         cost = row_count
 
@@ -191,8 +203,8 @@ module RubyDB
           table: plan.table_name,
           scan_type: plan.scan_type,
           has_predicate: !plan.predicate.nil?,
-          has_order_by: plan.order_by && plan.order_by.any?,
-          has_group_by: plan.group_by && plan.group_by.any?,
+          has_order_by: plan.order_by&.any?,
+          has_group_by: plan.group_by&.any?,
           has_limit: !plan.limit.nil?,
           estimated_cost: calculate_cost(plan)
         }

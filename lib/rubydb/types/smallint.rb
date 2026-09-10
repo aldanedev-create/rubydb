@@ -4,7 +4,7 @@ module RubyDB
   module Types
     # 16-bit signed integer
     class SmallInt < Type
-      RANGE = (-32_768..32_767).freeze
+      RANGE = (-32_768..32_767)
       SIZE = 2
 
       def initialize
@@ -18,7 +18,7 @@ module RubyDB
 
       def deserialize(bytes)
         return nil if bytes.nil? || bytes.empty?
-        bytes.unpack("s>").first
+        bytes.unpack1("s>")
       end
 
       def validate(value)

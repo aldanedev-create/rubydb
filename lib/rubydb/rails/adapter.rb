@@ -215,8 +215,16 @@ module RubyDB
 
       def schema_literal(value)
         case value
-        when true then @engine ? "true" : (respond_to?(:quote) ? quote(value) : "true")
-        when false then @engine ? "false" : (respond_to?(:quote) ? quote(value) : "false")
+        when true then if @engine
+                         "true"
+                       else
+                         (respond_to?(:quote) ? quote(value) : "true")
+                       end
+        when false then if @engine
+                          "false"
+                        else
+                          (respond_to?(:quote) ? quote(value) : "false")
+                        end
         when nil then "nil"
         when Numeric then value.to_s
         else value.to_s.inspect
@@ -228,9 +236,7 @@ module RubyDB
         result = block.call
         elapsed_ms = (Time.now - start_time) * 1000
 
-        if @logger
-          @logger.debug "  #{name || 'SQL'} (#{elapsed_ms.round(2)}ms) #{sql}"
-        end
+        @logger&.debug "  #{name || "SQL"} (#{elapsed_ms.round(2)}ms) #{sql}"
 
         result
       end

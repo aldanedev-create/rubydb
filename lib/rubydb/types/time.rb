@@ -23,7 +23,7 @@ module RubyDB
 
       def deserialize(bytes)
         return nil if bytes.nil? || bytes.empty?
-        total = bytes.unpack("q>").first
+        total = bytes.unpack1("q>")
         seconds = total / 1_000_000
         microseconds = total % 1_000_000
         hour = seconds / 3600

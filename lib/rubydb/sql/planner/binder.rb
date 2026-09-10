@@ -39,9 +39,7 @@ module RubyDB
           end
 
           # Bind WHERE clause
-          if node.where
-            node.where.accept(self)
-          end
+          node.where&.accept(self)
 
           # Bind ORDER BY
           node.order_by.each do |order_item|
@@ -115,9 +113,7 @@ module RubyDB
           end
 
           # Bind WHERE clause
-          if node.where
-            node.where.accept(self)
-          end
+          node.where&.accept(self)
 
           @current_scope = {}
           @current_table = nil
@@ -136,9 +132,7 @@ module RubyDB
           @current_scope = build_scope_from_table(table_info)
 
           # Bind WHERE clause
-          if node.where
-            node.where.accept(self)
-          end
+          node.where&.accept(self)
 
           @current_scope = {}
           @current_table = nil
@@ -220,7 +214,7 @@ module RubyDB
           table_info = @catalog.find_table(node.table_name)
           unless table_info
             @errors << "Table '#{node.table_name}' does not exist"
-            return
+            nil
           end
           # Constraint metadata is persisted by the storage engine and may not
           # yet be hydrated into the catalog after a restart. The executor is
@@ -459,10 +453,8 @@ module RubyDB
 
         def build_scope_from_table(table_info)
           scope = {}
-          if table_info
-            table_info.columns.each do |col|
-              scope[col.name] = col
-            end
+          table_info&.columns&.each do |col|
+            scope[col.name] = col
           end
           scope
         end
@@ -477,8 +469,6 @@ module RubyDB
             @current_scope[expr.name]&.type
           elsif expr.is_a?(AST::Literal)
             map_literal_type(expr)
-          else
-            nil
           end
         end
 
@@ -491,8 +481,6 @@ module RubyDB
           when Token::Type::TRUE, Token::Type::FALSE
             :boolean
           when Token::Type::NULL
-            nil
-          else
             nil
           end
         end
@@ -515,7 +503,7 @@ module RubyDB
 
           # Comparison operators can handle most types
           if [Token::Type::EQ, Token::Type::NE, Token::Type::LT,
-              Token::Type::LTE, Token::Type::GT, Token::Type::GTE].include?(operator)
+            Token::Type::LTE, Token::Type::GT, Token::Type::GTE].include?(operator)
             return true
           end
 
@@ -524,12 +512,11 @@ module RubyDB
 
         def valid_type?(type)
           # Check if type is registered in type system
-          begin
-            Types::TypeRegistry.lookup(type)
-            true
-          rescue ConfigurationError
-            false
-          end
+
+          Types::TypeRegistry.lookup(type)
+          true
+        rescue ConfigurationError
+          false
         end
 
         def function_exists?(name)

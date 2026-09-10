@@ -139,10 +139,10 @@ module RubyDB
       def deep_merge(hash1, hash2)
         result = hash1.dup
         hash2.each do |key, value|
-          if value.is_a?(Hash) && result[key].is_a?(Hash)
-            result[key] = deep_merge(result[key], value)
+          result[key] = if value.is_a?(Hash) && result[key].is_a?(Hash)
+            deep_merge(result[key], value)
           else
-            result[key] = value
+            value
           end
         end
         result

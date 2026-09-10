@@ -133,8 +133,7 @@ module RubyDB
             @stats[:avg_query_time_ms] = @stats[:total_query_time_ms] / @stats[:queries_executed] if @stats[:queries_executed] > 0
 
             result
-
-          rescue => e
+          rescue
             @stats[:queries_failed] += 1
             raise
           end
@@ -176,7 +175,7 @@ module RubyDB
             @stats[:prepared_statements] += 1
 
             PreparedStatement.new(response[:statement_id], sql, self)
-          rescue => e
+          rescue
             @stats[:queries_failed] += 1
             raise
           end
@@ -200,8 +199,7 @@ module RubyDB
             @stats[:avg_query_time_ms] = @stats[:total_query_time_ms] / @stats[:queries_executed] if @stats[:queries_executed] > 0
 
             result
-
-          rescue => e
+          rescue
             @stats[:queries_failed] += 1
             raise
           end
@@ -219,7 +217,7 @@ module RubyDB
         @lock.synchronize do
           ensure_connected
 
-          if @transaction && @transaction.active?
+          if @transaction&.active?
             raise ClientError, "Transaction already active"
           end
 
@@ -235,7 +233,7 @@ module RubyDB
         @lock.synchronize do
           ensure_connected
 
-          unless @transaction && @transaction.active?
+          unless @transaction&.active?
             raise ClientError, "No active transaction"
           end
 
@@ -256,7 +254,7 @@ module RubyDB
         @lock.synchronize do
           ensure_connected
 
-          unless @transaction && @transaction.active?
+          unless @transaction&.active?
             raise ClientError, "No active transaction"
           end
 
@@ -269,7 +267,7 @@ module RubyDB
       end
 
       def in_transaction?
-        @transaction && @transaction.active?
+        @transaction&.active?
       end
 
       def ping

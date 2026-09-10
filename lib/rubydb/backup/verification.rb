@@ -39,12 +39,12 @@ module RubyDB
           @stats[:verifications] += 1
 
           unless Dir.exist?(backup_path)
-            return { success: false, error: "Backup path does not exist" }
+            return {success: false, error: "Backup path does not exist"}
           end
 
           manifest_path = File.join(backup_path, "manifest.json")
           unless File.exist?(manifest_path)
-            return { success: false, error: "Manifest not found" }
+            return {success: false, error: "Manifest not found"}
           end
 
           begin
@@ -81,7 +81,7 @@ module RubyDB
             end
 
             success = results[:manifest_valid] && results[:files_valid] &&
-                      results[:checksums_valid] && results[:database_valid]
+              results[:checksums_valid] && results[:database_valid]
 
             # Save verification result
             save_verification_result(backup_path, results)
@@ -98,12 +98,11 @@ module RubyDB
 
             @stats[:last_verification] = Time.now
 
-            { success: success, results: results, elapsed_ms: elapsed_ms }
-
+            {success: success, results: results, elapsed_ms: elapsed_ms}
           rescue => e
             @stats[:errors] += 1
             @stats[:failed] += 1
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -122,11 +121,11 @@ module RubyDB
             restore_result = restore.restore(backup_path, destination: temp_dir)
 
             unless restore_result[:success]
-              return { success: false, error: "Restore failed: #{restore_result[:error]}" }
+              return {success: false, error: "Restore failed: #{restore_result[:error]}"}
             end
 
             database_path = Dir.glob(File.join(temp_dir, "*.rdb")).first
-            return { success: false, error: "Restored database file not found" } unless database_path
+            return {success: false, error: "Restored database file not found"} unless database_path
 
             # Verify that the extracted files can be opened by the real engine,
             # not merely that their checksums and names look correct.
@@ -134,7 +133,7 @@ module RubyDB
             actual_tables = engine.list_tables.map(&:to_s).sort
             expected_tables = Array(metadata[:tables]).map(&:to_s).sort
             unless actual_tables == expected_tables
-              return { success: false, error: "Restored catalog mismatch", expected_tables: expected_tables, actual_tables: actual_tables }
+              return {success: false, error: "Restored catalog mismatch", expected_tables: expected_tables, actual_tables: actual_tables}
             end
             row_counts = actual_tables.to_h do |table|
               [table, engine.table_row_count(table)]
@@ -147,10 +146,8 @@ module RubyDB
               row_counts: row_counts,
               message: "Restore verification successful"
             }
-
           rescue => e
-            { success: false, error: e.message }
-
+            {success: false, error: e.message}
           ensure
             engine&.close if defined?(engine) && engine&.open?
             # Clean up temp directory
@@ -166,12 +163,12 @@ module RubyDB
 
           # Verify base backup
           base_result = verify_backup(base_backup, options)
-          results << { backup: base_backup, result: base_result }
+          results << {backup: base_backup, result: base_result}
 
           # Verify each incremental
           incrementals.each do |inc|
             inc_result = verify_backup(inc, options)
-            results << { backup: inc, result: inc_result }
+            results << {backup: inc, result: inc_result}
           end
 
           # Verify chain integrity
@@ -201,9 +198,9 @@ module RubyDB
         missing = required_fields - metadata.keys
 
         if missing.any?
-          { valid: false, error: "Missing required fields: #{missing.join(', ')}" }
+          {valid: false, error: "Missing required fields: #{missing.join(", ")}"}
         else
-          { valid: true }
+          {valid: true}
         end
       end
 
@@ -224,11 +221,11 @@ module RubyDB
         end
 
         if missing.any?
-          { valid: false, missing: missing, message: "Missing files: #{missing.join(', ')}" }
+          {valid: false, missing: missing, message: "Missing files: #{missing.join(", ")}"}
         elsif corrupted.any?
-          { valid: false, corrupted: corrupted, message: "Corrupted files: #{corrupted.join(', ')}" }
+          {valid: false, corrupted: corrupted, message: "Corrupted files: #{corrupted.join(", ")}"}
         else
-          { valid: true, file_count: files.size }
+          {valid: true, file_count: files.size}
         end
       end
 
@@ -241,25 +238,25 @@ module RubyDB
           digest.update(File.binread(path))
         end
         actual = digest.hexdigest
-        { valid: actual == expected_checksum, expected: expected_checksum, actual: actual }
+        {valid: actual == expected_checksum, expected: expected_checksum, actual: actual}
       end
 
       def verify_database(backup_path, metadata)
         temp_dir = Dir.mktmpdir("rubydb_verify_")
         begin
           restore_result = Restore.new(nil, @config).restore(backup_path, destination: temp_dir)
-          return { valid: false, error: restore_result[:error] } unless restore_result[:success]
+          return {valid: false, error: restore_result[:error]} unless restore_result[:success]
 
           data_path = Dir.glob(File.join(temp_dir, "*.rdb")).first
-          return { valid: false, error: "Restored database file not found" } unless data_path
+          return {valid: false, error: "Restored database file not found"} unless data_path
 
           engine = Storage::Engine.new(data_path, auto_vacuum: false)
           actual_tables = engine.list_tables.map(&:to_s).sort
           expected_tables = Array(metadata[:tables]).map(&:to_s).sort
           valid = actual_tables == expected_tables
-          { valid: valid, expected_tables: expected_tables, actual_tables: actual_tables }
-        rescue StandardError => e
-          { valid: false, error: e.message }
+          {valid: valid, expected_tables: expected_tables, actual_tables: actual_tables}
+        rescue => e
+          {valid: false, error: e.message}
         ensure
           engine&.close
           FileUtils.rm_rf(temp_dir) if Dir.exist?(temp_dir)

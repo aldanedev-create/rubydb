@@ -112,15 +112,15 @@ module RubyDB
       def build_comparison_conditions(predicate)
         case predicate.operator
         when :eq
-          { key: predicate.right.value }
+          {key: predicate.right.value}
         when :lt
-          { end_key: predicate.right.value, inclusive_end: false }
+          {end_key: predicate.right.value, inclusive_end: false}
         when :lte
-          { end_key: predicate.right.value, inclusive_end: true }
+          {end_key: predicate.right.value, inclusive_end: true}
         when :gt
-          { start_key: predicate.right.value, inclusive_start: false }
+          {start_key: predicate.right.value, inclusive_start: false}
         when :gte
-          { start_key: predicate.right.value, inclusive_start: true }
+          {start_key: predicate.right.value, inclusive_start: true}
         else
           {}
         end

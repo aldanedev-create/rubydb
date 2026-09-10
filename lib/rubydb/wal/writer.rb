@@ -56,7 +56,7 @@ module RubyDB
           record_data = serialized[:checksum] + serialized[:data]
 
           # Add to buffer
-          @buffer << { record: record, data: record_data, lsn: lsn }
+          @buffer << {record: record, data: record_data, lsn: lsn}
           @buffer_current_size += record_data.bytesize
 
           @stats[:records_written] += 1
@@ -84,7 +84,7 @@ module RubyDB
 
           flush_buffer if @buffer.any?
 
-          { start_lsn: start_lsn, end_lsn: last_lsn, count: records.size }
+          {start_lsn: start_lsn, end_lsn: last_lsn, count: records.size}
         end
       end
 
@@ -152,7 +152,7 @@ module RubyDB
 
         serialized = record.serialize
         record_data = serialized[:checksum] + serialized[:data]
-        @buffer << { record: record, data: record_data, lsn: lsn }
+        @buffer << {record: record, data: record_data, lsn: lsn}
         @buffer_current_size += record_data.bytesize
         @stats[:records_written] += 1
 
@@ -187,7 +187,7 @@ module RubyDB
 
         @buffer.each do |entry|
           # Check if current segment is full
-          if @current_segment && @current_segment.full?
+          if @current_segment&.full?
             rotate_segment
           end
 
@@ -215,7 +215,7 @@ module RubyDB
       def start_background_writer
         @running = true
         @write_thread = Thread.new do
-          while !@shutdown
+          until @shutdown
             sleep(1)
             begin
               if @buffer.any?

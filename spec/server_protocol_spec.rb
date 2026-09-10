@@ -135,7 +135,7 @@ RSpec.describe "RubyDB live server protocol" do
       socket = TCPSocket.new("127.0.0.1", port)
       encoder = RubyDB::Protocol::Encoder.new(:json)
       socket.write(encoder.encode(RubyDB::Protocol::Message.new(
-        :handshake, { protocol_version: 999, client_name: "invalid" }
+        :handshake, {protocol_version: 999, client_name: "invalid"}
       )))
       response = RubyDB::Protocol::Decoder.new.decode(socket.gets, :json)
 
@@ -252,7 +252,7 @@ RSpec.describe "RubyDB live server protocol" do
       server = RubyDB::Server::Server.new(
         host: "127.0.0.1", port: port, data_dir: dir,
         pid_file: File.join(dir, "rubydb.pid"), min_workers: 1, max_workers: 1,
-        authentication: { method: "password", username: "admin", password: "secret" }
+        authentication: {method: "password", username: "admin", password: "secret"}
       )
       server.start
 
@@ -279,7 +279,7 @@ RSpec.describe "RubyDB live server protocol" do
         RubyDB::Server::Server.new(
           host: "127.0.0.1", port: 0, data_dir: dir,
           pid_file: File.join(dir, "rubydb.pid"),
-          authentication: { method: "password" }
+          authentication: {method: "password"}
         )
       end.to raise_error(RubyDB::ServerError, /credentials are required/)
     end
@@ -291,7 +291,7 @@ RSpec.describe "RubyDB live server protocol" do
         RubyDB::Server::Server.new(
           host: "127.0.0.1", port: 0, data_dir: dir,
           pid_file: File.join(dir, "rubydb.pid"),
-          ssl: { enabled: true, verify_peer: true }
+          ssl: {enabled: true, verify_peer: true}
         )
       end.to raise_error(RubyDB::ServerError, /cert_file and ssl.key_file are required/)
     end
@@ -308,7 +308,7 @@ RSpec.describe "RubyDB live server protocol" do
         RubyDB::Server::Server.new(
           host: "127.0.0.1", port: 0, data_dir: dir,
           pid_file: File.join(dir, "rubydb.pid"),
-          ssl: { enabled: true, cert_file: cert, key_file: key, min_version: :TLS1_1 }
+          ssl: {enabled: true, cert_file: cert, key_file: key, min_version: :TLS1_1}
         )
       end.to raise_error(RubyDB::ServerError, /invalid|TLS1_2 or TLS1_3/)
     end

@@ -32,7 +32,7 @@ module RubyDB
 
         # Check uniqueness
         key = @columns.map { |col| row[col] }.join("||")
-        if @existing_keys && @existing_keys.include?(key)
+        if @existing_keys&.include?(key)
           @validation_errors << "Duplicate primary key: #{key}"
           return false
         end
@@ -42,7 +42,7 @@ module RubyDB
 
       def validate_batch(rows)
         @existing_keys = Set.new
-        results = { valid: [], invalid: [] }
+        results = {valid: [], invalid: []}
 
         rows.each do |row|
           # Check all columns are present
@@ -92,7 +92,7 @@ module RubyDB
       end
 
       def inspect
-        "#<PrimaryKeyConstraint name=#{@name} columns=#{@columns.join(', ')}>"
+        "#<PrimaryKeyConstraint name=#{@name} columns=#{@columns.join(", ")}>"
       end
     end
   end

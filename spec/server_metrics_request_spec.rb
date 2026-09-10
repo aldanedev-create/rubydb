@@ -7,9 +7,9 @@ RSpec.describe "server metrics requests" do
     metrics = RubyDB::Monitoring::Metrics.new(auto_flush: false)
     metrics.increment("queries")
     handler = RubyDB::Server::RequestHandler.new(Object.new, Object.new, metrics: metrics,
-                                                  health: Object.new)
+      health: Object.new)
     health = handler.instance_variable_get(:@health)
-    health.define_singleton_method(:check) { { status: :healthy, checks: {} } }
+    health.define_singleton_method(:check) { {status: :healthy, checks: {}} }
 
     response = handler.handle(type: :metrics)
 

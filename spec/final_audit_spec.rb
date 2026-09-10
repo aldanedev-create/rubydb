@@ -12,7 +12,7 @@ RSpec.describe "final production audit contracts" do
   it "requires an attached engine for direct WAL replay" do
     Dir.mktmpdir do |dir|
       wal = RubyDB::WAL::WAL.new(dir, recovery: false, auto_checkpoint: false)
-      record = RubyDB::WAL::Record.new(:insert, { table: "users", values: {} })
+      record = RubyDB::WAL::Record.new(:insert, {table: "users", values: {}})
 
       expect { wal.send(:replay_record, record) }.to raise_error(RubyDB::RecoveryError, /attached engine/)
     ensure

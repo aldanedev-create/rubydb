@@ -15,7 +15,7 @@ RSpec.describe "replica write fencing" do
       expect { engine.insert_row(:events, columns, id: 1) }
         .to raise_error(RubyDB::ReplicationError, /read-only/)
 
-      replica.replay_transaction(operation: :insert, table: :events, values: { id: 1 }, lsn: 1)
+      replica.replay_transaction(operation: :insert, table: :events, values: {id: 1}, lsn: 1)
       replica.instance_variable_set(:@last_received_lsn, 1)
       expect(engine.select_rows(:events, columns)).to include(hash_including(id: 1))
 

@@ -30,14 +30,14 @@ RSpec.describe "SQLite compatibility profile" do
       SQL
 
       expect(rows).to eq([
-        { "email" => "ada@example.test", "active" => true },
-        { "email" => "grace@example.test", "active" => true }
+        {"email" => "ada@example.test", "active" => true},
+        {"email" => "grace@example.test", "active" => true}
       ])
 
       connection.begin_db_transaction
       connection.execute("INSERT INTO users (email, active) VALUES ('rollback@example.test', TRUE)")
       connection.rollback_db_transaction
-      expect(connection.execute("SELECT COUNT(*) AS count FROM users").to_a).to eq([{ "count" => 2 }])
+      expect(connection.execute("SELECT COUNT(*) AS count FROM users").to_a).to eq([{"count" => 2}])
     ensure
       connection&.disconnect
       engine&.close if engine&.open?
@@ -62,7 +62,7 @@ RSpec.describe "SQLite compatibility profile" do
         GROUP BY teams.name HAVING member_count = 2
       SQL
 
-      expect(result).to eq([{ "name" => "updated", "member_count" => 2 }])
+      expect(result).to eq([{"name" => "updated", "member_count" => 2}])
     ensure
       connection&.disconnect
       engine&.close if engine&.open?

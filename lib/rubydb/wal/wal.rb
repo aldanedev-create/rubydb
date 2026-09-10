@@ -59,13 +59,25 @@ module RubyDB
           end
 
           @running = true
-        rescue StandardError
+        rescue
           # Recovery can fail after the writer has opened a segment. Close all
           # partially initialized components before re-raising so callers can
           # replace/remove a failed WAL directory on every supported platform.
-          @checkpoint&.stop rescue nil
-          @writer&.shutdown rescue nil
-          @reader&.close rescue nil
+          begin
+            @checkpoint&.stop
+          rescue
+            nil
+          end
+          begin
+            @writer&.shutdown
+          rescue
+            nil
+          end
+          begin
+            @reader&.close
+          rescue
+            nil
+          end
           raise
         end
       end
@@ -89,7 +101,7 @@ module RubyDB
             @stats[:avg_write_time_ms] = @stats[:total_write_time_ms] / @stats[:writes]
 
             lsn
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -110,7 +122,7 @@ module RubyDB
             @stats[:avg_write_time_ms] = @stats[:total_write_time_ms] / @stats[:writes]
 
             result
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -130,7 +142,7 @@ module RubyDB
             @stats[:avg_read_time_ms] = @stats[:total_read_time_ms] / @stats[:reads]
 
             records
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -150,7 +162,7 @@ module RubyDB
             @stats[:avg_read_time_ms] = @stats[:total_read_time_ms] / @stats[:reads]
 
             records
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -170,7 +182,7 @@ module RubyDB
             @stats[:avg_read_time_ms] = @stats[:total_read_time_ms] / @stats[:reads]
 
             records
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -179,14 +191,14 @@ module RubyDB
 
       def create_checkpoint(force = false)
         @lock.synchronize do
-          start_time = Time.now
+          Time.now
           @stats[:checkpoints] += 1
 
           begin
             result = @checkpoint.create_checkpoint(force)
             @stats[:checkpoints] += 1 if result
             result
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -207,7 +219,7 @@ module RubyDB
             else
               false
             end
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -240,7 +252,7 @@ module RubyDB
             # Reload reader after restore
             @reader.reload if result
             result
-          rescue => e
+          rescue
             @stats[:errors] += 1
             raise
           end
@@ -285,7 +297,7 @@ module RubyDB
             # REDO committed transactions
             redo_records = records.select do |r|
               committed_transactions.include?(r.transaction_id) &&
-              [:insert, :update, :delete, :create_table, :drop_table].include?(r.type)
+                [:insert, :update, :delete, :create_table, :drop_table].include?(r.type)
             end
 
             redo_records.each do |record|
@@ -295,7 +307,7 @@ module RubyDB
             # UNDO uncommitted transactions
             uncommitted = records.select do |r|
               !committed_transactions.include?(r.transaction_id) &&
-              [:insert, :update, :delete].include?(r.type)
+                [:insert, :update, :delete].include?(r.type)
             end
 
             uncommitted.reverse_each do |record|
@@ -324,9 +336,9 @@ module RubyDB
           @shutdown = true
           @running = false
 
-          @checkpoint.stop if @checkpoint
+          @checkpoint&.stop
           @writer.shutdown(wait)
-          @reader.close if @reader
+          @reader&.close
         end
       end
 
@@ -336,10 +348,26 @@ module RubyDB
 
       def stats
         @lock.synchronize do
-          writer_stats = @writer.stats rescue {}
-          reader_stats = @reader.stats rescue {}
-          checkpoint_stats = @checkpoint.stats rescue {}
-          archive_stats = @archive.stats rescue {}
+          writer_stats = begin
+            @writer.stats
+          rescue
+            {}
+          end
+          reader_stats = begin
+            @reader.stats
+          rescue
+            {}
+          end
+          checkpoint_stats = begin
+            @checkpoint.stats
+          rescue
+            {}
+          end
+          archive_stats = begin
+            @archive.stats
+          rescue
+            {}
+          end
 
           @stats.merge({
             writer: writer_stats,

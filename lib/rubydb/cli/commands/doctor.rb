@@ -39,14 +39,14 @@ module RubyDB
             started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             engine = RubyDB::Storage::Engine.new(db_path, auto_vacuum: false)
             latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round(2)
-            checks << { name: "Connection", passed: true, details: { database: db_path, latency_ms: latency_ms } }
-            checks << { name: "Storage", passed: engine.storage_manager.open?, details: engine.storage_manager.stats }
-            checks << { name: "WAL", passed: !engine.wal.nil?, details: engine.wal.stats }
+            checks << {name: "Connection", passed: true, details: {database: db_path, latency_ms: latency_ms}}
+            checks << {name: "Storage", passed: engine.storage_manager.open?, details: engine.storage_manager.stats}
+            checks << {name: "WAL", passed: !engine.wal.nil?, details: engine.wal.stats}
             unless options[:quick]
-              checks << { name: "Indexes", passed: !engine.index_manager.nil?, details: engine.index_manager.stats }
+              checks << {name: "Indexes", passed: !engine.index_manager.nil?, details: engine.index_manager.stats}
             end
           rescue => e
-            checks << { name: "Connection", passed: false, errors: [e.message] }
+            checks << {name: "Connection", passed: false, errors: [e.message]}
           ensure
             engine&.close if engine&.open?
           end

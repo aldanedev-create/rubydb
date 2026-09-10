@@ -40,11 +40,11 @@ run = lambda do |path|
       random = Random.new(worker_number + 1)
       operations_per_thread.times do
         row_id = id_lock.synchronize { next_id += 1 }
-        payload = "w#{worker_number}-#{random.bytes(payload_bytes).unpack1('H*')}"
+        payload = "w#{worker_number}-#{random.bytes(payload_bytes).unpack1("H*")}"
         engine.insert_row(:workload_rows, columns, id: row_id, payload: payload, worker: worker_number)
       end
-    rescue StandardError => error
-      errors << { worker: worker_number, class: error.class.name, message: error.message }
+    rescue => error
+      errors << {worker: worker_number, class: error.class.name, message: error.message}
     end
   end
   threads.times { start_gate << true }

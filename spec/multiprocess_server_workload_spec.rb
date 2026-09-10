@@ -9,7 +9,7 @@ RSpec.describe "multi-process server workload" do
   it "runs independent client processes and verifies durable rows" do
     script = File.expand_path("../benchmarks/multiprocess_server_workload.rb", __dir__)
     output, error, status = Open3.capture3(
-      { "RUBYDB_SERVER_WORKLOAD_PROCESSES" => "2", "RUBYDB_SERVER_WORKLOAD_OPERATIONS" => "8" },
+      {"RUBYDB_SERVER_WORKLOAD_PROCESSES" => "2", "RUBYDB_SERVER_WORKLOAD_OPERATIONS" => "8"},
       RbConfig.ruby, script
     )
 

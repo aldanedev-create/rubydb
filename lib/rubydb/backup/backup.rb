@@ -68,18 +68,18 @@ module RubyDB
               return Incremental.new(@engine, @config.merge(
                 incremental_dir: @config[:incremental_dir] || File.join(@config[:backup_dir], "incremental")
               )).create_incremental(options[:base_backup])
-            rescue StandardError => error
+            rescue => error
               @stats[:errors] += 1
-              return { success: false, error: error.message }
+              return {success: false, error: error.message}
             end
           elsif backup_type == TYPE_DIFFERENTIAL
             begin
               return Incremental.new(@engine, @config.merge(
                 incremental_dir: @config[:incremental_dir] || File.join(@config[:backup_dir], "incremental")
               )).create_differential(options[:base_backup])
-            rescue StandardError => error
+            rescue => error
               @stats[:errors] += 1
-              return { success: false, error: error.message }
+              return {success: false, error: error.message}
             end
           end
           backup_name = generate_backup_name(backup_type)
@@ -125,7 +125,7 @@ module RubyDB
               verification = verify_backup(backup_path)
               unless verification[:success]
                 @stats[:errors] += 1
-                return { success: false, error: "Verification failed", details: verification }
+                return {success: false, error: "Verification failed", details: verification}
               end
             end
 
@@ -147,11 +147,10 @@ module RubyDB
               elapsed_ms: elapsed_ms,
               metadata: metadata
             }
-
           rescue => e
             @stats[:errors] += 1
             FileUtils.rm_rf(backup_path) if Dir.exist?(backup_path)
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -184,14 +183,14 @@ module RubyDB
       def delete_backup(backup_name)
         @lock.synchronize do
           backup_path = backup_path_for_name(backup_name)
-          return { success: false, error: "Invalid backup name" } unless backup_path
+          return {success: false, error: "Invalid backup name"} unless backup_path
 
           unless Dir.exist?(backup_path)
-            return { success: false, error: "Backup not found" }
+            return {success: false, error: "Backup not found"}
           end
 
           FileUtils.rm_rf(backup_path)
-          { success: true }
+          {success: true}
         end
       end
 
@@ -199,7 +198,7 @@ module RubyDB
         @lock.synchronize do
           manifest_path = File.join(backup_path, "manifest.json")
           unless File.exist?(manifest_path)
-            return { success: false, error: "Manifest not found" }
+            return {success: false, error: "Manifest not found"}
           end
 
           begin
@@ -208,23 +207,23 @@ module RubyDB
             # Verify all files exist
             expected_files = metadata[:files] || []
             invalid_files = expected_files.reject { |file| manifest_file_path(backup_path, file) }
-            return { success: false, error: "Invalid manifest file path", invalid: invalid_files } if invalid_files.any?
+            return {success: false, error: "Invalid manifest file path", invalid: invalid_files} if invalid_files.any?
 
             missing_files = expected_files.reject { |file| File.exist?(manifest_file_path(backup_path, file)) }
 
             if missing_files.any?
-              return { success: false, error: "Missing files", missing: missing_files }
+              return {success: false, error: "Missing files", missing: missing_files}
             end
 
             # Verify checksums
             if metadata[:checksum]
               actual_checksum = calculate_checksum(backup_path)
-              return { success: false, error: "Checksum mismatch", expected: metadata[:checksum], actual: actual_checksum } unless actual_checksum == metadata[:checksum]
+              return {success: false, error: "Checksum mismatch", expected: metadata[:checksum], actual: actual_checksum} unless actual_checksum == metadata[:checksum]
             end
 
-            { success: true }
+            {success: true}
           rescue => e
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -272,7 +271,7 @@ module RubyDB
 
         root = File.expand_path(@config[:backup_dir])
         path = File.expand_path(File.join(root, name))
-        path == root || path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+        (path == root || path.start_with?("#{root}#{File::SEPARATOR}")) ? path : nil
       end
 
       def manifest_file_path(root_path, relative_path)
@@ -367,7 +366,7 @@ module RubyDB
       def compress_file(src, dest)
         Zlib::GzipWriter.open(dest) do |gz|
           File.open(src, "rb") do |file|
-            while chunk = file.read(@config[:chunk_size])
+            while (chunk = file.read(@config[:chunk_size]))
               gz.write(chunk)
             end
           end
@@ -393,7 +392,7 @@ module RubyDB
         return "0 B" if bytes == 0
         units = ["B", "KB", "MB", "GB", "TB"]
         exp = (Math.log(bytes) / Math.log(1024)).floor
-        size = bytes / (1024.0 ** exp)
+        size = bytes / (1024.0**exp)
         "#{size.round(2)} #{units[exp]}"
       end
     end

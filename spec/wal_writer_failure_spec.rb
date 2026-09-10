@@ -12,7 +12,7 @@ RSpec.describe RubyDB::WAL::Writer do
 
       expect(writer.stats[:last_background_error]).to eq("simulated asynchronous flush failure")
       expect { writer.flush }.to raise_error(IOError, /asynchronous flush failure/)
-      expect { writer.write_record(RubyDB::WAL::Record.new(:insert, { id: 1 })) }
+      expect { writer.write_record(RubyDB::WAL::Record.new(:insert, {id: 1})) }
         .to raise_error(IOError, /asynchronous flush failure/)
     ensure
       writer&.shutdown

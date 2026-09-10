@@ -89,23 +89,23 @@ module RubyDB
         def resolve(name)
           name = name.to_sym
           const_name = case name
-                       when :bigint then "BigInt"
-                       when :smallint then "SmallInt"
-                       when :float then "Float"
-                       when :decimal then "Decimal"
-                       when :boolean then "Boolean"
-                       when :text then "Text"
-                       when :varchar then "Varchar"
-                       when :blob then "Blob"
-                       when :date then "Date"
-                       when :time then "Time"
-                       when :timestamp then "Timestamp"
-                       when :json then "Json"
-                       when :uuid then "UUID"
-                       when :null then "Null"
-                       when :integer then "Integer"
-                       else name.to_s.split("_").map { |part| part.capitalize }.join
-                       end
+          when :bigint then "BigInt"
+          when :smallint then "SmallInt"
+          when :float then "Float"
+          when :decimal then "Decimal"
+          when :boolean then "Boolean"
+          when :text then "Text"
+          when :varchar then "Varchar"
+          when :blob then "Blob"
+          when :date then "Date"
+          when :time then "Time"
+          when :timestamp then "Timestamp"
+          when :json then "Json"
+          when :uuid then "UUID"
+          when :null then "Null"
+          when :integer then "Integer"
+          else name.to_s.split("_").map { |part| part.capitalize }.join
+          end
 
           klass = RubyDB::Types.const_get(const_name)
           @types[name] = klass

@@ -13,7 +13,7 @@ RSpec.describe "SQL aggregates" do
       statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new("SELECT COUNT(DISTINCT value) AS total FROM metrics").tokenize).parse.first
 
       result = RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(statement))
-      expect(result[:rows]).to eq([{ "total" => 2 }])
+      expect(result[:rows]).to eq([{"total" => 2}])
     ensure
       engine&.close if engine&.open?
     end
@@ -27,7 +27,7 @@ RSpec.describe "SQL aggregates" do
       statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new("SELECT COUNT(*) AS count, SUM(value) AS sum, AVG(value) AS average FROM metrics").tokenize).parse.first
 
       result = RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(statement))
-      expect(result[:rows]).to eq([{ "count" => 0, "sum" => nil, "average" => nil }])
+      expect(result[:rows]).to eq([{"count" => 0, "sum" => nil, "average" => nil}])
     ensure
       engine&.close if engine&.open?
     end
@@ -49,8 +49,8 @@ RSpec.describe "SQL aggregates" do
       SQL
       global = connection.execute("SELECT COUNT(*) AS orders, AVG(amount) AS average_amount FROM sales").to_a
 
-      expect(grouped).to eq([{ "region" => "east", "orders" => 2, "total" => 25 }])
-      expect(global).to eq([{ "orders" => 3, "average_amount" => (32.0 / 3) }])
+      expect(grouped).to eq([{"region" => "east", "orders" => 2, "total" => 25}])
+      expect(global).to eq([{"orders" => 3, "average_amount" => (32.0 / 3)}])
     ensure
       connection&.disconnect
       engine&.close if engine&.open?

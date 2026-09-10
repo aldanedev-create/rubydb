@@ -49,20 +49,20 @@ module RubyDB
         @rows[index]
       end
 
-      def each(&block)
-        @rows.each(&block)
+      def each(&)
+        @rows.each(&)
       end
 
-      def each_with_index(&block)
-        @rows.each_with_index(&block)
+      def each_with_index(&)
+        @rows.each_with_index(&)
       end
 
-      def each_row(&block)
-        @rows.each(&block)
+      def each_row(&)
+        @rows.each(&)
       end
 
-      def each_column(&block)
-        @columns.each(&block)
+      def each_column(&)
+        @columns.each(&)
       end
 
       def column_names
@@ -102,12 +102,12 @@ module RubyDB
         @row_count
       end
 
-      alias length size
-      alias count size
+      alias_method :length, :size
+      alias_method :count, :size
 
       def inspect
         rows_preview = @rows.first(3).map(&:inspect).join(", ")
-        more = @rows.size > 3 ? "..." : ""
+        more = (@rows.size > 3) ? "..." : ""
         "#<Result rows=#{@row_count} columns=#{@columns.size} data=[#{rows_preview}#{more}]>"
       end
 

@@ -17,7 +17,7 @@ RSpec.describe "engine trigger execution" do
 
       engine.insert_row("users", columns, [1])
       expect(events).to eq([:insert])
-      expect(engine.update_row("users", 1, { "id" => 2 })).to be(true)
+      expect(engine.update_row("users", 1, {"id" => 2})).to be(true)
       expect(engine.delete_row("users", 1)).to be(true)
       expect(events).to eq([:insert, :update, :delete])
     ensure

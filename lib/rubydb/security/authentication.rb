@@ -52,7 +52,7 @@ module RubyDB
           # Check if user is locked out
           if locked_out?(username)
             @stats[:failed] += 1
-            return { success: false, error: "User is locked out" }
+            return {success: false, error: "User is locked out"}
           end
 
           # Find user
@@ -60,7 +60,7 @@ module RubyDB
           unless user
             record_failed_attempt(username)
             @stats[:failed] += 1
-            return { success: false, error: "Invalid credentials" }
+            return {success: false, error: "Invalid credentials"}
           end
 
           # Authenticate based on method
@@ -96,7 +96,7 @@ module RubyDB
           else
             record_failed_attempt(username)
             @stats[:failed] += 1
-            { success: false, error: "Invalid credentials" }
+            {success: false, error: "Invalid credentials"}
           end
         end
       end
@@ -266,14 +266,14 @@ module RubyDB
 
         metadata = user.metadata || {}
         salt_value = metadata[:scram_salt] || metadata["scram_salt"]
-        iterations = Integer(metadata[:scram_iterations] || metadata["scram_iterations"] || 120_000)
+        Integer(metadata[:scram_iterations] || metadata["scram_iterations"] || 120_000)
         stored_value = metadata[:scram_stored_key] || metadata["scram_stored_key"]
         server_value = metadata[:scram_server_key] || metadata["scram_server_key"]
         return false unless salt_value && stored_value && server_value
 
-        salt = salt_value.is_a?(String) ? Base64.decode64(salt_value) : salt_value
+        salt_value.is_a?(String) ? Base64.decode64(salt_value) : salt_value
         stored_key = decode_scram_value(stored_value)
-        server_key = decode_scram_value(server_value)
+        decode_scram_value(server_value)
         auth_message = [client_first, server_first, client_final].join(",")
         signature = OpenSSL::HMAC.digest("SHA256", stored_key, auth_message)
         proof_bytes = Base64.decode64(proof.to_s)
@@ -287,7 +287,7 @@ module RubyDB
         return value if value.is_a?(String) && value.bytesize == 32 && value !~ /\A[A-Za-z0-9+\/=]+\z/
 
         decoded = Base64.decode64(value.to_s)
-        decoded.bytesize == 32 ? decoded : value.to_s
+        (decoded.bytesize == 32) ? decoded : value.to_s
       end
 
       def secure_compare(left, right)

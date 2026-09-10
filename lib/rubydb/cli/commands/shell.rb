@@ -69,7 +69,7 @@ module RubyDB
           connect_to_database(options)
 
           @output.puts "RubyDB Shell v#{RubyDB::VERSION}", :bold
-          @output.puts "Connected to: #{@current_database || 'rubydb'}"
+          @output.puts "Connected to: #{@current_database || "rubydb"}"
           @output.puts "Type '.help' for help, '.exit' to quit"
           @output.puts
 
@@ -134,7 +134,7 @@ module RubyDB
 
         def connect_to_database(options)
           config = RubyDB::Configuration::Config.instance
-          
+
           db_name = options[:database] || config.get("database.name") || "rubydb"
           db_path = config.get("storage.data_dir") || "data"
           db_file = File.join(db_path, "#{db_name}.rdb")
@@ -148,7 +148,7 @@ module RubyDB
         end
 
         def disconnect
-          @engine.close if @engine
+          @engine&.close
           @connected = false
         end
 
@@ -171,7 +171,7 @@ module RubyDB
           # Plan and execute the statement
           planner = RubyDB::Execution::Planner.new(@engine)
           plan = planner.plan(statement)
-          
+
           executor = RubyDB::Execution::Executor.new(@engine)
           executor.execute(plan)
         end
@@ -207,7 +207,7 @@ module RubyDB
         def switch_database(name)
           db_path = File.join("data", "#{name}.rdb")
           if File.exist?(db_path)
-            @engine.close if @engine
+            @engine&.close
             @engine = RubyDB::Storage::Engine.new(db_path, {})
             @current_database = name
             @output.success("Switched to database: #{name}")
@@ -342,7 +342,7 @@ module RubyDB
           return "0 B" if bytes == 0
           units = ["B", "KB", "MB", "GB", "TB"]
           exp = (Math.log(bytes) / Math.log(1024)).floor
-          size = bytes / (1024.0 ** exp)
+          size = bytes / (1024.0**exp)
           "#{size.round(2)} #{units[exp]}"
         end
 

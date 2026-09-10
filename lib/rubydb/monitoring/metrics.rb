@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "time"
-require "thread"
 require "json"
 require "monitor"
 
@@ -16,6 +15,7 @@ module RubyDB
       TYPE_GAUGE = :gauge
       TYPE_HISTOGRAM = :histogram
       TYPE_SUMMARY = :summary
+      UNSET_VALUE = Object.new.freeze
 
       def initialize(config = {})
         @config = config
@@ -121,7 +121,9 @@ module RubyDB
         end
       end
 
-      def set_gauge(name, labels = {}, value)
+      def set_gauge(name, labels = {}, value = UNSET_VALUE)
+        raise ArgumentError, "value is required" if value.equal?(UNSET_VALUE)
+
         @lock.synchronize do
           metric = gauge(name, labels)
           metric[:value] = value
@@ -131,7 +133,9 @@ module RubyDB
         end
       end
 
-      def observe_histogram(name, labels = {}, value)
+      def observe_histogram(name, labels = {}, value = UNSET_VALUE)
+        raise ArgumentError, "value is required" if value.equal?(UNSET_VALUE)
+
         @lock.synchronize do
           metric = histogram(name, labels)
           metric[:values] << value
@@ -141,7 +145,9 @@ module RubyDB
         end
       end
 
-      def observe_summary(name, labels = {}, value)
+      def observe_summary(name, labels = {}, value = UNSET_VALUE)
+        raise ArgumentError, "value is required" if value.equal?(UNSET_VALUE)
+
         @lock.synchronize do
           metric = summary(name, labels)
           metric[:values] << value
@@ -224,7 +230,7 @@ module RubyDB
           results = @storage.select do |snapshot|
             time = Time.parse(snapshot[:timestamp])
             (start_time.nil? || time >= start_time) &&
-            (end_time.nil? || time <= end_time)
+              (end_time.nil? || time <= end_time)
           end
 
           if name
@@ -247,11 +253,9 @@ module RubyDB
       def collect
         @lock.synchronize do
           @collectors.each do |collector|
-            begin
-              collector.call(self)
-            rescue => e
-              @stats[:errors] += 1
-            end
+            collector.call(self)
+          rescue
+            @stats[:errors] += 1
           end
         end
       end
@@ -334,10 +338,10 @@ module RubyDB
       def prometheus_labels(labels)
         return "" if labels.empty?
         encoded = labels.sort_by { |key, _| key.to_s }.map do |key, value|
-          escaped = value.to_s.gsub(/\\/, "\\\\").gsub('"', '\\"').gsub("\n", "\\n")
+          escaped = value.to_s.gsub("\\", "\\\\").gsub('"', '\\"').gsub("\n", "\\n")
           "#{key}=\"#{escaped}\""
         end
-        "{#{encoded.join(',')}}"
+        "{#{encoded.join(",")}}"
       end
 
       def start_flush_thread
@@ -348,7 +352,7 @@ module RubyDB
             begin
               collect
               flush
-            rescue => e
+            rescue
               @stats[:errors] += 1
             end
           end

@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Constraints
     # UniqueConstraint - Ensures unique values in columns
@@ -10,7 +8,7 @@ module RubyDB
 
       def initialize(table_name, columns, options = {})
         super(
-          options[:name] || "uniq_#{table_name}_#{columns.join('_')}",
+          options[:name] || "uniq_#{table_name}_#{columns.join("_")}",
           TYPE_UNIQUE,
           table_name,
           options
@@ -39,7 +37,7 @@ module RubyDB
 
       def validate_batch(rows)
         @existing_keys = Set.new
-        results = { valid: [], invalid: [] }
+        results = {valid: [], invalid: []}
 
         rows.each do |row|
           key = build_key(row)
@@ -101,7 +99,7 @@ module RubyDB
       end
 
       def inspect
-        "#<UniqueConstraint name=#{@name} columns=#{@columns.join(', ')}>"
+        "#<UniqueConstraint name=#{@name} columns=#{@columns.join(", ")}>"
       end
     end
   end

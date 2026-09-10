@@ -26,8 +26,16 @@ module RubyDB
       def initialize(client, id, config = {})
         @id = id
         @client = client
-        @remote_addr = client.peeraddr[2] rescue "unknown"
-        @remote_port = client.peeraddr[1] rescue 0
+        @remote_addr = begin
+          client.peeraddr[2]
+        rescue
+          "unknown"
+        end
+        @remote_port = begin
+          client.peeraddr[1]
+        rescue
+          0
+        end
         @config = config
         @created_at = Time.now
         @last_activity = Time.now
@@ -70,8 +78,7 @@ module RubyDB
 
             @state = STATE_AUTHENTICATING
             true
-
-          rescue => e
+          rescue
             close
             false
           end
@@ -97,8 +104,7 @@ module RubyDB
               close
               false
             end
-
-          rescue => e
+          rescue
             @state = STATE_CLOSED
             close
             false
@@ -143,8 +149,7 @@ module RubyDB
 
             @state = STATE_READY
             true
-
-          rescue => e
+          rescue
             @state = STATE_READY
             false
           end
@@ -164,7 +169,11 @@ module RubyDB
           @closed = true
 
           if @client
-            @client.close rescue nil
+            begin
+              @client.close
+            rescue
+              nil
+            end
             @client = nil
           end
 
@@ -220,8 +229,8 @@ module RubyDB
               message, request = entry
               response = begin
                 @session.process(request)
-              rescue StandardError => e
-                { success: false, error: e.message, timestamp: Time.now.iso8601 }
+              rescue => e
+                {success: false, error: e.message, timestamp: Time.now.iso8601}
               end
               response[:request_id] ||= message.id
               @config[:connection_pool]&.record_request(response[:success] != false)
@@ -251,10 +260,10 @@ module RubyDB
         while !@closed && (line = read_frame)
           begin
             message = protocol.decoder.decode(line, protocol.encoder.format)
-          rescue StandardError => e
+          rescue => e
             write_data(protocol, Protocol::Message.new(
               Protocol::Message::TYPE_ERROR,
-              { success: false, error: "Invalid protocol frame: #{e.message}" }
+              {success: false, error: "Invalid protocol frame: #{e.message}"}
             ))
             next
           end
@@ -266,8 +275,8 @@ module RubyDB
             request[:allow_pending_cancellation] = active_target
             response = begin
               @session.process(request)
-            rescue StandardError => e
-              { success: false, error: e.message, timestamp: Time.now.iso8601 }
+            rescue => e
+              {success: false, error: e.message, timestamp: Time.now.iso8601}
             end
             @config[:connection_pool]&.record_request(response[:success] != false)
             write_data(protocol, Protocol::Message.new(:cancel_response, response))
@@ -276,7 +285,7 @@ module RubyDB
 
           already_busy = @active_request_lock.synchronize { !@active_request_id.nil? }
           if already_busy
-            response = { success: false, error: "Connection has a request in flight", code: "busy", request_id: message.id, timestamp: Time.now.iso8601 }
+            response = {success: false, error: "Connection has a request in flight", code: "busy", request_id: message.id, timestamp: Time.now.iso8601}
             write_data(protocol, Protocol::Message.new(:error, response))
             next
           end
@@ -288,18 +297,26 @@ module RubyDB
         request_worker.join(5)
         @active_request_thread&.join(5)
       rescue RequestTooLarge => e
-        write_data(protocol, Protocol::Message.new(
-          Protocol::Message::TYPE_ERROR,
-          { success: false, error: e.message }
-        )) rescue nil
+        begin
+          write_data(protocol, Protocol::Message.new(
+            Protocol::Message::TYPE_ERROR,
+            {success: false, error: e.message}
+          ))
+        rescue
+          nil
+        end
         close unless @closed
       rescue RequestTimeout => e
-        write_data(protocol, Protocol::Message.new(
-          Protocol::Message::TYPE_ERROR,
-          { success: false, error: e.message }
-        )) rescue nil
+        begin
+          write_data(protocol, Protocol::Message.new(
+            Protocol::Message::TYPE_ERROR,
+            {success: false, error: e.message}
+          ))
+        rescue
+          nil
+        end
         close unless @closed
-      rescue StandardError => e
+      rescue => e
         warn "RubyDB connection #{@id} failed: #{e.class}: #{e.message}" if ENV["RUBYDB_DEBUG"]
         close unless @closed
       end
@@ -326,7 +343,7 @@ module RubyDB
       def read_data(protocol)
         data = ""
 
-        while true
+        loop do
           chunk = @client.recv(4096)
           break if chunk.empty?
           data << chunk

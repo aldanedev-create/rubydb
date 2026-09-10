@@ -3,10 +3,28 @@
 RubyDB is a Ruby-native relational database with an embedded engine, a
 client/server mode, a Ruby client, and an ActiveRecord adapter.
 
+**Author:** Aldane Hutchinson
+
 > **Status: alpha.** RubyDB is suitable for experimentation, development,
-> controlled embedded workloads, and applications that stay within the
-> documented and tested feature set. It provides a tested common SQLite-style
-> profile, but is not a drop-in replacement for PostgreSQL, MySQL, or SQLite.
+> controlled embedded workloads, and production microservices that stay within
+> the documented and tested feature set. RubyDB can be used in both development
+> and production, but each production workload must pass its own query,
+> concurrency, backup, restore, security, and operational validation. It
+> provides a tested common SQLite-style profile, but is not a drop-in
+> replacement for PostgreSQL, MySQL, or SQLite.
+
+## Recommended database roles
+
+Use RubyDB when you want a Ruby-native database for local development, tests,
+internal tools, or an independently owned microservice with a bounded workload.
+Use embedded mode when one Ruby process owns the database file. Use RubyDB
+server/client mode when multiple application processes connect to one service.
+
+Use PostgreSQL as the default system of record for massive applications,
+high-concurrency public products, large shared Rails applications, advanced
+PostgreSQL SQL/extensions, and workloads requiring a mature managed database
+ecosystem. A common production architecture is PostgreSQL for the main app and
+RubyDB for smaller, independently operated microservices.
 
 ## What works today
 
@@ -92,6 +110,73 @@ client.disconnect
 Use the `rubydb://` or TLS-enabled `rubydbs://` format documented in the Rails
 configuration guide. RubyDB URLs are not PostgreSQL URLs.
 
+## Copy-and-paste examples
+
+### RubyDB for local development
+
+This creates a durable local database in one owning Ruby process:
+
+```ruby
+require "rubydb"
+
+engine = RubyDB::Storage::Engine.new("tmp/development.rdb")
+begin
+  engine.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)")
+  engine.execute("INSERT INTO notes (body) VALUES ('First note')")
+  puts engine.execute("SELECT id, body FROM notes ORDER BY id").inspect
+ensure
+  engine.close
+end
+```
+
+Do not open the same embedded path from separate web and worker processes.
+
+### RubyDB for a production microservice
+
+Run one RubyDB server on persistent storage and inject a TLS URL into the
+service:
+
+```sh
+gem install rubydb -v 0.1.5
+rubydb --config /etc/rubydb/production.yml --env production start
+```
+
+```ruby
+require "rubydb"
+
+client = RubyDB::Client::Client.new(url: ENV.fetch("RUBYDB_URL"))
+begin
+  puts client.query("SELECT 1").to_hash
+ensure
+  client.disconnect
+end
+```
+
+Use a URL such as `rubydbs://user:URL_ENCODED_PASSWORD@db.internal:7432/app`
+with TLS verification enabled. Store the complete URL in a secret manager and
+keep the database service on a private network.
+
+### PostgreSQL for a massive Rails application
+
+Use the `pg` gem and a managed PostgreSQL connection string for the main
+application:
+
+```ruby
+# Gemfile
+gem "pg"
+```
+
+```yaml
+# config/database.yml
+production:
+  url: <%= ENV.fetch("DATABASE_URL") %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", "5") %>
+```
+
+Set `DATABASE_URL` through the hosting provider’s secret settings, run
+migrations once from a release job, and validate the application against the
+same PostgreSQL major version used in production.
+
 ## Rails example
 
 The small Rails 7.2 application in
@@ -133,6 +218,7 @@ by the presence of an adapter.
 ## Documentation
 
 - [Documentation index](docs/README.md)
+- [Ten-lesson production journey](lessons/01-foundations.md)
 - [Developer guide](docs/developer-guide.md)
 - [Troubleshooting guide](docs/troubleshooting.md)
 - [Debugging playbook](docs/debugging.md)
@@ -147,6 +233,7 @@ by the presence of an adapter.
 - [Rails installation](docs/rails/installation.md)
 - [Rails production guidance](docs/rails/production.md)
 - [Rails compatibility guide](docs/rails/compatibility-guide.md)
+- [Python adapter](adapters/python/README.md)
 - [Production readiness](docs/production-readiness.md)
 - [Operations and workload testing](docs/operations/workload-testing.md)
 - [Production runbook](docs/operations/production-runbook.md)

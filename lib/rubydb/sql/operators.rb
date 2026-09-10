@@ -72,9 +72,9 @@ module RubyDB
 
       def self.comparison?(token_type)
         [Token::Type::EQ, Token::Type::NE, Token::Type::LT,
-         Token::Type::LTE, Token::Type::GT, Token::Type::GTE,
-         Token::Type::LIKE, Token::Type::ILIKE, Token::Type::BETWEEN,
-         Token::Type::IN, Token::Type::IS].include?(token_type)
+          Token::Type::LTE, Token::Type::GT, Token::Type::GTE,
+          Token::Type::LIKE, Token::Type::ILIKE, Token::Type::BETWEEN,
+          Token::Type::IN, Token::Type::IS].include?(token_type)
       end
 
       def self.logical?(token_type)
@@ -83,17 +83,17 @@ module RubyDB
 
       def self.arithmetic?(token_type)
         [Token::Type::PLUS, Token::Type::MINUS, Token::Type::STAR,
-         Token::Type::SLASH, Token::Type::PERCENT].include?(token_type)
+          Token::Type::SLASH, Token::Type::PERCENT].include?(token_type)
       end
 
       def self.bitwise?(token_type)
         [Token::Type::AMPERSAND, Token::Type::PIPE,
-         Token::Type::CARET, Token::Type::TILDE].include?(token_type)
+          Token::Type::CARET, Token::Type::TILDE].include?(token_type)
       end
 
       def self.unary?(token_type)
         [Token::Type::PLUS, Token::Type::MINUS, Token::Type::TILDE,
-         Token::Type::NOT].include?(token_type)
+          Token::Type::NOT].include?(token_type)
       end
     end
   end

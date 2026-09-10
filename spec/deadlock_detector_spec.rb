@@ -13,10 +13,16 @@ RSpec.describe RubyDB::Concurrency::DeadlockDetector do
     calls = []
     transaction = RubyDB::Transactions::Transaction.new(id: 9)
     manager = Object.new
-    manager.define_singleton_method(:get_transaction) { |id| calls << [:get, id]; transaction }
-    manager.define_singleton_method(:rollback_transaction) { |txn| calls << [:rollback, txn.id]; true }
+    manager.define_singleton_method(:get_transaction) { |id|
+      calls << [:get, id]
+      transaction
+    }
+    manager.define_singleton_method(:rollback_transaction) { |txn|
+      calls << [:rollback, txn.id]
+      true
+    }
     detector = described_class.new(transaction_manager: manager)
-    victim = { id: 9, locks: 1 }
+    victim = {id: 9, locks: 1}
 
     detector.abort_victim(victim)
 
@@ -29,7 +35,7 @@ RSpec.describe RubyDB::Concurrency::DeadlockDetector do
     detector = manager
     first = instance_double(RubyDB::Transactions::Transaction, priority: 0)
     second = instance_double(RubyDB::Transactions::Transaction, priority: 1)
-    allow(detector).to receive(:build_wait_for_graph).and_return({ first => [second], second => [first] })
+    allow(detector).to receive(:build_wait_for_graph).and_return({first => [second], second => [first]})
     allow(detector).to receive(:rollback_transaction).and_return(true)
 
     expect(detector.detect_deadlock).to be(true)

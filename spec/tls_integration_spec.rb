@@ -15,13 +15,13 @@ RSpec.describe "TLS transport" do
       server = RubyDB::Server::Server.new(
         host: "127.0.0.1", port: port, data_dir: dir,
         pid_file: File.join(dir, "rubydb.pid"),
-        ssl: { enabled: true, cert_file: cert_path, key_file: key_path, min_version: :TLS1_2 }
+        ssl: {enabled: true, cert_file: cert_path, key_file: key_path, min_version: :TLS1_2}
       )
       server.start
 
       client = RubyDB::Client::Client.new(
         host: "127.0.0.1", port: port, pool_size: 1,
-        ssl: { enabled: true, verify_peer: false, min_version: :TLS1_2 }
+        ssl: {enabled: true, verify_peer: false, min_version: :TLS1_2}
       )
       expect(client.connected?).to be(true)
     ensure
@@ -47,7 +47,7 @@ RSpec.describe "TLS transport" do
     extension_factory.issuer_certificate = cert
     cert.add_extension(extension_factory.create_extension("basicConstraints", "CA:TRUE", true))
     cert.add_extension(extension_factory.create_extension("subjectAltName", "DNS:localhost,IP:127.0.0.1"))
-    cert.sign(key, OpenSSL::Digest::SHA256.new)
+    cert.sign(key, OpenSSL::Digest.new("SHA256"))
 
     cert_path = File.join(dir, "server.crt")
     key_path = File.join(dir, "server.key")

@@ -121,7 +121,7 @@ module RubyDB
 
       def to_s
         status = locked? ? "locked" : "unlocked"
-        "#{@name || 'Mutex'} (#{status}, owner=#{@owner&.object_id})"
+        "#{@name || "Mutex"} (#{status}, owner=#{@owner&.object_id})"
       end
 
       def inspect
@@ -132,7 +132,7 @@ module RubyDB
     # ReentrantMutex - A mutex that can be locked multiple times by the same thread
     class ReentrantMutex < Mutex
       def initialize(name = nil)
-        super(name)
+        super
         @recursion_depth = 0
       end
 
@@ -170,13 +170,11 @@ module RubyDB
         end
       end
 
-      def recursion_depth
-        @recursion_depth
-      end
+      attr_reader :recursion_depth
 
       def to_s
         status = locked? ? "locked" : "unlocked"
-        "#{@name || 'ReentrantMutex'} (#{status}, recursion=#{@recursion_depth})"
+        "#{@name || "ReentrantMutex"} (#{status}, recursion=#{@recursion_depth})"
       end
     end
   end

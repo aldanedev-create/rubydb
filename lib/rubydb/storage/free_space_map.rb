@@ -57,12 +57,10 @@ module RubyDB
           @free_space.clear
 
           (1...@page_manager.total_pages).each do |page_number|
-            begin
-              page = @page_manager.get_page(page_number)
-              @free_space[page_number] = page.free_space
-            rescue => e
-              # Ignore errors
-            end
+            page = @page_manager.get_page(page_number)
+            @free_space[page_number] = page.free_space
+          rescue
+            # Ignore errors
           end
         end
       end

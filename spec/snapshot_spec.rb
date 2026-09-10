@@ -9,7 +9,7 @@ RSpec.describe RubyDB::Backup::Snapshot do
       engine = RubyDB::Storage::Engine.new(File.join(dir, "db.rdb"), auto_vacuum: false)
       columns = [RubyDB::Catalog::Column.new("id", :integer)]
       engine.create_table("items", columns)
-      engine.insert_row("items", columns, { "id" => 1 })
+      engine.insert_row("items", columns, {"id" => 1})
       snapshots = described_class.new(engine, snapshot_dir: File.join(dir, "snapshots"))
 
       result = snapshots.create_snapshot("snap_1")

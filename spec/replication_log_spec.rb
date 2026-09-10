@@ -7,8 +7,8 @@ RSpec.describe RubyDB::Replication::ReplicationLog do
   it "persists ordered transaction envelopes and filters by LSN" do
     Dir.mktmpdir do |dir|
       log = described_class.new(nil, log_dir: dir)
-      log.log_transaction({ id: "tx-1", operation: "insert", table: "users" }, 10)
-      log.log_transaction({ id: "tx-2", operation: "update", table: "users" }, 20)
+      log.log_transaction({id: "tx-1", operation: "insert", table: "users"}, 10)
+      log.log_transaction({id: "tx-2", operation: "update", table: "users"}, 20)
 
       entries = log.read_transactions(11, 20)
       expect(entries.size).to eq(1)

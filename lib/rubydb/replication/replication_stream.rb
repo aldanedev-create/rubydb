@@ -107,7 +107,7 @@ module RubyDB
         @lock.synchronize do
           return false if @state != STATE_STREAMING
 
-          @buffer << { data: transaction_data, lsn: lsn }
+          @buffer << {data: transaction_data, lsn: lsn}
 
           if @buffer.size >= @buffer_size
             flush_buffer
@@ -125,22 +125,19 @@ module RubyDB
           start_time = Time.now
 
           @replicas.each do |id, replica|
-            begin
-              stream_data = JSON.generate({
-                type: "replication_data",
-                data: @buffer,
-                timestamp: Time.now.iso8601
-              })
+            stream_data = JSON.generate({
+              type: "replication_data",
+              data: @buffer,
+              timestamp: Time.now.iso8601
+            })
 
-              replica[:stream].write(stream_data + "\n")
-              replica[:stream].flush
+            replica[:stream].write(stream_data + "\n")
+            replica[:stream].flush
 
-              @stats[:bytes_streamed] += stream_data.bytesize
-
-            rescue => e
-              @stats[:errors] += 1
-              remove_replica(id)
-            end
+            @stats[:bytes_streamed] += stream_data.bytesize
+          rescue
+            @stats[:errors] += 1
+            remove_replica(id)
           end
 
           @buffer.clear

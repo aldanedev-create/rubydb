@@ -20,7 +20,7 @@ RSpec.describe "SQL common table expressions" do
       ).tokenize).parse.first
       result = RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(statement))
 
-      expect(result[:rows]).to eq([{ "id" => 1 }])
+      expect(result[:rows]).to eq([{"id" => 1}])
     ensure
       engine&.close if engine&.open?
     end
@@ -36,7 +36,7 @@ RSpec.describe "SQL common table expressions" do
       )
 
       expect(result[:rows]).to eq([
-        { "n" => 1 }, { "n" => 2 }, { "n" => 3 }, { "n" => 4 }
+        {"n" => 1}, {"n" => 2}, {"n" => 3}, {"n" => 4}
       ])
       expect(statement.to_sql).to include("WITH RECURSIVE")
     ensure

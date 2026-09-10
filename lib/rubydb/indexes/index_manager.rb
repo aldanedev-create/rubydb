@@ -26,7 +26,7 @@ module RubyDB
         @cache = {}
         @cache_size = 100
         @lock = Monitor.new
-        
+
         load_indexes
       end
 
@@ -37,12 +37,12 @@ module RubyDB
             raise DatabaseError, "Index '#{name}' already exists" unless options[:if_not_exists]
             return false
           end
-          
+
           # Check if table exists
           unless @engine.table_exists?(table_name)
             raise DatabaseError, "Table '#{table_name}' does not exist"
           end
-          
+
           # Create index based on type
           index_type = options[:type] || :btree
           index = case index_type
@@ -53,7 +53,7 @@ module RubyDB
           else
             raise ConfigurationError, "Unsupported index type: #{index_type}"
           end
-          
+
           begin
             # Store index
             @indexes[name] = index
@@ -68,6 +68,9 @@ module RubyDB
             @stats[:index_creates] += 1
             save_indexes
             true
+          # Remove the in-memory index even when interrupted before durable
+          # metadata is written, otherwise the process can expose a ghost index.
+          # rubocop:disable Lint/RescueException
           rescue Exception
             @indexes.delete(name)
             if @table_indexes[table_name]
@@ -76,6 +79,7 @@ module RubyDB
             end
             @stats[:index_creates] -= 1 if @stats[:index_creates].positive?
             raise
+            # rubocop:enable Lint/RescueException
           end
         end
       end
@@ -86,26 +90,26 @@ module RubyDB
             return false if options[:if_exists]
             raise DatabaseError, "Index '#{name}' does not exist"
           end
-          
+
           index = @indexes[name]
           table_name = index.table_name
-          
+
           # Remove from table index list
           if @table_indexes[table_name]
             @table_indexes[table_name].delete(name)
             @table_indexes.delete(table_name) if @table_indexes[table_name].empty?
           end
-          
+
           # Clear index
           index.clear
-          
+
           # Remove from cache
           @cache.delete(name)
-          
+
           @indexes.delete(name)
           @stats[:index_drops] += 1
           save_indexes
-          
+
           true
         end
       end
@@ -130,14 +134,14 @@ module RubyDB
         @lock.synchronize do
           index = @indexes[name]
           return false unless index
-          
+
           # Get all rows from table
           columns = @engine.table_columns(index.table_name)
           rows = @engine.select_rows(index.table_name, columns)
-          
+
           # Build index
           index.build(rows)
-          
+
           @stats[:index_builds] += 1
           save_indexes if persist
           true
@@ -174,7 +178,7 @@ module RubyDB
 
           validate_insert!(table_name, row)
           row_id = row[:_row_id] || row["id"] || row[:id]
-          
+
           indexes.each do |index|
             key = extract_key(row, index.columns)
             index.insert(key, row_id)
@@ -203,7 +207,7 @@ module RubyDB
         @lock.synchronize do
           indexes = get_indexes_for_table(table_name)
           return unless indexes.any?
-          
+
           indexes.each do |index|
             key = extract_key(row, index.columns)
             row_id = row[:_row_id] || row["id"] || row[:id]
@@ -220,11 +224,11 @@ module RubyDB
 
           validate_update!(table_name, old_row, new_row)
           row_id = new_row[:_row_id] || new_row["id"] || new_row[:id]
-          
+
           indexes.each do |index|
             old_key = extract_key(old_row, index.columns)
             new_key = extract_key(new_row, index.columns)
-            
+
             if old_key != new_key
               # Update index
               index.delete(old_key, row_id)
@@ -256,13 +260,13 @@ module RubyDB
         @lock.synchronize do
           indexes = get_indexes_for_table(table_name)
           return nil if indexes.empty?
-          
+
           # Try to find the best index for the query
           indexes.each do |index|
             # Check if all columns in condition are in index
             index_columns = index.columns
             condition_keys = conditions.keys.map(&:to_s)
-            
+
             if index_columns.all? { |col| condition_keys.include?(col.to_s) }
               # Check if the condition has an operator that can use the index
               if index.type == :hash
@@ -274,7 +278,7 @@ module RubyDB
               end
             end
           end
-          
+
           # Return first index if no better match
           indexes.first
         end
@@ -339,28 +343,26 @@ module RubyDB
 
       def load_indexes
         @lock.synchronize do
-          begin
-            index_path = index_metadata_path
-            if File.exist?(index_path)
-              data = File.read(index_path)
-              parsed = JSON.parse(data, symbolize_names: true)
-              
-              parsed[:indexes]&.each do |name, index_data|
-                table_name = index_data[:table_name]
-                table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
-                name = name.to_sym if name.respond_to?(:to_sym)
-                columns = Array(index_data[:columns]).map { |column| column.respond_to?(:to_sym) ? column.to_sym : column }
-                options = (index_data[:options] || {}).transform_keys(&:to_sym)
-                options[:type] = index_data[:type].to_sym if index_data[:type]
-                options[:unique] = index_data[:unique] unless index_data[:unique].nil?
-                create_index(name, table_name, columns, options)
-              end
+          index_path = index_metadata_path
+          if File.exist?(index_path)
+            data = File.read(index_path)
+            parsed = JSON.parse(data, symbolize_names: true)
+
+            parsed[:indexes]&.each do |name, index_data|
+              table_name = index_data[:table_name]
+              table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
+              name = name.to_sym if name.respond_to?(:to_sym)
+              columns = Array(index_data[:columns]).map { |column| column.respond_to?(:to_sym) ? column.to_sym : column }
+              options = (index_data[:options] || {}).transform_keys(&:to_sym)
+              options[:type] = index_data[:type].to_sym if index_data[:type]
+              options[:unique] = index_data[:unique] unless index_data[:unique].nil?
+              create_index(name, table_name, columns, options)
             end
-          rescue StandardError => error
-            @indexes.clear
-            @table_indexes.clear
-            raise DatabaseError, "Invalid persisted index metadata at #{index_metadata_path}: #{error.message}"
           end
+        rescue => error
+          @indexes.clear
+          @table_indexes.clear
+          raise DatabaseError, "Invalid persisted index metadata at #{index_metadata_path}: #{error.message}"
         end
       end
 
@@ -370,7 +372,7 @@ module RubyDB
             indexes: {},
             timestamp: Time.now.iso8601
           }
-            
+
           @indexes.each do |name, index|
             data[:indexes][name] = {
               table_name: index.table_name,

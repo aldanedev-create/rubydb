@@ -25,12 +25,12 @@ module RubyDB
         # Initialize values
         columns.each do |col|
           value = if normalized_values.key?(col.name)
-                    normalized_values[col.name]
-                  elsif normalized_values.key?(col.name.to_sym)
-                    normalized_values[col.name.to_sym]
-                  else
-                    col.default
-                  end
+            normalized_values[col.name]
+          elsif normalized_values.key?(col.name.to_sym)
+            normalized_values[col.name.to_sym]
+          else
+            col.default
+          end
           @values[col.name] = value
         end
       end
@@ -59,7 +59,7 @@ module RubyDB
 
       def to_sql
         values = @columns.map { |col| @values[col.name] }
-        "ROW(#{values.map { |v| v.nil? ? 'NULL' : v.inspect }.join(', ')})"
+        "ROW(#{values.map { |v| v.nil? ? "NULL" : v.inspect }.join(", ")})"
       end
 
       def dirty?

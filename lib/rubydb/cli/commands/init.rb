@@ -46,10 +46,10 @@ module RubyDB
 
             # Initialize storage engine
             engine = RubyDB::Storage::Engine.new(db_path, {})
-            
+
             # Create default tables
             create_default_tables(engine)
-            
+
             # Create default user if not exists
             create_default_user(engine) if options[:user]
 
@@ -91,10 +91,9 @@ module RubyDB
 
         def create_default_user(engine)
           # Create admin user
-          engine.insert_row("users", 
-            ["username", "email", "created_at"], 
-            ["admin", "admin@localhost", Time.now]
-          )
+          engine.insert_row("users",
+            ["username", "email", "created_at"],
+            ["admin", "admin@localhost", Time.now])
         end
       end
     end

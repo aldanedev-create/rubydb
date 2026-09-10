@@ -43,7 +43,11 @@ module RubyDB
         raise StorageError, "Failed to open database file: #{e.message}"
       ensure
         unless opened_successfully
-          @file&.close rescue nil
+          begin
+            @file&.close
+          rescue
+            nil
+          end
           @file = nil
           @file_size = 0
           @num_pages = 0
@@ -116,14 +120,14 @@ module RubyDB
       def close
         return unless @is_open
 
-        @file.close if @file
+        @file&.close
         @is_open = false
         true
       end
 
       def sync
         inject_fault(:file_sync)
-        @file.fsync if @file
+        @file&.fsync
       rescue SystemCallError => e
         raise StorageError, "Failed to sync file: #{e.message}"
       end

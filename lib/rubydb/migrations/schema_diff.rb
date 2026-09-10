@@ -59,8 +59,8 @@ module RubyDB
             removed_cols = source_cols.keys - target_cols.keys
             common_cols = source_cols.keys & target_cols.keys
 
-            result[:added_columns] += added_cols.map { |c| { table: table, column: c } }
-            result[:removed_columns] += removed_cols.map { |c| { table: table, column: c } }
+            result[:added_columns] += added_cols.map { |c| {table: table, column: c} }
+            result[:removed_columns] += removed_cols.map { |c| {table: table, column: c} }
 
             # Find changed columns
             common_cols.each do |col|
@@ -90,7 +90,7 @@ module RubyDB
           @stats[:columns_removed] += diff_result[:removed_columns].size
           @stats[:columns_changed] += diff_result[:changed_columns].size
 
-          migration_name = options[:name] || "auto_migration_#{Time.now.strftime('%Y%m%d%H%M%S')}"
+          migration_name = options[:name] || "auto_migration_#{Time.now.strftime("%Y%m%d%H%M%S")}"
           migration_code = generate_migration_code(diff_result, migration_name)
 
           {
@@ -163,7 +163,7 @@ module RubyDB
         code << "# Migration: #{name}"
         code << "# Generated: #{Time.now.iso8601}"
         code << ""
-        code << "migration = Migration.new('#{Time.now.strftime('%Y%m%d%H%M%S')}', '#{name}')"
+        code << "migration = Migration.new('#{Time.now.strftime("%Y%m%d%H%M%S")}', '#{name}')"
         code << ""
         code << "migration.up do |engine|"
 

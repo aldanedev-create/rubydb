@@ -15,7 +15,7 @@ RSpec.describe "backup delta formats" do
       backup = RubyDB::Backup::Backup.new(engine, backup_dir: File.join(dir, "backups"), include_wal: false)
 
       result = backup.create_backup(type: RubyDB::Backup::Backup::TYPE_DIFFERENTIAL,
-                                    base_backup: "backup_full_base")
+        base_backup: "backup_full_base")
 
       expect(result[:success]).to be(true)
       expect(result[:metadata][:type].to_s).to eq("differential")

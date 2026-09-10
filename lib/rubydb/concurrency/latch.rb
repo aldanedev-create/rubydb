@@ -85,7 +85,7 @@ module RubyDB
       attr_reader :initial_count
 
       def initialize(count)
-        super(count)
+        super
         @initial_count = count
       end
 

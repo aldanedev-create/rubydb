@@ -181,11 +181,11 @@ module RubyDB
           when Change::OP_INSERT
             rows[change.row_id] = change.new_values
           when Change::OP_UPDATE
-            if rows.key?(change.row_id)
-              rows[change.row_id] = rows[change.row_id].merge(change.new_values)
+            rows[change.row_id] = if rows.key?(change.row_id)
+              rows[change.row_id].merge(change.new_values)
             else
               # Row might have been inserted before tracking started
-              rows[change.row_id] = change.new_values
+              change.new_values
             end
           when Change::OP_DELETE
             rows.delete(change.row_id)

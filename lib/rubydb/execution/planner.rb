@@ -85,21 +85,25 @@ module RubyDB
         end
 
         # Apply optimizations
-        plan = optimize(plan)
-
-        plan
+        optimize(plan)
       end
 
       def plan_select(statement)
         table_name = statement.table_name
-        columns = statement.columns.map { |col| col.expression.name rescue col.to_s }
+        columns = statement.columns.map { |col|
+          begin
+            col.expression.name
+          rescue
+            col.to_s
+          end
+        }
 
         plan = Plan::Select.new(table_name, columns)
         plan.set_source_reference(statement.from)
 
         if statement.joins&.any?
           plan.set_joins(statement.joins.map do |join|
-            { type: join.type, table: join.table, predicate: build_predicate(join.condition) }
+            {type: join.type, table: join.table, predicate: build_predicate(join.condition)}
           end)
         end
 
@@ -119,7 +123,7 @@ module RubyDB
           order_by = statement.order_by.map do |order|
             column = order.expression.respond_to?(:name) ? order.expression.name : order.expression.to_s
             table = order.expression.respond_to?(:table) ? order.expression.table : nil
-            { column: table ? "#{table}.#{column}" : column, direction: order.direction }
+            {column: table ? "#{table}.#{column}" : column, direction: order.direction}
           end
           plan.set_order_by(order_by)
         end
@@ -165,7 +169,7 @@ module RubyDB
 
       def plan_update(statement)
         assignments = statement.assignments.map do |ass|
-          { column: ass.column, value: ass.value }
+          {column: ass.column, value: ass.value}
         end
 
         plan = Plan::Update.new(statement.table, assignments)
@@ -253,7 +257,7 @@ module RubyDB
             Predicate::Comparison.new(
               build_expression(ast.left),
               build_expression(ast.right),
-              { EQ: :eq, NE: :ne, LT: :lt, LTE: :lte, GT: :gt, GTE: :gte }.fetch(ast.operator)
+              {EQ: :eq, NE: :ne, LT: :lt, LTE: :lte, GT: :gt, GTE: :gte}.fetch(ast.operator)
             )
           when :LIKE, :ILIKE
             Predicate::Like.new(
@@ -261,8 +265,6 @@ module RubyDB
               build_expression(ast.right),
               ast.operator == :LIKE
             )
-          else
-            nil
           end
         when SQL::AST::UnaryOp
           operand = build_predicate(ast.operand)
@@ -388,7 +390,11 @@ module RubyDB
       # Cost estimation
       def estimate_cost(plan)
         table_name = plan.table_name
-        row_count = @engine.table_row_count(table_name) rescue 0
+        row_count = begin
+          @engine.table_row_count(table_name)
+        rescue
+          0
+        end
 
         case plan.scan_type
         when :sequential
@@ -471,7 +477,9 @@ module RubyDB
           eligible = [pending.first] if eligible.empty?
 
           chosen = eligible.min_by do |join|
-            @engine.table_row_count(join[:table].name) rescue 1_000_000
+            @engine.table_row_count(join[:table].name)
+          rescue
+            1_000_000
           end
           pending.delete(chosen)
           ordered << chosen
@@ -530,21 +538,19 @@ module RubyDB
 
         # Remove redundant TRUE conditions
         if left.is_a?(Predicate::Comparison) && left.left.is_a?(Expression::Literal) &&
-           left.left.value == true && left.operator == :EQ
+            left.left.value == true && left.operator == :EQ
           return right
         end
 
         if right.is_a?(Predicate::Comparison) && right.left.is_a?(Expression::Literal) &&
-           right.left.value == true && right.operator == :EQ
+            right.left.value == true && right.operator == :EQ
           return left
         end
 
         predicate
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

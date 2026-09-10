@@ -97,7 +97,7 @@ module RubyDB
 
       def inspect
         rows_preview = @rows.first(3).map(&:inspect).join(", ")
-        more = @rows.size > 3 ? "..." : ""
+        more = (@rows.size > 3) ? "..." : ""
         "#<Result rows=#{@row_count} columns=#{@columns.size} data=[#{rows_preview}#{more}]>"
       end
 
@@ -116,8 +116,8 @@ module RubyDB
         @row_count
       end
 
-      alias length size
-      alias count size
+      alias_method :length, :size
+      alias_method :count, :size
     end
   end
 end

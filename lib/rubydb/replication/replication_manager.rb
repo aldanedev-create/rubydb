@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require "time"
 require "monitor"
 
@@ -106,14 +105,14 @@ module RubyDB
 
           @stats[:switches] += 1
 
-          { old_mode: old_mode, new_mode: new_mode }
+          {old_mode: old_mode, new_mode: new_mode}
         end
       end
 
       def promote_to_primary(recovery_point: nil)
         @lock.synchronize do
           if @mode != MODE_REPLICA
-            return { success: false, error: "Not in replica mode" }
+            return {success: false, error: "Not in replica mode"}
           end
 
           status = @replica&.replication_status
@@ -124,12 +123,12 @@ module RubyDB
             Replica::STATE_CONNECTING
           ].include?(status[:state])
           caught_up_after_disconnect = status &&
-                                       status[:last_replayed_lsn] &&
-                                       status[:last_received_lsn] == status[:last_replayed_lsn]
-          unless promotable_state && (status[:state] == Replica::STATE_STREAMING ||
-                                      status[:state] == Replica::STATE_SYNCED ||
-                                      caught_up_after_disconnect)
-            return { success: false, error: "Replica is not synchronized enough for manual promotion" }
+            status[:last_replayed_lsn] &&
+            status[:last_received_lsn] == status[:last_replayed_lsn]
+          synchronized_state = status && [Replica::STATE_STREAMING, Replica::STATE_SYNCED].include?(status[:state]) ||
+            caught_up_after_disconnect
+          unless promotable_state && synchronized_state
+            return {success: false, error: "Replica is not synchronized enough for manual promotion"}
           end
 
           if status[:last_received_lsn] != status[:last_replayed_lsn]
@@ -140,7 +139,7 @@ module RubyDB
           end
 
           if recovery_point && status[:last_replayed_lsn].to_i < recovery_point.to_i
-            return { success: false, error: "Replica has not reached recovery point #{recovery_point}" }
+            return {success: false, error: "Replica has not reached recovery point #{recovery_point}"}
           end
 
           # Promote replica to primary. Automatic promotion is intentionally
@@ -148,7 +147,7 @@ module RubyDB
           begin
             @replica&.promote_to_primary(recovery_point: recovery_point)
           rescue ReplicationError => e
-            return { success: false, error: e.message }
+            return {success: false, error: e.message}
           end
 
           # Switch mode
@@ -161,14 +160,14 @@ module RubyDB
           @replica = nil
           @stats[:failovers] += 1
 
-          { success: true, message: "Promoted to primary" }
+          {success: true, message: "Promoted to primary"}
         end
       end
 
       def demote_to_replica(primary_host, primary_port = nil)
         @lock.synchronize do
           if @mode != MODE_PRIMARY
-            return { success: false, error: "Not in primary mode" }
+            return {success: false, error: "Not in primary mode"}
           end
 
           # Stop primary
@@ -186,7 +185,7 @@ module RubyDB
           @primary = nil
           @stats[:switches] += 1
 
-          { success: true, message: "Demoted to replica" }
+          {success: true, message: "Demoted to replica"}
         end
       end
 
@@ -200,7 +199,7 @@ module RubyDB
           when MODE_REPLICA
             check_replica_health
           else
-            { healthy: true, message: "Not in active replication mode" }
+            {healthy: true, message: "Not in active replication mode"}
           end
 
           @stats[:healthy] = result[:healthy]
@@ -276,7 +275,7 @@ module RubyDB
             sleep(@health_check_interval)
             begin
               health_check
-            rescue => e
+            rescue
               @stats[:errors] += 1
             end
           end
@@ -285,9 +284,9 @@ module RubyDB
 
       def check_primary_health
         if @primary&.running?
-          { healthy: true, message: "Primary is running" }
+          {healthy: true, message: "Primary is running"}
         else
-          { healthy: false, message: "Primary is not running" }
+          {healthy: false, message: "Primary is not running"}
         end
       end
 
@@ -295,12 +294,12 @@ module RubyDB
         if @replica&.running?
           status = @replica.replication_status
           if status[:state] == :failed
-            { healthy: false, message: "Replica in failed state" }
+            {healthy: false, message: "Replica in failed state"}
           else
-            { healthy: true, message: "Replica is running" }
+            {healthy: true, message: "Replica is running"}
           end
         else
-          { healthy: false, message: "Replica is not running" }
+          {healthy: false, message: "Replica is not running"}
         end
       end
     end

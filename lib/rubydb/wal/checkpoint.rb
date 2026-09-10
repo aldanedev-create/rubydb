@@ -94,7 +94,6 @@ module RubyDB
             @stats[:last_checkpoint_size] = estimate_checkpoint_size
 
             true
-
           rescue => e
             @stats[:checkpoint_failures] += 1
             @stats[:last_error] = "#{e.class}: #{e.message}"
@@ -105,7 +104,7 @@ module RubyDB
 
       def restore_checkpoint(reader)
         @lock.synchronize do
-          start_time = Time.now
+          Time.now
 
           begin
             # Find the latest checkpoint in the WAL
@@ -127,8 +126,7 @@ module RubyDB
 
             @stats[:checkpoints_restored] += 1
             @last_checkpoint_lsn
-
-          rescue => e
+          rescue
             @stats[:checkpoint_failures] += 1
             raise
           end
@@ -164,7 +162,7 @@ module RubyDB
           sleep(@checkpoint_interval)
           begin
             create_checkpoint
-          rescue => e
+          rescue
             # Log error but continue
           end
         end

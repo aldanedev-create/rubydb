@@ -67,11 +67,11 @@ module RubyDB
       }.freeze
 
       def self.validate_statement_type(type)
-        STATEMENT_TYPES.key?(type) ? true : false
+        STATEMENT_TYPES.key?(type)
       end
 
       def self.validate_data_type(type)
-        DATA_TYPES.key?(type) ? true : false
+        DATA_TYPES.key?(type)
       end
 
       def self.validate_operator(op)
@@ -79,7 +79,7 @@ module RubyDB
       end
 
       def self.validate_constraint_type(type)
-        CONSTRAINT_TYPES.key?(type) ? true : false
+        CONSTRAINT_TYPES.key?(type)
       end
     end
   end

@@ -308,68 +308,68 @@ module RubyDB
         @table = table
       end
 
-      def column(name, type, **options)
-        @table.add_column(Column.new(name, type, **options))
+      def column(name, type, **)
+        @table.add_column(Column.new(name, type, **))
       end
 
-      def integer(name, **options)
-        column(name, :integer, **options)
+      def integer(name, **)
+        column(name, :integer, **)
       end
 
-      def bigint(name, **options)
-        column(name, :bigint, **options)
+      def bigint(name, **)
+        column(name, :bigint, **)
       end
 
-      def smallint(name, **options)
-        column(name, :smallint, **options)
+      def smallint(name, **)
+        column(name, :smallint, **)
       end
 
-      def float(name, **options)
-        column(name, :float, **options)
+      def float(name, **)
+        column(name, :float, **)
       end
 
-      def decimal(name, precision: 10, scale: 2, **options)
-        column(name, :decimal, precision: precision, scale: scale, **options)
+      def decimal(name, precision: 10, scale: 2, **)
+        column(name, :decimal, precision: precision, scale: scale, **)
       end
 
-      def boolean(name, **options)
-        column(name, :boolean, **options)
+      def boolean(name, **)
+        column(name, :boolean, **)
       end
 
-      def text(name, **options)
-        column(name, :text, **options)
+      def text(name, **)
+        column(name, :text, **)
       end
 
-      def varchar(name, limit: 255, **options)
-        column(name, :varchar, limit: limit, **options)
+      def varchar(name, limit: 255, **)
+        column(name, :varchar, limit: limit, **)
       end
 
-      def blob(name, **options)
-        column(name, :blob, **options)
+      def blob(name, **)
+        column(name, :blob, **)
       end
 
-      def date(name, **options)
-        column(name, :date, **options)
+      def date(name, **)
+        column(name, :date, **)
       end
 
-      def time(name, **options)
-        column(name, :time, **options)
+      def time(name, **)
+        column(name, :time, **)
       end
 
-      def timestamp(name, **options)
-        column(name, :timestamp, **options)
+      def timestamp(name, **)
+        column(name, :timestamp, **)
       end
 
-      def json(name, **options)
-        column(name, :json, **options)
+      def json(name, **)
+        column(name, :json, **)
       end
 
-      def uuid(name, **options)
-        column(name, :uuid, **options)
+      def uuid(name, **)
+        column(name, :uuid, **)
       end
 
-      def primary_key(name = :id, **options)
-        column(name, :integer, primary_key: true, **options)
+      def primary_key(name = :id, **)
+        column(name, :integer, primary_key: true, **)
       end
 
       def timestamps
@@ -377,13 +377,13 @@ module RubyDB
         timestamp(:updated_at, default: "CURRENT_TIMESTAMP")
       end
 
-      def index(name, **options)
-        @table.add_index(Index.new(name, @table.name, **options))
+      def index(name, **)
+        @table.add_index(Index.new(name, @table.name, **))
       end
 
-      def foreign_key(column, ref_table, ref_column = :id, **options)
+      def foreign_key(column, ref_table, ref_column = :id, **)
         @table.add_constraint(
-          ForeignKeyConstraint.new(column, ref_table, ref_column, **options)
+          ForeignKeyConstraint.new(column, ref_table, ref_column, **)
         )
       end
     end

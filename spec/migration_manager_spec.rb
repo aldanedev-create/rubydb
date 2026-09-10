@@ -2,22 +2,22 @@
 
 require "spec_helper"
 
-RSpec.describe RubyDB::Migrations::MigrationManager do
-  FakeDatabase = Struct.new(:engine, :rows, :executed) do
-    def execute(sql)
-      self.executed << sql
-      true
-    end
-
-    def query(_sql)
-      rows
-    end
-
-    def transaction
-      yield
-    end
+FakeDatabase = Struct.new(:engine, :rows, :executed) do
+  def execute(sql)
+    executed << sql
+    true
   end
 
+  def query(_sql)
+    rows
+  end
+
+  def transaction
+    yield
+  end
+end
+
+RSpec.describe RubyDB::Migrations::MigrationManager do
   it "applies migrations in version order and records them" do
     database = FakeDatabase.new(Struct.new(:path).new("/tmp/rubydb-test"), [], [])
     first = RubyDB::Migrations::Migration.new("2", "second").up { |engine| engine.instance_variable_set(:@ran, true) }
@@ -55,7 +55,7 @@ RSpec.describe RubyDB::Migrations::MigrationManager do
     reloaded_migration.up { |recorder| recorder.execute("SELECT 1") }
     database = FakeDatabase.new(
       Struct.new(:path).new("/tmp/rubydb-test"),
-      [{ version: "1", migration_name: "create_flags", checksum: applied_migration.checksum }],
+      [{version: "1", migration_name: "create_flags", checksum: applied_migration.checksum}],
       []
     )
 
@@ -69,7 +69,7 @@ RSpec.describe RubyDB::Migrations::MigrationManager do
     changed.up { |recorder| recorder.execute("SELECT 2") }
     database = FakeDatabase.new(
       Struct.new(:path).new("/tmp/rubydb-test"),
-      [{ version: "1", migration_name: "create_flags", checksum: original.checksum }],
+      [{version: "1", migration_name: "create_flags", checksum: original.checksum}],
       []
     )
 

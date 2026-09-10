@@ -12,12 +12,12 @@ RSpec.describe "physical branch checkout" do
         RubyDB::Catalog::Column.new("name", :varchar, null: false)
       ]
       engine.create_table("users", columns)
-      engine.insert_row("users", columns, { "id" => 1, "name" => "Ada" })
+      engine.insert_row("users", columns, {"id" => 1, "name" => "Ada"})
 
       manager = RubyDB::Branching::BranchManager.new(engine, branch_dir: File.join(dir, "branches"))
       expect(manager.create_branch("feature", from: "main")[:success]).to be(true)
       manager.checkout("feature")
-      manager.commit(operation: "insert", table: "users", values: { "id" => 2, "name" => "Grace" })
+      manager.commit(operation: "insert", table: "users", values: {"id" => 2, "name" => "Grace"})
 
       expect(manager.checkout("feature")[:success]).to be(true)
       rows = engine.select_rows("users", columns)

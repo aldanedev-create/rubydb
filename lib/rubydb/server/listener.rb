@@ -73,7 +73,11 @@ module RubyDB
           end
 
           if @socket
-            @socket.close rescue nil
+            begin
+              @socket.close
+            rescue
+              nil
+            end
             @socket = nil
           end
           @ssl_enabled = false
@@ -120,12 +124,11 @@ module RubyDB
 
             # Small sleep to prevent CPU spinning
             sleep(0.01)
-
           rescue IO::WaitReadable, Errno::EAGAIN, Errno::EWOULDBLOCK
             next if @ssl_enabled
             # No connection ready, continue
             sleep(0.01)
-          rescue => e
+          rescue
             @stats[:accept_errors] += 1
             sleep(0.1) # Back off on error
           end

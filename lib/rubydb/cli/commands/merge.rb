@@ -46,7 +46,7 @@ module RubyDB
             branch_dir: options[:branch_dir] || "branches"
           )
           merger = RubyDB::Branching::Merge.new(database.engine, manager,
-                                                strategy: (options[:strategy] || :fast_forward))
+            strategy: options[:strategy] || :fast_forward)
           result = nil
           @output.spinner("Merging #{source} into #{target}...") do
             result = merger.merge(source, target, abort_on_conflict: true)

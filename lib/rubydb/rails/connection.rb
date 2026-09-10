@@ -98,7 +98,7 @@ module RubyDB
         ensure_connected
 
         if @query_cache_enabled && sql =~ /^SELECT/i
-          cache_key = "#{sql}:#{params.join(':')}"
+          cache_key = "#{sql}:#{params.join(":")}"
           if @query_cache.key?(cache_key)
             return @query_cache[cache_key]
           end
@@ -159,7 +159,7 @@ module RubyDB
 
         @transaction_depth -= 1
         if @transaction_depth == 0
-          @engine.commit_transaction(@transaction) if @engine
+          @engine&.commit_transaction(@transaction)
           @client.commit unless @engine
           @transaction = nil
         end
@@ -171,7 +171,7 @@ module RubyDB
 
         @transaction_depth -= 1
         if @transaction_depth == 0
-          @engine.rollback_transaction(@transaction) if @engine
+          @engine&.rollback_transaction(@transaction)
           @client.rollback unless @engine
           @transaction = nil
         end
@@ -222,9 +222,7 @@ module RubyDB
         elapsed_ms = (Time.now - start_time) * 1000
         @last_query_time = elapsed_ms
 
-        if @logger
-          @logger.debug "  #{name || 'SQL'} (#{elapsed_ms.round(2)}ms) #{sql}"
-        end
+        @logger&.debug "  #{name || "SQL"} (#{elapsed_ms.round(2)}ms) #{sql}"
 
         result
       end
@@ -249,7 +247,7 @@ module RubyDB
           plan = RubyDB::Execution::Planner.new(@engine).plan(statement)
           RubyDB::Execution::Executor.new(@engine).execute(plan)
         end
-        results.size == 1 ? results.first : { rows: results, row_count: results.size }
+        (results.size == 1) ? results.first : {rows: results, row_count: results.size}
       end
 
       def bind_parameters(sql, params)

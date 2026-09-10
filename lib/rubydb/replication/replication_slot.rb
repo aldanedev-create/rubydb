@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "time"
-require "set"
 
 module RubyDB
   module Replication
@@ -128,8 +127,8 @@ module RubyDB
             @stats[:consecutive_failures] += 1
 
             if @stats[:consecutive_failures] >= @max_consecutive_failures &&
-               @failover_trigger == :auto &&
-               !@failover_triggered
+                @failover_trigger == :auto &&
+                !@failover_triggered
               trigger_reason = "health check failures"
             end
           else
@@ -161,7 +160,7 @@ module RubyDB
           sleep(@check_interval)
           begin
             health_check
-          rescue => e
+          rescue
             # Log error but continue
           end
         end
@@ -227,7 +226,6 @@ module RubyDB
               elapsed_ms: elapsed_ms,
               reason: reason
             })
-
           rescue => e
             @state = STATE_FAILED
             @stats[:failed_failovers] += 1
@@ -264,17 +262,17 @@ module RubyDB
 
       def promote_candidate(candidate)
         result = @replication_manager.promote_to_primary
-        return { success: false, error: "Promotion manager returned no result" } unless result.is_a?(Hash)
+        return {success: false, error: "Promotion manager returned no result"} unless result.is_a?(Hash)
 
-        result[:success] ? result : { success: false, error: result[:error] || "Promotion failed" }
+        result[:success] ? result : {success: false, error: result[:error] || "Promotion failed"}
       end
 
       def verify_promotion(candidate)
         mode = @replication_manager.respond_to?(:mode) ? @replication_manager.mode : nil
-        return { success: false, error: "Promotion did not enter primary mode" } unless mode == ReplicationManager::MODE_PRIMARY
+        return {success: false, error: "Promotion did not enter primary mode"} unless mode == ReplicationManager::MODE_PRIMARY
 
         health = @replication_manager.health_check
-        health[:healthy] ? { success: true, health: health } : { success: false, error: "Promoted node is unhealthy" }
+        health[:healthy] ? {success: true, health: health} : {success: false, error: "Promoted node is unhealthy"}
       end
 
       def failover_result(success, message, extra = {})

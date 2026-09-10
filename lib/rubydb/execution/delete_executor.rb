@@ -104,9 +104,7 @@ module RubyDB
         end
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

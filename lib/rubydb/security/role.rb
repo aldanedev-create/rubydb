@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Security
     # Role - Role-based access control

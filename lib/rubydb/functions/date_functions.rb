@@ -84,9 +84,11 @@ module RubyDB
           if arg.is_a?(Time) || arg.is_a?(DateTime)
             arg.to_date
           elsif arg.is_a?(String)
-            ::Date.parse(arg) rescue nil
-          else
-            nil
+            begin
+              ::Date.parse(arg)
+            rescue
+              nil
+            end
           end
         end
       end
@@ -128,8 +130,6 @@ module RubyDB
             date.wday
           when "doy", "dayofyear"
             date.yday if date.respond_to?(:yday)
-          else
-            nil
           end
         end
       end
@@ -168,8 +168,6 @@ module RubyDB
             date + interval * 60
           when "second", "seconds"
             date + interval
-          else
-            nil
           end
         end
       end
@@ -210,8 +208,6 @@ module RubyDB
             diff / 60
           when "second", "seconds"
             diff
-          else
-            nil
           end
         end
       end
@@ -239,7 +235,7 @@ module RubyDB
           # Simple format substitutions
           formatted = format
           formatted = formatted.gsub("%Y", date.year.to_s)
-          formatted = formatted.gsub("%y", date.year.to_s[-2..-1])
+          formatted = formatted.gsub("%y", date.year.to_s[-2..])
           formatted = formatted.gsub("%m", date.month.to_s.rjust(2, "0"))
           formatted = formatted.gsub("%d", date.day.to_s.rjust(2, "0"))
           formatted = formatted.gsub("%H", date.hour.to_s.rjust(2, "0")) if date.respond_to?(:hour)

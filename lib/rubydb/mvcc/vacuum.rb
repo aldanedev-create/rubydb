@@ -78,7 +78,7 @@ module RubyDB
           @stats[:rows_compacted] += compacted
           @stats[:average_removed_per_run] = @stats[:versions_removed] / @stats[:vacuum_runs].to_f
 
-          { removed: removed, compacted: compacted }
+          {removed: removed, compacted: compacted}
         end
       end
 
@@ -100,7 +100,7 @@ module RubyDB
           # Remove oldest versions
           remove_count.times do
             version = versions.shift
-            if version && version.is_committed && !version.is_deleted
+            if version&.is_committed && !version.is_deleted
               # Check age
               if Time.now - version.created_at > @min_age
                 @version_store.instance_variable_get(:@version_map).delete(version.version_id)

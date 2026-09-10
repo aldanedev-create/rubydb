@@ -38,7 +38,7 @@ module RubyDB
           rows.each do |row|
             # Get row ID
             row_id = row[:_row_id] || row["_row_id"] || row[:id] || row["id"]
-            
+
             # Apply updates
             row_data = row.dup
             assignments.each do |assignment|
@@ -54,7 +54,7 @@ module RubyDB
             @engine.update_row(table_name, row_id, row_data, transaction_id: transaction_id)
 
             updated_count += 1
-            updated_rows << { row_id: row_id, old: row, new: row_data }
+            updated_rows << {row_id: row_id, old: row, new: row_data}
           end
 
           elapsed_ms = ((Time.now - start_time) * 1000).round(2)
@@ -93,7 +93,7 @@ module RubyDB
             @engine.update_row(table_name, row_id, row_data, transaction_id: transaction_id)
 
             updated_count += 1
-            updated_rows << { row_id: row_id, old: old_row, new: row_data }
+            updated_rows << {row_id: row_id, old: old_row, new: row_data}
           end
 
           elapsed_ms = ((Time.now - start_time) * 1000).round(2)
@@ -145,7 +145,7 @@ module RubyDB
 
           # Check UNIQUE
           if col.unique?
-            conditions = { col.name => row_data[col.name] }
+            conditions = {col.name => row_data[col.name]}
             existing = @engine.select_rows(table_name, table_columns, conditions)
             if existing.any? && existing.first[:_row_id] != row_data[:_row_id]
               raise ConstraintError, "Duplicate value for unique column '#{col.name}'"
@@ -154,9 +154,7 @@ module RubyDB
         end
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

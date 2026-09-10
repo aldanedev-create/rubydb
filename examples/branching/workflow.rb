@@ -13,7 +13,7 @@ Dir.mktmpdir("rubydb-branching") do |directory|
       RubyDB::Catalog::Column.new(:name, :varchar, null: false)
     ]
     engine.create_table(:users, columns)
-    engine.insert_row(:users, columns, { id: 1, name: "Ada" })
+    engine.insert_row(:users, columns, {id: 1, name: "Ada"})
 
     manager = RubyDB::Branching::BranchManager.new(engine, branch_dir: File.join(directory, "branches"))
     created = manager.create_branch("feature", from: "main", description: "Add Grace")
@@ -21,7 +21,7 @@ Dir.mktmpdir("rubydb-branching") do |directory|
 
     checked_out = manager.checkout("feature")
     raise checked_out[:error] unless checked_out[:success]
-    manager.commit(operation: "insert", table: "users", values: { id: 2, name: "Grace" })
+    manager.commit(operation: "insert", table: "users", values: {id: 2, name: "Grace"})
     checked_out = manager.checkout("feature")
     raise checked_out[:error] unless checked_out[:success]
 

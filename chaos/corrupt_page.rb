@@ -67,7 +67,7 @@ module RubyDB
             @stats[:pages_corrupted].delete(page_number)
             @stats[:repaired] += 1
             true
-          rescue => e
+          rescue
             @stats[:failed_repairs] += 1
             false
           end
@@ -141,7 +141,7 @@ module RubyDB
 
       def corrupt_flip_bits(page)
         offset = rand(0...page.size)
-        byte = page.read(offset, 1).unpack("C").first
+        byte = page.read(offset, 1).unpack1("C")
         flipped = byte ^ (1 << rand(0..7))
         page.write(offset, [flipped].pack("C"))
       end
@@ -156,7 +156,7 @@ module RubyDB
       def corrupt_header(page)
         # Corrupt page header
         offset = rand(0...PageHeader::SIZE)
-        byte = page.read(offset, 1).unpack("C").first
+        byte = page.read(offset, 1).unpack1("C")
         flipped = byte ^ (1 << rand(0..7))
         page.write(offset, [flipped].pack("C"))
       end

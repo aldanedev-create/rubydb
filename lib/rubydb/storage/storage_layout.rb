@@ -5,7 +5,7 @@ module RubyDB
     # StorageLayout - Defines the on-disk storage format
     module StorageLayout
       # Magic number for file identification
-      MAGIC_NUMBER = "RUBYDB".freeze
+      MAGIC_NUMBER = "RUBYDB"
 
       # Current format version
       FORMAT_VERSION = 1
@@ -22,7 +22,7 @@ module RubyDB
       # Superblock layout
       class Superblock
         attr_accessor :magic, :version, :page_size, :num_pages,
-                      :root_page, :created_at, :modified_at
+          :root_page, :created_at, :modified_at
 
         def initialize
           @magic = MAGIC_NUMBER
@@ -54,8 +54,8 @@ module RubyDB
       # Table metadata layout
       class TableMetadata
         attr_accessor :table_id, :table_name, :column_count,
-                      :row_count, :first_page, :last_page,
-                      :created_at, :updated_at
+          :row_count, :first_page, :last_page,
+          :created_at, :updated_at
 
         def initialize
           @table_id = 0
@@ -80,7 +80,7 @@ module RubyDB
 
         def self.deserialize(data)
           tm = new
-          tm.table_id = data[0, 8].unpack("Q>").first
+          tm.table_id = data[0, 8].unpack1("Q>")
           tm.table_name = data[8, 64].strip
           tm.column_count, tm.row_count = data[72, 12].unpack("I>Q>")
           tm.first_page, tm.last_page = data[84, 16].unpack("Q>Q>")
@@ -92,8 +92,8 @@ module RubyDB
       # Column metadata layout
       class ColumnMetadata
         attr_accessor :column_id, :column_name, :data_type,
-                      :is_nullable, :is_primary_key, :position,
-                      :default, :created_at
+          :is_nullable, :is_primary_key, :position,
+          :default, :created_at
 
         def initialize
           @column_id = 0
@@ -125,12 +125,12 @@ module RubyDB
           cm = new
           cm.column_id, cm.position = data[0, 8].unpack("I>I>")
           cm.column_name = data[8, 64].strip
-          cm.data_type = data[72].unpack("Z*").first.to_sym
-          flags = data[72 + cm.data_type.to_s.length + 1].unpack("C").first
+          cm.data_type = data[72].unpack1("Z*").to_sym
+          flags = data[72 + cm.data_type.to_s.length + 1].unpack1("C")
           cm.is_nullable = (flags & 1) != 0
           cm.is_primary_key = (flags & 2) != 0
           cm.default = data[73 + cm.data_type.to_s.length, 64].strip unless data[73 + cm.data_type.to_s.length, 64].strip.empty?
-          cm.created_at = data[137, 8].unpack("Q>").first
+          cm.created_at = data[137, 8].unpack1("Q>")
           cm
         end
       end

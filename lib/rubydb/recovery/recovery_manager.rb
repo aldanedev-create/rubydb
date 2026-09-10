@@ -52,14 +52,14 @@ module RubyDB
 
           # Step 1: Detect corruption
           corruption_result = @corruption_detector.detect_corruption
-          result[:steps] << { step: "corruption_detection", result: corruption_result }
+          result[:steps] << {step: "corruption_detection", result: corruption_result}
 
           if corruption_result[:corrupted]
             result[:warnings] << "Corruption detected, attempting repair"
 
             # Step 2: Repair corruption
             repair_result = @corruption_detector.repair_corruption(corruption_result)
-            result[:steps] << { step: "corruption_repair", result: repair_result }
+            result[:steps] << {step: "corruption_repair", result: repair_result}
 
             if repair_result[:repaired]
               result[:details][:repaired] = true
@@ -71,7 +71,7 @@ module RubyDB
 
           # Step 3: Run crash recovery
           recovery_result = @crash_recovery.recover
-          result[:steps] << { step: "crash_recovery", result: recovery_result }
+          result[:steps] << {step: "crash_recovery", result: recovery_result}
           @stats[:last_recovery_result] = recovery_result
 
           if recovery_result[:success]
@@ -83,7 +83,7 @@ module RubyDB
 
           # Step 4: Check consistency
           consistency_result = @consistency_checker.check_all
-          result[:steps] << { step: "consistency_check", result: consistency_result }
+          result[:steps] << {step: "consistency_check", result: consistency_result}
           @stats[:consistency_checks] += 1
 
           if consistency_result[:passed]
@@ -96,7 +96,7 @@ module RubyDB
           # Step 5: Create checkpoint if successful
           if result[:success]
             checkpoint_result = @checkpoint.create_checkpoint(true)
-            result[:steps] << { step: "checkpoint", result: checkpoint_result }
+            result[:steps] << {step: "checkpoint", result: checkpoint_result}
             @stats[:checkpoints_created] += 1 if checkpoint_result
           end
 
@@ -156,9 +156,7 @@ module RubyDB
         end
       end
 
-      def recovery_mode
-        @recovery_mode
-      end
+      attr_reader :recovery_mode
 
       def recovery_mode=(mode)
         @lock.synchronize do

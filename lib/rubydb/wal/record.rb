@@ -67,7 +67,7 @@ module RubyDB
 
       def self.deserialize(raw_data, lsn)
         checksum = raw_data[0...16]
-        json_data = raw_data[16..-1]
+        json_data = raw_data[16..]
 
         # Verify checksum
         calculated = Digest::SHA256.hexdigest(json_data)[0...16]

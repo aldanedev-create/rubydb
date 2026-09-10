@@ -85,7 +85,7 @@ module RubyDB
           return nil if args[0].nil?
           val = args[0].to_f
           decimals = args[1] ? args[1].to_i : 0
-          factor = 10 ** decimals
+          factor = 10**decimals
           (val * factor).round / factor.to_f
         end
       end
@@ -108,7 +108,7 @@ module RubyDB
           return nil if args[0].nil? || args[1].nil?
           base = args[0].to_f
           exponent = args[1].to_f
-          base ** exponent
+          base**exponent
         end
       end
 
@@ -151,7 +151,7 @@ module RubyDB
           return nil if args[0].nil? || args[1].nil?
           a = args[0].to_i
           b = args[1].to_i
-          b == 0 ? nil : a % b
+          (b == 0) ? nil : a % b
         end
       end
 
@@ -264,7 +264,7 @@ module RubyDB
         end
 
         def combine(state, value)
-          return { sum: value, count: 1 } if state.nil?
+          return {sum: value, count: 1} if state.nil?
           state[:sum] += value
           state[:count] += 1
           state
@@ -294,7 +294,7 @@ module RubyDB
 
         def combine(state, value)
           return value if state.nil?
-          state < value ? state : value
+          (state < value) ? state : value
         end
       end
 
@@ -316,7 +316,7 @@ module RubyDB
 
         def combine(state, value)
           return value if state.nil?
-          state > value ? state : value
+          (state > value) ? state : value
         end
       end
 

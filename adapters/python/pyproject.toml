@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rubydb-python"
+version = "0.1.0"
+description = "Python DB-API client for the RubyDB server"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+  { name = "Aldane Hutchinson" }
+]
+keywords = ["database", "rubydb", "sql", "dbapi"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Database",
+]
+
+[project.urls]
+Homepage = "https://github.com/aldanedev-create/rubydb"
+Repository = "https://github.com/aldanedev-create/rubydb"
+Documentation = "https://github.com/aldanedev-create/rubydb/tree/main/adapters/python"
+
+[tool.setuptools.packages.find]
+where = ["src"]

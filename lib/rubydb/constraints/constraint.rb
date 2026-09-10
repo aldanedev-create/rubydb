@@ -31,7 +31,7 @@ module RubyDB
       end
 
       def validate_batch(rows)
-        results = { valid: [], invalid: [] }
+        results = {valid: [], invalid: []}
         rows.each do |row|
           if validate(row)
             results[:valid] << row

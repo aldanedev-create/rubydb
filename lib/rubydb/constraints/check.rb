@@ -31,7 +31,7 @@ module RubyDB
       end
 
       def validate_batch(rows)
-        results = { valid: [], invalid: [] }
+        results = {valid: [], invalid: []}
 
         rows.each do |row|
           if validate(row)
@@ -103,7 +103,7 @@ module RubyDB
       end
 
       def strip_outer_parentheses(expression)
-        while expression.start_with?("(") && expression.end_with?( ")") && balanced_parentheses?(expression[1...-1])
+        while expression.start_with?("(") && expression.end_with?(")") && balanced_parentheses?(expression[1...-1])
           expression = expression[1...-1].strip
         end
         expression
@@ -136,7 +136,7 @@ module RubyDB
           end
         end
         parts << expression[start..].strip
-        parts.size > 1 ? parts : [expression]
+        (parts.size > 1) ? parts : [expression]
       end
 
       def compare_value(row_val, val, op)

@@ -5,9 +5,9 @@ require "spec_helper"
 RSpec.describe "server health requests" do
   it "exposes liveness and dependency-aware readiness" do
     health = Object.new
-    health.define_singleton_method(:liveness) { { status: :healthy, live: true } }
-    health.define_singleton_method(:readiness) { { status: :unhealthy, ready: false } }
-    health.define_singleton_method(:check) { { status: :unhealthy, checks: {} } }
+    health.define_singleton_method(:liveness) { {status: :healthy, live: true} }
+    health.define_singleton_method(:readiness) { {status: :unhealthy, ready: false} }
+    health.define_singleton_method(:check) { {status: :unhealthy, checks: {}} }
     handler = RubyDB::Server::RequestHandler.new(Object.new, Object.new, health: health)
 
     live = handler.handle(type: :liveness)

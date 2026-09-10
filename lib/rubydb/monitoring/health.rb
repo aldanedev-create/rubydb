@@ -49,31 +49,29 @@ module RubyDB
           results = {}
 
           @checks.each do |name, check|
-            begin
-              result = check.call(@engine)
-              results[name] = result
-              @details[name] = result
+            result = check.call(@engine)
+            results[name] = result
+            @details[name] = result
 
-              if result[:status] == STATUS_HEALTHY
-                @stats[:checks_passed] += 1
-              else
-                @stats[:checks_failed] += 1
-              end
-            rescue => e
-              results[name] = { status: STATUS_UNHEALTHY, error: e.message }
-              @details[name] = { status: STATUS_UNHEALTHY, error: e.message }
+            if result[:status] == STATUS_HEALTHY
+              @stats[:checks_passed] += 1
+            else
               @stats[:checks_failed] += 1
             end
+          rescue => e
+            results[name] = {status: STATUS_UNHEALTHY, error: e.message}
+            @details[name] = {status: STATUS_UNHEALTHY, error: e.message}
+            @stats[:checks_failed] += 1
           end
 
           # Determine overall status
           old_status = @status
-          if results.values.all? { |r| r[:status] == STATUS_HEALTHY }
-            @status = STATUS_HEALTHY
+          @status = if results.values.all? { |r| r[:status] == STATUS_HEALTHY }
+            STATUS_HEALTHY
           elsif results.values.any? { |r| r[:status] == STATUS_UNHEALTHY }
-            @status = STATUS_UNHEALTHY
+            STATUS_UNHEALTHY
           else
-            @status = STATUS_DEGRADED
+            STATUS_DEGRADED
           end
 
           if @status != old_status
@@ -111,9 +109,7 @@ module RubyDB
         }
       end
 
-      def status
-        @status
-      end
+      attr_reader :status
 
       def healthy?
         @status == STATUS_HEALTHY
@@ -131,9 +127,7 @@ module RubyDB
         @details.dup
       end
 
-      def last_check
-        @last_check
-      end
+      attr_reader :last_check
 
       def stats
         @lock.synchronize do
@@ -152,54 +146,54 @@ module RubyDB
       def register_default_checks
         register_check("connection") do |engine|
           if engine.connected?
-            { status: STATUS_HEALTHY, message: "Connected" }
+            {status: STATUS_HEALTHY, message: "Connected"}
           else
-            { status: STATUS_UNHEALTHY, message: "Disconnected" }
+            {status: STATUS_UNHEALTHY, message: "Disconnected"}
           end
         end
 
         register_check("storage") do |engine|
           if engine.storage_available?
-            { status: STATUS_HEALTHY, message: "Storage available" }
+            {status: STATUS_HEALTHY, message: "Storage available"}
           else
-            { status: STATUS_UNHEALTHY, message: "Storage unavailable" }
+            {status: STATUS_UNHEALTHY, message: "Storage unavailable"}
           end
         end
 
         register_check("memory") do |engine|
           if engine.memory_usage < 0.9
-            { status: STATUS_HEALTHY, message: "Memory usage normal" }
+            {status: STATUS_HEALTHY, message: "Memory usage normal"}
           elsif engine.memory_usage < 0.95
-            { status: STATUS_DEGRADED, message: "Memory usage high" }
+            {status: STATUS_DEGRADED, message: "Memory usage high"}
           else
-            { status: STATUS_UNHEALTHY, message: "Memory usage critical" }
+            {status: STATUS_UNHEALTHY, message: "Memory usage critical"}
           end
         end
 
         register_check("replication") do |engine|
           if engine.replication_healthy?
-            { status: STATUS_HEALTHY, message: "Replication healthy" }
+            {status: STATUS_HEALTHY, message: "Replication healthy"}
           else
-            { status: STATUS_UNHEALTHY, message: "Replication unhealthy" }
+            {status: STATUS_UNHEALTHY, message: "Replication unhealthy"}
           end
         end
 
         register_check("connections") do |engine|
           usage = engine.connection_usage
           if usage < 0.8
-            { status: STATUS_HEALTHY, message: "Connection usage normal" }
+            {status: STATUS_HEALTHY, message: "Connection usage normal"}
           elsif usage < 0.95
-            { status: STATUS_DEGRADED, message: "Connection usage high" }
+            {status: STATUS_DEGRADED, message: "Connection usage high"}
           else
-            { status: STATUS_UNHEALTHY, message: "Connection usage critical" }
+            {status: STATUS_UNHEALTHY, message: "Connection usage critical"}
           end
         end
 
         register_check("wal") do |engine|
           if engine.wal_healthy?
-            { status: STATUS_HEALTHY, message: "WAL healthy" }
+            {status: STATUS_HEALTHY, message: "WAL healthy"}
           else
-            { status: STATUS_UNHEALTHY, message: "WAL unhealthy" }
+            {status: STATUS_UNHEALTHY, message: "WAL unhealthy"}
           end
         end
       end
@@ -211,7 +205,7 @@ module RubyDB
             sleep(@check_interval)
             begin
               check
-            rescue => e
+            rescue
               # Continue running
             end
           end

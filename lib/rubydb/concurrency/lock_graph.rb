@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Concurrency
     # LockGraph - Represents the wait-for graph for deadlock detection
@@ -122,7 +120,7 @@ module RubyDB
         holders = []
         @nodes.each do |id, node|
           if node[:locks].include?(resource)
-            holders << { id: id, info: node[:info] }
+            holders << {id: id, info: node[:info]}
           end
         end
         holders
@@ -130,7 +128,7 @@ module RubyDB
 
       def add_edge(source, target, resource)
         @edges[source] ||= {}
-        @edges[source][target] = { resource: resource, timestamp: Time.now }
+        @edges[source][target] = {resource: resource, timestamp: Time.now}
 
         @reverse_edges[target] ||= Set.new
         @reverse_edges[target] << source
@@ -147,7 +145,7 @@ module RubyDB
           if recursion_stack.include?(neighbor)
             # Found a cycle
             cycle_start = path.index(neighbor)
-            cycle = path[cycle_start..-1] + [neighbor]
+            path[cycle_start..] + [neighbor]
             return true
           end
 

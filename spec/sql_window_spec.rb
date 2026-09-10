@@ -60,9 +60,9 @@ RSpec.describe "SQL window functions" do
       )
 
       expect(result[:rows]).to eq([
-        { "id" => 1, "total" => 30 },
-        { "id" => 2, "total" => 30 },
-        { "id" => 3, "total" => 7 }
+        {"id" => 1, "total" => 30},
+        {"id" => 2, "total" => 30},
+        {"id" => 3, "total" => 7}
       ])
     ensure
       engine&.close if engine&.open?
@@ -86,10 +86,10 @@ RSpec.describe "SQL window functions" do
       )
 
       expect(result[:rows]).to eq([
-        { "id" => 1, "rolling" => 10 },
-        { "id" => 2, "rolling" => 30 },
-        { "id" => 3, "rolling" => 50 },
-        { "id" => 4, "rolling" => 70 }
+        {"id" => 1, "rolling" => 10},
+        {"id" => 2, "rolling" => 30},
+        {"id" => 3, "rolling" => 50},
+        {"id" => 4, "rolling" => 70}
       ])
       expect(statement.to_sql).to include("ROWS BETWEEN 1 PRECEDING AND CURRENT ROW")
     ensure

@@ -14,7 +14,7 @@ RSpec.describe "SCRAM-SHA-256 authentication" do
         pid_file: File.join(dir, "rubydb.pid"),
         authentication: {
           method: "scram-sha-256",
-          credentials: { username: "alice", password: "correct horse battery staple" }
+          credentials: {username: "alice", password: "correct horse battery staple"}
         }
       )
       server.start
@@ -33,7 +33,7 @@ RSpec.describe "SCRAM-SHA-256 authentication" do
   it "rejects a tampered SCRAM proof" do
     handshake = RubyDB::Protocol::Handshake.new(
       default_auth: "scram-sha-256",
-      authentication_credentials: { username: "alice", password: "secret" }
+      authentication_credentials: {username: "alice", password: "secret"}
     )
     response = handshake.start(protocol_version: RubyDB::Protocol::ProtocolVersion.current)
     result = handshake.authenticate(

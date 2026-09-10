@@ -27,7 +27,11 @@ RSpec.describe "filesystem fault injection" do
       expect { manager.allocate_page }.to raise_error(RubyDB::StorageError, /file_extend/)
       expect(manager.file_manager.open?).to be(true)
     ensure
-      manager&.close rescue nil
+      begin
+        manager&.close
+      rescue
+        nil
+      end
     end
   end
 
@@ -39,7 +43,11 @@ RSpec.describe "filesystem fault injection" do
 
       expect { manager.flush }.to raise_error(RubyDB::StorageError, /file_sync/)
     ensure
-      manager&.file_manager&.close rescue nil
+      begin
+        manager&.file_manager&.close
+      rescue
+        nil
+      end
     end
   end
 end

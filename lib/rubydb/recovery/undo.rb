@@ -32,13 +32,11 @@ module RubyDB
           # Process each transaction in reverse (LIFO)
           count = 0
           grouped.each do |transaction_id, transaction_records|
-            begin
-              # Undo in reverse order within transaction
-              count += undo_transaction(transaction_records.reverse)
-            rescue => e
-              @stats[:undo_failures] += 1
-              raise if @config[:stop_on_error]
-            end
+            # Undo in reverse order within transaction
+            count += undo_transaction(transaction_records.reverse)
+          rescue
+            @stats[:undo_failures] += 1
+            raise if @config[:stop_on_error]
           end
 
           elapsed_ms = (Time.now - start_time) * 1000
@@ -172,11 +170,11 @@ module RubyDB
         when :add_column
           # Undo add column: drop the column
           table = @engine.find_table(data[:table_name])
-          table.drop_column(data[:column_name]) if table
+          table&.drop_column(data[:column_name])
         when :drop_column
           # Undo drop column: add the column back
           table = @engine.find_table(data[:table_name])
-          table.add_column(data[:column_name], data[:column_type]) if table
+          table&.add_column(data[:column_name], data[:column_type])
         when :rename_table
           # Undo rename table: rename back
           @engine.rename_table(data[:new_name], data[:old_name])

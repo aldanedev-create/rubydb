@@ -12,7 +12,7 @@ RSpec.describe RubyDB::Server::ConnectionPool do
 
     pool.instance_variable_set(:@running, true)
     closed = Struct.new(:closed?).new(true)
-    pool.instance_variable_set(:@connections, { 1 => closed })
+    pool.instance_variable_set(:@connections, {1 => closed})
     expect(pool.healthy?).to be(false)
   end
 end

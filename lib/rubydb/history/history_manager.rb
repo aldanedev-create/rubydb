@@ -81,8 +81,8 @@ module RubyDB
 
           @changes.select do |c|
             c.table_name == table_name &&
-            c.timestamp >= start_time &&
-            c.timestamp <= end_time
+              c.timestamp >= start_time &&
+              c.timestamp <= end_time
           end
         end
       end
@@ -199,8 +199,7 @@ module RubyDB
 
           @stats[:changes_recorded] = data[:stats][:changes_recorded] || 0
           @stats[:history_size] = @changes.size
-
-        rescue => e
+        rescue
           @changes = []
           @change_index = {}
           @timelines = {}

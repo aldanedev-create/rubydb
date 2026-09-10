@@ -123,7 +123,7 @@ module RubyDB
         end
 
         select = AST::Select.new(columns, from, where, order_by, limit, offset, distinct,
-                                 joins: joins, group_by: group_by, having: having)
+          joins: joins, group_by: group_by, having: having)
         return select unless [Token::Type::UNION, Token::Type::INTERSECT, Token::Type::EXCEPT].include?(current_token&.type)
 
         operator = current_token.type.to_s.downcase.to_sym
@@ -154,7 +154,7 @@ module RubyDB
 
       def parse_select_columns
         columns = []
-        while true
+        loop do
           if qualified_star?
             table = expect(Token::Type::IDENTIFIER).value
             expect(Token::Type::DOT)
@@ -287,7 +287,7 @@ module RubyDB
         # comparison loses the null predicate and can turn it into a
         # three-valued expression that is always truthy at the filter layer.
         if current_token && Operators.comparison?(current_token.type) &&
-           ![Token::Type::IN, Token::Type::IS].include?(current_token.type)
+            ![Token::Type::IN, Token::Type::IS].include?(current_token.type)
           op = current_token.type
           advance
           right = parse_additive
@@ -317,7 +317,7 @@ module RubyDB
           if current_token&.type == Token::Type::SELECT
             values << AST::Subquery.new(parse_select)
           else
-            while true
+            loop do
               values << parse_expression
               break unless current_token&.type == Token::Type::COMMA
               advance
@@ -376,7 +376,7 @@ module RubyDB
           AST::Exists.new(query)
         when Token::Type::LPAREN
           advance
-          expr = current_token&.type == Token::Type::SELECT ? AST::Subquery.new(parse_select) : parse_expression
+          expr = (current_token&.type == Token::Type::SELECT) ? AST::Subquery.new(parse_select) : parse_expression
           expect(Token::Type::RPAREN)
           expr
         when Token::Type::IDENTIFIER
@@ -396,14 +396,14 @@ module RubyDB
               distinct = true
             end
             unless current_token&.type == Token::Type::RPAREN
-              while true
+              loop do
                 args << parse_expression
                 break unless current_token&.type == Token::Type::COMMA
                 advance
               end
             end
             expect(Token::Type::RPAREN)
-            window = current_token&.type == Token::Type::OVER ? parse_window_spec : nil
+            window = (current_token&.type == Token::Type::OVER) ? parse_window_spec : nil
             AST::FunctionCall.new(ident, args, distinct: distinct, window: window)
           else
             AST::Identifier.new(ident)
@@ -433,7 +433,7 @@ module RubyDB
 
       def parse_order_by
         order_items = []
-        while true
+        loop do
           expr = parse_expression
           direction = :asc
           if [Token::Type::ASC, Token::Type::DESC].include?(current_token&.type)
@@ -465,7 +465,7 @@ module RubyDB
         end
         frame = parse_window_frame if current_token&.type == Token::Type::ROWS
         expect(Token::Type::RPAREN)
-        { partition_by: partition_by, order_by: order_by, frame: frame }
+        {partition_by: partition_by, order_by: order_by, frame: frame}
       end
 
       def parse_window_frame
@@ -475,9 +475,9 @@ module RubyDB
           start = parse_frame_boundary
           expect(Token::Type::AND)
           finish = parse_frame_boundary
-          { start: start, finish: finish }
+          {start: start, finish: finish}
         else
-          { start: parse_frame_boundary, finish: { kind: :current_row } }
+          {start: parse_frame_boundary, finish: {kind: :current_row}}
         end
       end
 
@@ -490,12 +490,12 @@ module RubyDB
             raise ParserError, "Expected PRECEDING or FOLLOWING after UNBOUNDED"
           end
           advance
-          { kind: direction == Token::Type::PRECEDING ? :unbounded_preceding : :unbounded_following }
+          {kind: (direction == Token::Type::PRECEDING) ? :unbounded_preceding : :unbounded_following}
         when Token::Type::CURRENT
           advance
           row = expect(Token::Type::IDENTIFIER)
           raise ParserError, "Expected ROW after CURRENT" unless row.value.to_s.upcase == "ROW"
-          { kind: :current_row }
+          {kind: :current_row}
         when Token::Type::NUMBER
           value = expect(Token::Type::NUMBER).value
           unless value.is_a?(Integer) && value >= 0
@@ -506,7 +506,7 @@ module RubyDB
             raise ParserError, "Expected PRECEDING or FOLLOWING after frame offset"
           end
           advance
-          { kind: direction == Token::Type::PRECEDING ? :preceding : :following, value: value }
+          {kind: (direction == Token::Type::PRECEDING) ? :preceding : :following, value: value}
         else
           raise ParserError, "Expected window frame boundary"
         end
@@ -531,7 +531,7 @@ module RubyDB
         columns = []
         if current_token&.type == Token::Type::LPAREN
           advance
-          while true
+          loop do
             columns << expect(Token::Type::IDENTIFIER).value
             break unless current_token&.type == Token::Type::COMMA
             advance
@@ -552,7 +552,7 @@ module RubyDB
           loop do
             expect(Token::Type::LPAREN)
             values = []
-            while true
+            loop do
               values << parse_expression
               break unless current_token&.type == Token::Type::COMMA
               advance
@@ -593,13 +593,13 @@ module RubyDB
               break unless current_token&.type == Token::Type::COMMA
               advance
             end
-            on_conflict = { action: :update, target: target, assignments: assignments }
+            on_conflict = {action: :update, target: target, assignments: assignments}
           else
             raise ParserError, "Expected NOTHING or UPDATE after ON CONFLICT DO"
           end
         end
         AST::Insert.new(table, columns, rows.first || [], rows: rows, on_conflict: on_conflict,
-                        default_values: default_values)
+          default_values: default_values)
       end
 
       def parse_update
@@ -608,7 +608,7 @@ module RubyDB
         expect(Token::Type::SET)
 
         assignments = []
-        while true
+        loop do
           column = expect(Token::Type::IDENTIFIER).value
           expect(Token::Type::EQ)
           value = parse_expression
@@ -685,9 +685,9 @@ module RubyDB
             constraint = parse_constraint(constraint_name)
             constraints << constraint
           elsif current_token&.type == Token::Type::PRIMARY ||
-                current_token&.type == Token::Type::FOREIGN ||
-                current_token&.type == Token::Type::UNIQUE ||
-                current_token&.type == Token::Type::CHECK
+              current_token&.type == Token::Type::FOREIGN ||
+              current_token&.type == Token::Type::UNIQUE ||
+              current_token&.type == Token::Type::CHECK
             constraint = parse_constraint
             constraints << constraint if constraint
           else
@@ -732,7 +732,7 @@ module RubyDB
               scale = expect(Token::Type::NUMBER).value
             end
             expect(Token::Type::RPAREN)
-            { type: :decimal, precision: precision, scale: scale }
+            {type: :decimal, precision: precision, scale: scale}
           else
             :decimal
           end
@@ -748,9 +748,9 @@ module RubyDB
             advance
             limit = expect(Token::Type::NUMBER).value
             expect(Token::Type::RPAREN)
-            { type: :varchar, limit: limit }
+            {type: :varchar, limit: limit}
           else
-            { type: :varchar, limit: 255 }
+            {type: :varchar, limit: 255}
           end
         when Token::Type::BLOB
           advance
@@ -777,7 +777,7 @@ module RubyDB
 
       def parse_column_options
         options = {}
-        while true
+        loop do
           case current_token&.type
           when Token::Type::PRIMARY
             advance
@@ -802,7 +802,7 @@ module RubyDB
             expect(Token::Type::LPAREN)
             ref_column = expect(Token::Type::IDENTIFIER).value
             expect(Token::Type::RPAREN)
-            options[:references] = { table: ref_table, column: ref_column }
+            options[:references] = {table: ref_table, column: ref_column}
           when Token::Type::IDENTIFIER
             # SQLite spells an automatically allocated integer primary key
             # `AUTOINCREMENT`. Keep it as column metadata; RubyDB's durable
@@ -823,28 +823,27 @@ module RubyDB
       def parse_referential_action(kind)
         return nil unless current_token&.type == Token::Type::ON
         advance
-        expected = kind == :delete ? Token::Type::DELETE : Token::Type::UPDATE
+        expected = (kind == :delete) ? Token::Type::DELETE : Token::Type::UPDATE
         expect(expected)
-        action = case current_token&.type
-                 when Token::Type::CASCADE
-                   advance
-                   :cascade
-                 when Token::Type::RESTRICT
-                   advance
-                   :restrict
-                 when Token::Type::SET
-                   advance
-                   expect(Token::Type::NULL) if current_token&.type == Token::Type::NULL
-                   if current_token&.type == Token::Type::DEFAULT
-                     advance
-                     :set_default
-                   else
-                     :set_null
-                   end
-                 else
-                   raise ParserError, "Expected referential action, got #{current_token}"
-                 end
-        action
+        case current_token&.type
+        when Token::Type::CASCADE
+          advance
+          :cascade
+        when Token::Type::RESTRICT
+          advance
+          :restrict
+        when Token::Type::SET
+          advance
+          expect(Token::Type::NULL) if current_token&.type == Token::Type::NULL
+          if current_token&.type == Token::Type::DEFAULT
+            advance
+            :set_default
+          else
+            :set_null
+          end
+        else
+          raise ParserError, "Expected referential action, got #{current_token}"
+        end
       end
 
       def parse_constraint(name = nil)
@@ -854,7 +853,7 @@ module RubyDB
           expect(Token::Type::KEY)
           expect(Token::Type::LPAREN)
           columns = []
-          while true
+          loop do
             columns << expect(Token::Type::IDENTIFIER).value
             break unless current_token&.type == Token::Type::COMMA
             advance
@@ -866,7 +865,7 @@ module RubyDB
           expect(Token::Type::KEY)
           expect(Token::Type::LPAREN)
           columns = []
-          while true
+          loop do
             columns << expect(Token::Type::IDENTIFIER).value
             break unless current_token&.type == Token::Type::COMMA
             advance
@@ -876,7 +875,7 @@ module RubyDB
           ref_table = expect(Token::Type::IDENTIFIER).value
           expect(Token::Type::LPAREN)
           ref_columns = []
-          while true
+          loop do
             ref_columns << expect(Token::Type::IDENTIFIER).value
             break unless current_token&.type == Token::Type::COMMA
             advance
@@ -889,7 +888,7 @@ module RubyDB
           advance
           expect(Token::Type::LPAREN)
           columns = []
-          while true
+          loop do
             columns << expect(Token::Type::IDENTIFIER).value
             break unless current_token&.type == Token::Type::COMMA
             advance
@@ -902,8 +901,6 @@ module RubyDB
           condition = parse_expression
           expect(Token::Type::RPAREN)
           AST::CheckConstraint.new(name, condition)
-        else
-          nil
         end
       end
 
@@ -921,7 +918,7 @@ module RubyDB
         table_name = expect(Token::Type::IDENTIFIER).value
         expect(Token::Type::LPAREN)
         columns = []
-        while true
+        loop do
           columns << expect(Token::Type::IDENTIFIER).value
           break unless current_token&.type == Token::Type::COMMA
           advance
@@ -981,12 +978,12 @@ module RubyDB
         advance
         name = expect(Token::Type::IDENTIFIER).value
         timing = if current_token&.type == Token::Type::BEFORE
-                   advance
-                   :before
-                 else
-                   expect(Token::Type::AFTER)
-                   :after
-                 end
+          advance
+          :before
+        else
+          expect(Token::Type::AFTER)
+          :after
+        end
         event_token = current_token
         unless [Token::Type::INSERT, Token::Type::UPDATE, Token::Type::DELETE].include?(event_token&.type)
           raise ParserError, "Expected trigger event, got: #{event_token}"

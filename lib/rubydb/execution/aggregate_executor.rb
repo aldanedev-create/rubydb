@@ -61,7 +61,7 @@ module RubyDB
         return [] if rows.empty? && aggregates.empty?
 
         result = {}
-        
+
         aggregates.each do |agg|
           values = rows.map { |row| row[agg.column.to_s] }.compact
           result[agg.alias || agg.name] = apply_aggregate(agg, values)
@@ -72,12 +72,12 @@ module RubyDB
 
       def aggregate_by_groups(rows, group_by, aggregates)
         groups = {}
-        
+
         rows.each do |row|
           # Build group key
           key = group_by.map { |col| row[col.to_s] }
           key_str = key.join("||")
-          
+
           groups[key_str] ||= {
             key: key,
             rows: [],
@@ -89,21 +89,21 @@ module RubyDB
         result = []
         groups.each do |_key_str, group|
           row_result = {}
-          
+
           # Add group by columns
           group_by.each_with_index do |col, idx|
             row_result[col.to_s] = group[:key][idx]
           end
-          
+
           # Apply aggregates
           aggregates.each do |agg|
             values = group[:rows].map { |r| r[agg.column.to_s] }.compact
             row_result[agg.alias || agg.name] = apply_aggregate(agg, values)
           end
-          
+
           result << row_result
         end
-        
+
         result
       end
 
@@ -125,14 +125,10 @@ module RubyDB
           values
         when "STRING_AGG"
           values.join(agg.separator || ",")
-        else
-          nil
         end
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

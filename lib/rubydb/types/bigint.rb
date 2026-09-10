@@ -4,7 +4,7 @@ module RubyDB
   module Types
     # 64-bit signed integer
     class BigInt < Type
-      RANGE = (-9_223_372_036_854_775_808..9_223_372_036_854_775_807).freeze
+      RANGE = (-9_223_372_036_854_775_808..9_223_372_036_854_775_807)
       SIZE = 8
 
       def initialize
@@ -18,7 +18,7 @@ module RubyDB
 
       def deserialize(bytes)
         return nil if bytes.nil? || bytes.empty?
-        bytes.unpack("q>").first
+        bytes.unpack1("q>")
       end
 
       def validate(value)

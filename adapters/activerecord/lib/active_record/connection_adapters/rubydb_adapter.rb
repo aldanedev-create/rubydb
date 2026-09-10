@@ -38,21 +38,21 @@ module ActiveRecord
 
       NATIVE_DATABASE_TYPES = {
         primary_key: "INTEGER PRIMARY KEY AUTOINCREMENT",
-        string: { name: "VARCHAR", limit: 255 },
-        text: { name: "TEXT" },
-        integer: { name: "INTEGER" },
-        bigint: { name: "BIGINT" },
-        smallint: { name: "SMALLINT" },
-        float: { name: "FLOAT" },
-        decimal: { name: "DECIMAL", precision: 10, scale: 2 },
-        datetime: { name: "TIMESTAMP" },
-        timestamp: { name: "TIMESTAMP" },
-        time: { name: "TIME" },
-        date: { name: "DATE" },
-        binary: { name: "BLOB" },
-        boolean: { name: "BOOLEAN" },
-        json: { name: "JSON" },
-        uuid: { name: "UUID" }
+        string: {name: "VARCHAR", limit: 255},
+        text: {name: "TEXT"},
+        integer: {name: "INTEGER"},
+        bigint: {name: "BIGINT"},
+        smallint: {name: "SMALLINT"},
+        float: {name: "FLOAT"},
+        decimal: {name: "DECIMAL", precision: 10, scale: 2},
+        datetime: {name: "TIMESTAMP"},
+        timestamp: {name: "TIMESTAMP"},
+        time: {name: "TIME"},
+        date: {name: "DATE"},
+        binary: {name: "BLOB"},
+        boolean: {name: "BOOLEAN"},
+        json: {name: "JSON"},
+        uuid: {name: "UUID"}
       }
 
       # ActiveRecord 7.2 constructs adapters with a single configuration hash.
@@ -352,8 +352,8 @@ module ActiveRecord
 
       # ==================== SCHEMA STATEMENT METHODS ====================
 
-      def create_table(table_name, **options, &block)
-        RubyDB::Rails::SchemaStatements.instance_method(:create_table).bind_call(self, table_name, options, &block)
+      def create_table(table_name, **options, &)
+        RubyDB::Rails::SchemaStatements.instance_method(:create_table).bind_call(self, table_name, options, &)
       end
 
       def drop_table(table_name, **options)
@@ -409,10 +409,10 @@ module ActiveRecord
         if options.key?(:default)
           sql = "ALTER TABLE #{quote_table_name(table_name)}"
           sql << " ALTER COLUMN #{quote_column_name(column_name)}"
-          if options[:default].nil?
-            sql << " DROP DEFAULT"
+          sql << if options[:default].nil?
+            " DROP DEFAULT"
           else
-            sql << " SET DEFAULT #{quote_default(options[:default])}"
+            " SET DEFAULT #{quote_default(options[:default])}"
           end
           execute(sql)
         end
@@ -432,12 +432,12 @@ module ActiveRecord
       end
 
       def add_index(table_name, column_name, **options)
-        index_name = options[:name] || "idx_#{table_name}_#{Array(column_name).join('_')}"
+        index_name = options[:name] || "idx_#{table_name}_#{Array(column_name).join("_")}"
         sql = +"CREATE"
         sql << " UNIQUE" if options[:unique]
         sql << " INDEX #{quote_column_name(index_name)}"
         sql << " ON #{quote_table_name(table_name)}"
-        sql << " (#{Array(column_name).map { |c| quote_column_name(c) }.join(', ')})"
+        sql << " (#{Array(column_name).map { |c| quote_column_name(c) }.join(", ")})"
         sql << " WHERE #{options[:where]}" if options[:where]
         execute(sql)
       end
@@ -446,7 +446,7 @@ module ActiveRecord
         index_name = options[:name]
         if index_name.nil?
           column_name ||= options[:column] || options[:columns]
-          index_name = "idx_#{table_name}_#{Array(column_name).join('_')}"
+          index_name = "idx_#{table_name}_#{Array(column_name).join("_")}"
         end
 
         sql = "DROP INDEX #{quote_column_name(index_name)}"
@@ -521,10 +521,10 @@ module ActiveRecord
       def change_column_default(table_name, column_name, default)
         sql = "ALTER TABLE #{quote_table_name(table_name)}"
         sql << " ALTER COLUMN #{quote_column_name(column_name)}"
-        if default.nil?
-          sql << " DROP DEFAULT"
+        sql << if default.nil?
+          " DROP DEFAULT"
         else
-          sql << " SET DEFAULT #{quote_default(default)}"
+          " SET DEFAULT #{quote_default(default)}"
         end
         execute(sql)
       end
@@ -659,9 +659,7 @@ module ActiveRecord
         @query_cache.clear
       end
 
-      def query_cache_enabled
-        @query_cache_enabled
-      end
+      attr_reader :query_cache_enabled
 
       # ==================== PREPARED STATEMENTS ====================
 
@@ -824,8 +822,6 @@ module ActiveRecord
       def extract_limit(type)
         if type =~ /VARCHAR\((\d+)\)/
           $1.to_i
-        else
-          nil
         end
       end
 
@@ -834,9 +830,7 @@ module ActiveRecord
         result = block.call
         elapsed_ms = (Time.now - start_time) * 1000
 
-        if @logger
-          @logger.debug "  #{name || 'SQL'} (#{elapsed_ms.round(2)}ms) #{sql}"
-        end
+        @logger&.debug "  #{name || "SQL"} (#{elapsed_ms.round(2)}ms) #{sql}"
 
         result
       end

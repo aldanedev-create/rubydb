@@ -9,7 +9,7 @@ module RubyDB
         attr_accessor :type
 
         def initialize(location: nil)
-          super(location: location)
+          super
           @type = nil
         end
 
@@ -288,18 +288,31 @@ module RubyDB
 
       class Subquery < Expression
         attr_reader :query
-        def initialize(query, location: nil) = (super(location: location); @query = query)
+        def initialize(query, location: nil)
+          super(location: location)
+          @query = query
+        end
+
         def contains_subquery? = true
+
         def accept(visitor) = visitor.visit_subquery(self)
+
         def clone = Subquery.new(@query.clone, location: @location)
+
         def to_sql = "(#{@query.to_sql})"
       end
 
       class Exists < Expression
         attr_reader :query
-        def initialize(query, location: nil) = (super(location: location); @query = query)
+        def initialize(query, location: nil)
+          super(location: location)
+          @query = query
+        end
+
         def accept(visitor) = visitor.visit_exists(self)
+
         def clone = Exists.new(@query.clone, location: @location)
+
         def to_sql = "EXISTS (#{@query.to_sql})"
       end
 
@@ -373,10 +386,10 @@ module RubyDB
             partition = @window[:partition_by]
             ordering = @window[:order_by]
             parts = []
-            parts << "PARTITION BY #{partition.map(&:to_sql).join(', ')}" unless partition.empty?
-            parts << "ORDER BY #{ordering.map(&:to_sql).join(', ')}" unless ordering.empty?
+            parts << "PARTITION BY #{partition.map(&:to_sql).join(", ")}" unless partition.empty?
+            parts << "ORDER BY #{ordering.map(&:to_sql).join(", ")}" unless ordering.empty?
             parts << "ROWS #{window_frame_sql(@window[:frame])}" if @window[:frame]
-            sql << " OVER (#{parts.join(' ')})"
+            sql << " OVER (#{parts.join(" ")})"
           end
           sql
         end
@@ -591,7 +604,7 @@ module RubyDB
         end
 
         def to_sql
-          dir = @direction == :asc ? "ASC" : "DESC"
+          dir = (@direction == :asc) ? "ASC" : "DESC"
           "#{@expression.to_sql} #{dir}"
         end
 

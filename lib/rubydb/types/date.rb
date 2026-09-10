@@ -21,7 +21,7 @@ module RubyDB
 
       def deserialize(bytes)
         return nil if bytes.nil? || bytes.empty?
-        days = bytes.unpack("l>").first
+        days = bytes.unpack1("l>")
         Date.new(1970, 1, 1) + days
       end
 

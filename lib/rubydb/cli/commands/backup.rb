@@ -43,10 +43,9 @@ module RubyDB
           backup = RubyDB::Backup::Backup.new(engine,
             backup_dir: backup_dir,
             compress: options[:compress] != false,
-            verify_after_backup: !options[:no_verify]
-          )
+            verify_after_backup: !options[:no_verify])
 
-          @output.spinner("Creating #{options[:type] || 'full'} backup...") do
+          @output.spinner("Creating #{options[:type] || "full"} backup...") do
             result = backup.create_backup(type: options[:type] || :full)
 
             if result[:success]
@@ -72,7 +71,7 @@ module RubyDB
           return "0 B" if bytes.to_i == 0
           units = ["B", "KB", "MB", "GB", "TB"]
           exp = (Math.log(bytes) / Math.log(1024)).floor
-          size = bytes / (1024.0 ** exp)
+          size = bytes / (1024.0**exp)
           "#{size.round(2)} #{units[exp]}"
         end
       end

@@ -38,17 +38,17 @@ module RubyDB
 
           start_time = Time.now
 
-          while true
+          loop do
             # Check if there are available connections
             unless @available.empty?
               conn = @available.pop
-              if conn && conn.connected?
+              if conn&.connected?
                 @stats[:active_connections] += 1
                 return conn
-              else
-                # Remove dead connection
-                remove_connection(conn) if conn
+              elsif conn
+                remove_connection(conn)
               end
+              # Remove dead connection
             end
 
             # Check if we can create a new connection

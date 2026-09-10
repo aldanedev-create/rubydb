@@ -5,7 +5,7 @@ require "spec_helper"
 RSpec.describe "Prometheus metrics export" do
   it "renders counters, gauges, and escaped labels" do
     metrics = RubyDB::Monitoring::Metrics.new(auto_flush: false)
-    metrics.increment("query.count", { endpoint: 'read"path' }, 2)
+    metrics.increment("query.count", {endpoint: 'read"path'}, 2)
     metrics.set_gauge("connections", {}, 3)
 
     output = metrics.to_prometheus

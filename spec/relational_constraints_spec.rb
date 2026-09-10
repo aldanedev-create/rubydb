@@ -69,8 +69,8 @@ RSpec.describe "relational constraints" do
         :children,
         child_columns,
         constraints: [
-          { type: :foreign_key, columns: [:parent_id], reference_table: :parents, reference_columns: [:id] },
-          { type: :check, expression: "age >= 18" }
+          {type: :foreign_key, columns: [:parent_id], reference_table: :parents, reference_columns: [:id]},
+          {type: :check, expression: "age >= 18"}
         ]
       )
       engine.insert_row(:parents, parent_columns, [7])
@@ -105,8 +105,8 @@ RSpec.describe "relational constraints" do
       ]
       engine.create_table(:parents, parent_columns)
       engine.create_table(:children, child_columns, constraints: [
-        { type: :foreign_key, columns: [:parent_id], reference_table: :parents,
-          reference_columns: [:id], on_delete: :cascade }
+        {type: :foreign_key, columns: [:parent_id], reference_table: :parents,
+         reference_columns: [:id], on_delete: :cascade}
       ])
       engine.insert_row(:parents, parent_columns, [7])
       engine.insert_row(:children, child_columns, [1, 7])
@@ -128,8 +128,8 @@ RSpec.describe "relational constraints" do
       ]
       engine.create_table(:parents, parent_columns)
       engine.create_table(:children, child_columns, constraints: [
-        { type: :foreign_key, columns: [:parent_id], reference_table: :parents,
-          reference_columns: [:id], on_delete: :set_null }
+        {type: :foreign_key, columns: [:parent_id], reference_table: :parents,
+         reference_columns: [:id], on_delete: :set_null}
       ])
       engine.insert_row(:parents, parent_columns, [7])
       engine.insert_row(:children, child_columns, [1, 7])
@@ -156,13 +156,13 @@ RSpec.describe "relational constraints" do
       ]
       engine.create_table(:parents, parent_columns)
       engine.create_table(:children, child_columns, constraints: [
-        { type: :foreign_key, columns: [:parent_id], reference_table: :parents,
-          reference_columns: [:id], on_update: :cascade }
+        {type: :foreign_key, columns: [:parent_id], reference_table: :parents,
+         reference_columns: [:id], on_update: :cascade}
       ])
       engine.insert_row(:parents, parent_columns, [7])
       engine.insert_row(:children, child_columns, [1, 7])
 
-      expect(engine.update_row(:parents, 1, { id: 8 })).to be(true)
+      expect(engine.update_row(:parents, 1, {id: 8})).to be(true)
       row = engine.select_rows(:children, child_columns, visibility_check: false).first
       expect(row["parent_id"] || row[:parent_id]).to eq(8)
     ensure
@@ -180,13 +180,13 @@ RSpec.describe "relational constraints" do
       ]
       engine.create_table(:parents, parent_columns)
       engine.create_table(:children, child_columns, constraints: [
-        { type: :foreign_key, columns: [:parent_id], reference_table: :parents,
-          reference_columns: [:id], on_update: :restrict }
+        {type: :foreign_key, columns: [:parent_id], reference_table: :parents,
+         reference_columns: [:id], on_update: :restrict}
       ])
       engine.insert_row(:parents, parent_columns, [7])
       engine.insert_row(:children, child_columns, [1, 7])
 
-      expect { engine.update_row(:parents, 1, { id: 8 }) }
+      expect { engine.update_row(:parents, 1, {id: 8}) }
         .to raise_error(RubyDB::DatabaseError, /Cannot update referenced row/)
     ensure
       engine&.close if engine&.open?

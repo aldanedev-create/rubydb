@@ -32,6 +32,13 @@
 /.env
 /.env.local
 
+# Python adapter build output
+/adapters/python/build/
+/adapters/python/dist/
+/adapters/python/src/*.egg-info/
+__pycache__/
+*.py[cod]
+
 # IDE
 /.idea/
 /.vscode/

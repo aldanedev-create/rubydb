@@ -16,7 +16,7 @@ module RubyDB
         @segment_id = segment_id
         @wal_dir = wal_dir
         @max_size = max_size
-        @path = File.join(wal_dir, "wal_#{segment_id.to_s.rjust(8, '0')}.log")
+        @path = File.join(wal_dir, "wal_#{segment_id.to_s.rjust(8, "0")}.log")
         @size = 0
         @record_count = 0
         @first_lsn = nil
@@ -52,7 +52,7 @@ module RubyDB
         @lock.synchronize do
           return unless @is_open
 
-          @file.close if @file
+          @file&.close
           @is_open = false
           true
         end
@@ -153,7 +153,7 @@ module RubyDB
 
       def archive
         # Move segment to archive
-        archived_path = File.join(@wal_dir, "archive", "wal_#{@segment_id.to_s.rjust(8, '0')}.log")
+        archived_path = File.join(@wal_dir, "archive", "wal_#{@segment_id.to_s.rjust(8, "0")}.log")
         FileUtils.mkdir_p(File.dirname(archived_path))
         FileUtils.mv(@path, archived_path)
         archived_path

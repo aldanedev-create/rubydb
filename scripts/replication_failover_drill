@@ -33,7 +33,7 @@ ensure
 end
 
 def run_node(role, directory, port, fence_path)
-  output = STDOUT
+  output = $stdout
   quiet = File.open(File::NULL, "w")
   $stdout = quiet
 
@@ -68,10 +68,10 @@ def run_node(role, directory, port, fence_path)
     )
   end
 
-  role == "primary" ? primary.start : replica.start
+  (role == "primary") ? primary.start : replica.start
   emit(output, event: "ready", role: role, pid: Process.pid)
 
-  while (line = STDIN.gets)
+  while (line = $stdin.gets)
     command = JSON.parse(line, symbolize_names: true)
     case command[:command].to_s
     when "status"
@@ -89,8 +89,12 @@ def run_node(role, directory, port, fence_path)
         engine.insert_row(TABLE, COLUMNS, id: command.fetch(:id))
         committed = engine.commit_transaction
         emit(output, event: "insert", success: committed == true)
-      rescue StandardError => error
-        engine.rollback_transaction rescue nil
+      rescue => error
+        begin
+          engine.rollback_transaction
+        rescue
+          nil
+        end
         emit(output, event: "insert", success: false, error: "#{error.class}: #{error.message}")
       end
     when "stop"
@@ -118,7 +122,7 @@ def spawn_node(role, directory, port, fence_path)
     RbConfig.ruby, __FILE__, "--node", role, directory, port.to_s, fence_path
   )
   stderr_thread = Thread.new { stderr.each_line { |_line| } }
-  { stdin: stdin, stdout: stdout, stderr: stderr, wait: wait_thread, stderr_thread: stderr_thread }
+  {stdin: stdin, stdout: stdout, stderr: stderr, wait: wait_thread, stderr_thread: stderr_thread}
 end
 
 def read_event(node, timeout: 10)
@@ -160,13 +164,29 @@ def close_node(node, force: false)
   if force && node[:wait].alive?
     Process.kill("KILL", node[:wait].pid)
   elsif node[:wait].alive?
-    command(node, "exit") rescue nil
-    node[:stdin].close rescue nil
+    begin
+      command(node, "exit")
+    rescue
+      nil
+    end
+    begin
+      node[:stdin].close
+    rescue
+      nil
+    end
   end
   node[:wait].join(5)
   Process.kill("KILL", node[:wait].pid) if node[:wait].alive?
-  node[:stdout].close rescue nil
-  node[:stderr].close rescue nil
+  begin
+    node[:stdout].close
+  rescue
+    nil
+  end
+  begin
+    node[:stderr].close
+  rescue
+    nil
+  end
   node[:stderr_thread]&.join(1)
 end
 
@@ -182,64 +202,62 @@ else
   begin
     primary = replica = replacement = final_primary = nil
     Dir.mktmpdir("rubydb-process-failover-") do |directory|
-      begin
-        port = available_port
-        fence_path = File.join(directory, "cluster.fence")
-        primary = spawn_node("primary", directory, port, fence_path)
-        replica = spawn_node("replica", directory, port, fence_path)
+      port = available_port
+      fence_path = File.join(directory, "cluster.fence")
+      primary = spawn_node("primary", directory, port, fence_path)
+      replica = spawn_node("replica", directory, port, fence_path)
 
-        raise "primary did not start" unless read_event(primary).fetch(:event) == "ready"
-        raise "replica did not start" unless read_event(replica).fetch(:event) == "ready"
-        wait_until { node_status(replica)[:state].to_s == "streaming" }
-        wait_until { node_status(primary)[:active_replicas].to_i >= 1 }
+      raise "primary did not start" unless read_event(primary).fetch(:event) == "ready"
+      raise "replica did not start" unless read_event(replica).fetch(:event) == "ready"
+      wait_until { node_status(replica)[:state].to_s == "streaming" }
+      wait_until { node_status(primary)[:active_replicas].to_i >= 1 }
 
-        raise "initial insert failed" unless command(primary, "insert", id: 1).fetch(:success)
-        wait_until { node_status(replica)[:row_count].to_i == 1 }
+      raise "initial insert failed" unless command(primary, "insert", id: 1).fetch(:success)
+      wait_until { node_status(replica)[:row_count].to_i == 1 }
 
-        close_node(primary, force: true)
-        primary = nil
-        wait_until do
-          %w[disconnected failed].include?(node_status(replica)[:state].to_s)
-        end
-
-        replacement = spawn_node("primary", directory, port, fence_path)
-        raise "replacement primary did not start" unless read_event(replacement).fetch(:event) == "ready"
-        wait_until { node_status(replica)[:state].to_s == "streaming" }
-        wait_until { node_status(replacement)[:active_replicas].to_i >= 1 }
-        wait_until { node_status(replica)[:row_count].to_i == 1 }
-
-        fence_result, fence_error, fence_status = Open3.capture3(
-          RbConfig.ruby, __FILE__, "--fence", fence_path
-        )
-        raise "external fencing failed: #{fence_error}" unless fence_status.success?
-        raise "fence response invalid" unless JSON.parse(fence_result).fetch("success")
-        raise "stale primary accepted a write" if command(replacement, "insert", id: 2).fetch(:success)
-
-        close_node(replacement, force: true)
-        replacement = nil
-        final_primary = spawn_node("primary", directory, port, fence_path)
-        raise "final primary did not start" unless read_event(final_primary).fetch(:event) == "ready"
-        wait_until { node_status(replica)[:state].to_s == "streaming" }
-        raise "final insert failed" unless command(final_primary, "insert", id: 2).fetch(:success)
-        wait_until { node_status(replica)[:row_count].to_i == 2 }
-
-        puts JSON.generate(
-          success: true,
-          primary_processes: 3,
-          replica_processes: 1,
-          stale_write_rejected: true,
-          rows_replayed_after_failover: node_status(replica)[:row_count]
-        )
-      ensure
-        close_node(final_primary) if final_primary
-        final_primary = nil
-        close_node(replacement) if replacement
-        replacement = nil
-        close_node(replica) if replica
-        replica = nil
-        close_node(primary) if primary
-        primary = nil
+      close_node(primary, force: true)
+      primary = nil
+      wait_until do
+        %w[disconnected failed].include?(node_status(replica)[:state].to_s)
       end
+
+      replacement = spawn_node("primary", directory, port, fence_path)
+      raise "replacement primary did not start" unless read_event(replacement).fetch(:event) == "ready"
+      wait_until { node_status(replica)[:state].to_s == "streaming" }
+      wait_until { node_status(replacement)[:active_replicas].to_i >= 1 }
+      wait_until { node_status(replica)[:row_count].to_i == 1 }
+
+      fence_result, fence_error, fence_status = Open3.capture3(
+        RbConfig.ruby, __FILE__, "--fence", fence_path
+      )
+      raise "external fencing failed: #{fence_error}" unless fence_status.success?
+      raise "fence response invalid" unless JSON.parse(fence_result).fetch("success")
+      raise "stale primary accepted a write" if command(replacement, "insert", id: 2).fetch(:success)
+
+      close_node(replacement, force: true)
+      replacement = nil
+      final_primary = spawn_node("primary", directory, port, fence_path)
+      raise "final primary did not start" unless read_event(final_primary).fetch(:event) == "ready"
+      wait_until { node_status(replica)[:state].to_s == "streaming" }
+      raise "final insert failed" unless command(final_primary, "insert", id: 2).fetch(:success)
+      wait_until { node_status(replica)[:row_count].to_i == 2 }
+
+      puts JSON.generate(
+        success: true,
+        primary_processes: 3,
+        replica_processes: 1,
+        stale_write_rejected: true,
+        rows_replayed_after_failover: node_status(replica)[:row_count]
+      )
+    ensure
+      close_node(final_primary) if final_primary
+      final_primary = nil
+      close_node(replacement) if replacement
+      replacement = nil
+      close_node(replica) if replica
+      replica = nil
+      close_node(primary) if primary
+      primary = nil
     end
   ensure
     close_node(final_primary) if defined?(final_primary) && final_primary

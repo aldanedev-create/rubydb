@@ -7,8 +7,8 @@ module RubyDB
       SIZE = 64  # Fixed header size
 
       attr_accessor :page_number, :page_size, :header_size, :data_end,
-                   :flags, :checksum, :version, :page_type, :next_page,
-                   :prev_page, :free_start, :free_end
+        :flags, :checksum, :version, :page_type, :next_page,
+        :prev_page, :free_start, :free_end
 
       def initialize
         @page_number = 0
@@ -25,13 +25,9 @@ module RubyDB
         @free_end = @page_size
       end
 
-      def flags=(value)
-        @flags = value
-      end
+      attr_writer :flags
 
-      def page_type=(value)
-        @page_type = value
-      end
+      attr_writer :page_type
 
       def serialize
         [

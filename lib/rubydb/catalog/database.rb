@@ -9,7 +9,7 @@ module RubyDB
       def initialize(name)
         @name = name
         @tables = {}
-        @schemas = { "public" => PublicSchema.new }
+        @schemas = {"public" => PublicSchema.new}
         @sequences = {}
         @views = {}
         @triggers = {}

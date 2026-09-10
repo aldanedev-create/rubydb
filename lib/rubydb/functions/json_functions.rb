@@ -47,7 +47,11 @@ module RubyDB
           if value.is_a?(Hash) || value.is_a?(Array)
             value
           elsif value.is_a?(String)
-            JSON.parse(value) rescue {}
+            begin
+              JSON.parse(value)
+            rescue
+              {}
+            end
           else
             {}
           end
@@ -127,7 +131,11 @@ module RubyDB
           if value.is_a?(Hash) || value.is_a?(Array)
             value
           elsif value.is_a?(String)
-            JSON.parse(value) rescue {}
+            begin
+              JSON.parse(value)
+            rescue
+              {}
+            end
           else
             {}
           end
@@ -170,7 +178,11 @@ module RubyDB
           if value.is_a?(Hash) || value.is_a?(Array)
             value
           elsif value.is_a?(String)
-            JSON.parse(value) rescue {}
+            begin
+              JSON.parse(value)
+            rescue
+              {}
+            end
           else
             {}
           end
@@ -204,7 +216,11 @@ module RubyDB
           if value.is_a?(Hash) || value.is_a?(Array)
             value
           elsif value.is_a?(String)
-            JSON.parse(value) rescue {}
+            begin
+              JSON.parse(value)
+            rescue
+              {}
+            end
           else
             {}
           end

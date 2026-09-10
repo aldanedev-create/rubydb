@@ -15,7 +15,7 @@ RSpec.describe "SQL EXISTS subqueries" do
       statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new("SELECT id FROM users WHERE EXISTS (SELECT id FROM flags)").tokenize).parse.first
 
       result = RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(statement))
-      expect(result[:rows]).to eq([{ "id" => 1 }])
+      expect(result[:rows]).to eq([{"id" => 1}])
     ensure
       engine&.close if engine&.open?
     end
@@ -31,7 +31,7 @@ RSpec.describe "SQL EXISTS subqueries" do
       statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new("SELECT id FROM users WHERE NOT EXISTS (SELECT id FROM flags)").tokenize).parse.first
 
       result = RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(statement))
-      expect(result[:rows]).to eq([{ "id" => 1 }])
+      expect(result[:rows]).to eq([{"id" => 1}])
     ensure
       engine&.close if engine&.open?
     end

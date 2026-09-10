@@ -28,7 +28,7 @@ version to be supplied when you are not running from a matching Git tag.
 On Windows PowerShell, run this from the repository root:
 
 ```powershell
-$env:RUBYDB_RELEASE_VERSION = "0.1.0"
+$env:RUBYDB_RELEASE_VERSION = "0.1.5"
 $env:RUBYDB_PUBLISH = "1"
 $env:GEM_HOST_API_KEY = "YOUR_RUBYGEMS_API_KEY"
 ruby scripts/release
@@ -49,7 +49,7 @@ file automatically. Keep the file private and never commit it.
 On macOS/Linux, use:
 
 ```sh
-RUBYDB_RELEASE_VERSION=0.1.0 \
+RUBYDB_RELEASE_VERSION=0.1.5 \
 RUBYDB_PUBLISH=1 \
 GEM_HOST_API_KEY="YOUR_RUBYGEMS_API_KEY" \
 ruby scripts/release

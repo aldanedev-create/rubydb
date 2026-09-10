@@ -11,7 +11,7 @@ module RubyDB
         @sql = sql
         @client = client
         @params = []
-        @param_count = sql.scan(/\$/).size
+        @param_count = sql.scan("$").size
         @created_at = Time.now
         @closed = false
         @lock = Mutex.new
@@ -49,7 +49,7 @@ module RubyDB
       end
 
       def to_s
-        "#<PreparedStatement id=#{@id} sql=\"#{@sql[0..50]}#{'...' if @sql.length > 50}\">"
+        "#<PreparedStatement id=#{@id} sql=\"#{@sql[0..50]}#{"..." if @sql.length > 50}\">"
       end
 
       def inspect

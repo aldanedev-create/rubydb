@@ -13,7 +13,7 @@ RSpec.describe "ALTER TABLE constraint execution" do
         RubyDB::Catalog::Column.new(:email, :text)
       ]
       engine.create_table(:users, columns)
-      engine.insert_row(:users, columns, { id: 1, email: "a@example.test" })
+      engine.insert_row(:users, columns, {id: 1, email: "a@example.test"})
 
       sql = "ALTER TABLE users ADD CONSTRAINT uq_users_email UNIQUE (email)"
       statement = RubyDB::SQL::Parser.new(RubyDB::SQL::Lexer.new(sql).tokenize).parse.first
@@ -21,14 +21,14 @@ RSpec.describe "ALTER TABLE constraint execution" do
       RubyDB::Execution::Executor.new(engine).execute(plan)
 
       expect {
-        engine.insert_row(:users, columns, { id: 2, email: "a@example.test" })
+        engine.insert_row(:users, columns, {id: 2, email: "a@example.test"})
       }.to raise_error(RubyDB::DatabaseError, /Duplicate value/)
 
       drop = RubyDB::SQL::Parser.new(
         RubyDB::SQL::Lexer.new("ALTER TABLE users DROP CONSTRAINT uq_users_email").tokenize
       ).parse.first
       RubyDB::Execution::Executor.new(engine).execute(RubyDB::Execution::Planner.new(engine).plan(drop))
-      engine.insert_row(:users, columns, { id: 2, email: "a@example.test" })
+      engine.insert_row(:users, columns, {id: 2, email: "a@example.test"})
       engine.close
 
       reopened = RubyDB::Storage::Engine.new(path, auto_vacuum: false)

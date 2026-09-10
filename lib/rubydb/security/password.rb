@@ -147,36 +147,30 @@ module RubyDB
       end
 
       def hash_bcrypt(password)
-        begin
-          require "bcrypt"
-          BCrypt::Password.create(password, cost: @bcrypt_cost)
-        rescue LoadError
-          raise ArgumentError, "bcrypt support requires the bcrypt gem"
-        end
+        require "bcrypt"
+        BCrypt::Password.create(password, cost: @bcrypt_cost)
+      rescue LoadError
+        raise ArgumentError, "bcrypt support requires the bcrypt gem"
       end
 
       def verify_bcrypt(password, stored_hash)
-        begin
-          require "bcrypt"
-          BCrypt::Password.new(stored_hash) == password
-        rescue LoadError
-          false
-        end
+        require "bcrypt"
+        BCrypt::Password.new(stored_hash) == password
+      rescue LoadError
+        false
       end
 
       def hash_pbkdf2(password, salt)
-        begin
-          require "openssl"
-          OpenSSL::PKCS5.pbkdf2_hmac(
-            password,
-            salt,
-            @iterations,
-            @key_length,
-            "sha256"
-          ).unpack1("H*")
-        rescue LoadError
-          hash_sha256(password, salt)
-        end
+        require "openssl"
+        OpenSSL::PKCS5.pbkdf2_hmac(
+          password,
+          salt,
+          @iterations,
+          @key_length,
+          "sha256"
+        ).unpack1("H*")
+      rescue LoadError
+        hash_sha256(password, salt)
       end
 
       def verify_pbkdf2(password, salt, stored_hash, iterations)
@@ -194,21 +188,17 @@ module RubyDB
       end
 
       def hash_argon2(password, salt)
-        begin
-          require "argon2"
-          Argon2::Password.create(password)
-        rescue LoadError
-          raise ArgumentError, "argon2 support requires the argon2 gem"
-        end
+        require "argon2"
+        Argon2::Password.create(password)
+      rescue LoadError
+        raise ArgumentError, "argon2 support requires the argon2 gem"
       end
 
       def verify_argon2(password, salt, stored_hash)
-        begin
-          require "argon2"
-          Argon2::Password.verify_password(password, stored_hash)
-        rescue LoadError
-          false
-        end
+        require "argon2"
+        Argon2::Password.verify_password(password, stored_hash)
+      rescue LoadError
+        false
       end
     end
   end

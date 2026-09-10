@@ -31,7 +31,7 @@ module RubyDB
           @stats[:queries] += 1
           @stats[:as_of_queries] += 1
 
-          cache_key = "as_of_#{table_name}_#{time.to_i}_#{columns&.join('_')}"
+          cache_key = "as_of_#{table_name}_#{time.to_i}_#{columns&.join("_")}"
           if @result_cache.key?(cache_key)
             return @result_cache[cache_key]
           end
@@ -188,10 +188,10 @@ module RubyDB
         current = nil
         changes.each do |change|
           if change.row_id == row_id && change.timestamp <= time
-            if change.operation == Change::OP_DELETE
-              current = nil
+            current = if change.operation == Change::OP_DELETE
+              nil
             else
-              current = change.new_values.dup
+              change.new_values.dup
             end
           end
         end

@@ -57,8 +57,8 @@ module RubyDB
       def set_replica_lag(replica_id, lag_ms)
         @lock.synchronize do
           @stats[:lags] += 1
-          @replica_status[replica_id] = { status: :lagging, lag_ms: lag_ms }
-          @stats[:last_failure] = { type: :lag, time: Time.now, replica: replica_id, lag_ms: lag_ms }
+          @replica_status[replica_id] = {status: :lagging, lag_ms: lag_ms}
+          @stats[:last_failure] = {type: :lag, time: Time.now, replica: replica_id, lag_ms: lag_ms}
         end
       end
 
@@ -83,7 +83,7 @@ module RubyDB
       def perform_failure_type(replica_id, failure_type)
         @stats[:failures] += 1
         @stats[:replicas_affected] << replica_id unless @stats[:replicas_affected].include?(replica_id)
-        @stats[:last_failure] = { type: failure_type, time: Time.now, replica: replica_id }
+        @stats[:last_failure] = {type: failure_type, time: Time.now, replica: replica_id}
 
         case failure_type
         when :crash
@@ -120,7 +120,7 @@ module RubyDB
       def perform_lag(replica_id)
         lag_ms = rand(100..10000)
         @stats[:lags] += 1
-        @replica_status[replica_id] = { status: :lagging, lag_ms: lag_ms }
+        @replica_status[replica_id] = {status: :lagging, lag_ms: lag_ms}
       end
 
       def perform_corrupt(replica_id)

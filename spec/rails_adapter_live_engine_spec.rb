@@ -16,7 +16,7 @@ RSpec.describe "Rails adapter with a live RubyDB engine" do
       end
       adapter.add_index("users", "name", unique: true)
       insert_result = adapter.exec_insert("INSERT INTO users (id, name, active) VALUES (?, ?, ?)", nil,
-                                         [Struct.new(:value).new(1), Struct.new(:value).new("Ada"), Struct.new(:value).new(true)])
+        [Struct.new(:value).new(1), Struct.new(:value).new("Ada"), Struct.new(:value).new(true)])
 
       expect(insert_result).to include(row_count: 1, last_insert_id: 1)
 
@@ -25,11 +25,11 @@ RSpec.describe "Rails adapter with a live RubyDB engine" do
       expect(adapter.columns("users")).to include(hash_including(name: "active", default: false, null: false))
       expect(adapter.indexes("users")).to include(hash_including(name: "idx_users_name", columns: ["name"], unique: true))
       expect(adapter.select_value("SELECT name FROM users WHERE id = ?", nil,
-                                  [Struct.new(:value).new(1)])).to eq("Ada")
+        [Struct.new(:value).new(1)])).to eq("Ada")
       adapter.exec_insert("INSERT INTO users (id, name, active) VALUES (?, ?, ?)", nil,
-                          [Struct.new(:value).new(3), Struct.new(:value).new("O'Connor ?"), Struct.new(:value).new(true)])
+        [Struct.new(:value).new(3), Struct.new(:value).new("O'Connor ?"), Struct.new(:value).new(true)])
       expect(adapter.select_value("SELECT name FROM users WHERE name = ?", nil,
-                                  [Struct.new(:value).new("O'Connor ?")])).to eq("O'Connor ?")
+        [Struct.new(:value).new("O'Connor ?")])).to eq("O'Connor ?")
 
       adapter.begin_db_transaction
       adapter.exec_insert("INSERT INTO users (id, name, active) VALUES (2, 'Grace', TRUE)")

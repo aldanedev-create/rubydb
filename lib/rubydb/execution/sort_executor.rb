@@ -112,19 +112,16 @@ module RubyDB
         return 0 if a.nil? && b.nil?
         return -1 if a.nil?
         return 1 if b.nil?
-
         if a.is_a?(String) && b.is_a?(String)
-          a <=> b
-        else
-          a <=> b
         end
+        b
       end
 
       def external_sort(rows, order_by, temp_dir)
         # For large datasets, sort in chunks
         chunk_size = 10000
         chunks = []
-        
+
         rows.each_slice(chunk_size) do |chunk|
           chunks << sort_rows(chunk, order_by)
         end
@@ -177,9 +174,7 @@ module RubyDB
         0
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

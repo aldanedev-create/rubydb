@@ -15,12 +15,17 @@ release_descriptors = [
   "adapters/activerecord/rubydb-activerecord.gemspec",
   "packaging/homebrew/rubydb.rb"
 ]
+untracked_runtime_files = `git ls-files --others --exclude-standard -- lib exe rubydb.gemspec`.lines.map(&:chomp)
+unless untracked_runtime_files.empty?
+  abort "Runtime files are untracked and would be omitted from the gem: #{untracked_runtime_files.join(", ")}. Commit them before publishing."
+end
+
 placeholder_pattern = /yourusername|your name|you@example\.com|your\.email@example\.com/i
 placeholder_files = release_descriptors.select do |path|
   File.exist?(path) && File.read(path).match?(placeholder_pattern)
 end
 unless placeholder_files.empty?
-  abort "Release metadata contains placeholders in: #{placeholder_files.join(', ')}. Set the real owner, contact, homepage, source, and changelog URLs before publishing."
+  abort "Release metadata contains placeholders in: #{placeholder_files.join(", ")}. Set the real owner, contact, homepage, source, and changelog URLs before publishing."
 end
 abort "rake build:checksum failed" unless system("rake", "build:checksum")
 

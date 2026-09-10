@@ -5,7 +5,7 @@ module RubyDB
     # StorageManager - Central storage management
     class StorageManager
       attr_reader :file_manager, :page_manager, :page_allocator,
-                  :buffer_pool, :free_space_map, :visibility_map, :page_size
+        :buffer_pool, :free_space_map, :visibility_map, :page_size
 
       def initialize(path, config = {})
         @path = path

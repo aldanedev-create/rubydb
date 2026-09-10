@@ -12,7 +12,7 @@ module RubyDB
       # Deserialize a single value based on its type
       def self.deserialize(data, type, options = {})
         return nil if data.nil? || data.empty?
-        
+
         type_obj = Types::TypeRegistry.lookup(type)
         type_obj.deserialize(data)
       rescue => e
@@ -22,70 +22,66 @@ module RubyDB
       # Deserialize a full row from binary data
       def self.deserialize_row(data, columns, options = {})
         return {} if data.nil? || data.empty?
-        
+
         row = {}
         null_bitmap = options[:null_bitmap]
         bitmap_size = null_bitmap ? (columns.size + 7) / 8 : 0
         bitmap = null_bitmap ? data.byteslice(0, bitmap_size).bytes : []
         offset = bitmap_size
-        fixed_sizes = { integer: 4, bigint: 8, smallint: 2, float: 8, boolean: 1, date: 8, time: 8, timestamp: 8 }
+        fixed_sizes = {integer: 4, bigint: 8, smallint: 2, float: 8, boolean: 1, date: 8, time: 8, timestamp: 8}
         variable_length_prefixes = options[:variable_length_prefixes]
-        
+
         columns.each_with_index do |col, idx|
-          begin
-            col_type = col.type_class
-            col_name = col.name
-            has_default = col.has_default?
-            
-            # Check if fixed-size type
-            if fixed_sizes.key?(col_type)
-              length = fixed_sizes[col_type]
-              if offset + length <= data.bytesize
-                value_data = data[offset, length]
-                offset += length
-                row[col_name] = bitmap[col_index = idx / 8] && (bitmap[col_index] & (1 << (idx % 8))) != 0 ? nil : deserialize(value_data, col_type)
-              else
-                row[col_name] = has_default ? col.default : nil
-              end
+          col_type = col.type_class
+          col_name = col.name
+          has_default = col.has_default?
+
+          # Check if fixed-size type
+          if fixed_sizes.key?(col_type)
+            length = fixed_sizes[col_type]
+            if offset + length <= data.bytesize
+              value_data = data[offset, length]
+              offset += length
+              row[col_name] = (bitmap[col_index = idx / 8] && (bitmap[col_index] & (1 << (idx % 8))) != 0) ? nil : deserialize(value_data, col_type)
             else
-              if variable_length_prefixes
-                raise CorruptionError, "Missing length prefix for column '#{col_name}'" if offset + 4 > data.bytesize
-
-                length = data.byteslice(offset, 4).unpack1("N")
-                offset += 4
-                raise CorruptionError, "Invalid length for column '#{col_name}'" if offset + length > data.bytesize
-
-                value_data = data.byteslice(offset, length)
-                offset += length
-                row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
-                                  nil
-                                else
-                                  deserialize(value_data, col_type)
-                                end
-                row[col_name] = col.default if row[col_name].nil? && has_default
-              # Legacy records did not store variable-length field sizes.
-              # Only the final variable-width column can be recovered safely.
-              elsif idx == columns.size - 1
-                value_data = data[offset..-1]
-                row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
-                                  nil
-                                elsif value_data.bytesize > 0
-                                  deserialize(value_data, col_type)
-                                end
-                row[col_name] = col.default if row[col_name].nil? && has_default
-              else
-                row[col_name] = has_default ? col.default : nil
-              end
+              row[col_name] = has_default ? col.default : nil
             end
-          rescue => e
-            row[col_name] = col.default if col.has_default?
-            row[col_name] = nil if col.nullable?
-            if row[col_name].nil? && !col.nullable? && !col.has_default?
-              raise CorruptionError, "Failed to deserialize column '#{col_name}': #{e.message}"
+          elsif variable_length_prefixes
+            raise CorruptionError, "Missing length prefix for column '#{col_name}'" if offset + 4 > data.bytesize
+
+            length = data.byteslice(offset, 4).unpack1("N")
+            offset += 4
+            raise CorruptionError, "Invalid length for column '#{col_name}'" if offset + length > data.bytesize
+
+            value_data = data.byteslice(offset, length)
+            offset += length
+            row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
+              nil
+            else
+              deserialize(value_data, col_type)
             end
+            row[col_name] = col.default if row[col_name].nil? && has_default
+            # Legacy records did not store variable-length field sizes.
+            # Only the final variable-width column can be recovered safely.
+          elsif idx == columns.size - 1
+            value_data = data[offset..]
+            row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
+              nil
+            elsif value_data.bytesize > 0
+              deserialize(value_data, col_type)
+            end
+            row[col_name] = col.default if row[col_name].nil? && has_default
+          else
+            row[col_name] = has_default ? col.default : nil
+          end
+        rescue => e
+          row[col_name] = col.default if col.has_default?
+          row[col_name] = nil if col.nullable?
+          if row[col_name].nil? && !col.nullable? && !col.has_default?
+            raise CorruptionError, "Failed to deserialize column '#{col_name}': #{e.message}"
           end
         end
-        
+
         row
       end
 
@@ -96,34 +92,32 @@ module RubyDB
       # Deserialize a row with a header
       def self.deserialize_row_with_header(data, columns)
         return nil if data.nil? || data.empty?
-        
+
         # Parse header
         header_data = deserialize_header(data)
-        
+
         # Extract row data (after header)
-        row_data = data[header_data[:header_size]..-1]
-        
+        row_data = data[header_data[:header_size]..]
+
         # Deserialize row
         row = deserialize_row(row_data, columns, has_length_prefix: true)
-        
+
         # Add header info to row
         row[:_row_id] = header_data[:row_id]
         row[:_timestamp] = header_data[:timestamp]
         row[:_version] = header_data[:version]
-        
+
         row
       end
 
       # Deserialize a record header
       def self.deserialize_header(data)
-        return { header_size: 0 } if data.nil? || data.bytesize < 16
-        
-        header_size = 0
-        
+        return {header_size: 0} if data.nil? || data.bytesize < 16
+
         # Parse row header
         row_id, version, timestamp, flags, column_count = data.unpack("Q>Q>Q>C>S")
         header_size = 8 + 8 + 8 + 1 + 2  # row_id(8) + version(8) + timestamp(8) + flags(1) + column_count(2)
-        
+
         {
           row_id: row_id,
           version: version,
@@ -133,16 +127,16 @@ module RubyDB
           header_size: header_size
         }
       rescue => e
-        { header_size: 0, error: e.message }
+        {header_size: 0, error: e.message}
       end
 
       # Deserialize table metadata
       def self.deserialize_metadata(data)
         return {} if data.nil? || data.empty?
-        
+
         begin
           JSON.parse(data.force_encoding("UTF-8"), symbolize_names: true)
-        rescue JSON::ParserError => e
+        rescue JSON::ParserError
           # Try to handle different encodings
           begin
             JSON.parse(data.force_encoding("ASCII-8BIT"), symbolize_names: true)
@@ -155,38 +149,38 @@ module RubyDB
       # Deserialize page header
       def self.deserialize_page_header(data)
         return nil if data.nil? || data.bytesize < PageHeader::SIZE
-        
+
         PageHeader.deserialize(data)
       end
 
       # Deserialize a record from a page
       def self.deserialize_record(page, offset, columns)
         return nil if page.nil? || offset.nil?
-        
+
         # Read record header
         record_header = page.read(offset, 16)
         return nil if record_header.nil? || record_header.bytesize < 16
-        
+
         # Parse record header
-        record_id, record_size, flags, column_count = record_header.unpack("Q>L>C>S")
-        
+        record_id, record_size, flags, _ = record_header.unpack("Q>L>C>S")
+
         # Validate record size
         if record_size <= 0 || record_size > 65535
           raise CorruptionError, "Invalid record size: #{record_size}"
         end
-        
+
         # Read record data
         record_data = page.read(offset + 16, record_size)
         return nil if record_data.nil?
-        
+
         # Deserialize row
         row = deserialize_row(record_data, columns, has_length_prefix: true)
-        
+
         # Add record metadata
         row[:_record_id] = record_id
         row[:_record_size] = record_size
         row[:_flags] = flags
-        
+
         row
       end
 
@@ -195,25 +189,25 @@ module RubyDB
         records = []
         offset = PageHeader::SIZE
         count = 0
-        
+
         while offset < page.header.data_end
           break if max_records && count >= max_records
-          
+
           record = deserialize_record(page, offset, columns)
           break if record.nil?
-          
+
           records << record
           offset += 16 + record[:_record_size]
           count += 1
         end
-        
+
         records
       end
 
       # Deserialize a tuple from binary data
       def self.deserialize_tuple(data, columns)
         return nil if data.nil? || data.empty?
-        
+
         tuple = Tuple.new(columns)
         tuple.deserialize(data)
         tuple
@@ -222,12 +216,12 @@ module RubyDB
       # Deserialize a value with type and length prefix
       def self.deserialize_value_with_length(data, offset, type)
         return [nil, offset] if data.nil? || offset >= data.bytesize
-        
+
         # Read length prefix (2 bytes)
         if offset + 2 <= data.bytesize
-          length = data[offset, 2].unpack("S").first
+          length = data[offset, 2].unpack1("S")
           offset += 2
-          
+
           if length == 0xFFFF  # NULL marker
             return [nil, offset]
           elsif length > 0 && offset + length <= data.bytesize
@@ -236,31 +230,31 @@ module RubyDB
             return [deserialize(value_data, type), offset]
           end
         end
-        
+
         [nil, offset]
       end
 
       # Deserialize an array of values
       def self.deserialize_array(data, type, count)
         return [] if data.nil? || data.empty? || count <= 0
-        
+
         values = []
         offset = 0
-        
+
         count.times do
           value, new_offset = deserialize_value_with_length(data, offset, type)
           break if new_offset == offset  # No progress
           values << value
           offset = new_offset
         end
-        
+
         values
       end
 
       # Deserialize a JSON object from binary
       def self.deserialize_json(data)
         return nil if data.nil? || data.empty?
-        
+
         begin
           JSON.parse(data.force_encoding("UTF-8"))
         rescue JSON::ParserError
@@ -271,7 +265,7 @@ module RubyDB
       # Deserialize a bitmap
       def self.deserialize_bitmap(data, bit_count)
         return [] if data.nil? || data.empty? || bit_count <= 0
-        
+
         bitmap = []
         data.bytes.each_with_index do |byte, byte_idx|
           (0..7).each do |bit_idx|
@@ -280,18 +274,18 @@ module RubyDB
             bitmap << ((byte >> bit_idx) & 1) == 1
           end
         end
-        
+
         bitmap
       end
 
       # Deserialize variable-length data with length prefix
       def self.deserialize_variable(data, offset)
         return [nil, offset] if data.nil? || offset >= data.bytesize
-        
+
         if offset + 2 <= data.bytesize
-          length = data[offset, 2].unpack("S").first
+          length = data[offset, 2].unpack1("S")
           offset += 2
-          
+
           if length == 0xFFFF
             return [nil, offset]
           elsif length > 0 && offset + length <= data.bytesize
@@ -300,7 +294,7 @@ module RubyDB
             return [value_data, offset]
           end
         end
-        
+
         [nil, offset]
       end
 
@@ -309,7 +303,7 @@ module RubyDB
       # Get column length from data
       def self.get_column_length(data, offset, col, columns, idx)
         col_type = col.type_class
-        
+
         # Fixed length types - return their serialized size
         fixed_sizes = {
           integer: 8,
@@ -321,22 +315,18 @@ module RubyDB
           time: 8,
           timestamp: 8
         }
-        
+
         if fixed_sizes.key?(col_type)
-          return fixed_sizes[col_type]
-        else
+          fixed_sizes[col_type]
+        elsif idx == columns.size - 1
           # Variable length (text, json, etc.) - read until end of data or next field boundary
           # A final variable-width column consumes the remaining record bytes
           # for compatibility with records that omit a trailing length prefix.
-          if idx == columns.size - 1
-            return data.bytesize - offset
-          else
-            # For middle columns, we need a length prefix or a delimiter
-            # For simplicity, use remaining data if we don't have more info
-            return nil
-          end
+          data.bytesize - offset
         end
       end
+
+      private_class_method :get_column_length
     end
   end
 end

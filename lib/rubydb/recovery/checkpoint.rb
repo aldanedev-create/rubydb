@@ -77,8 +77,7 @@ module RubyDB
             @stats[:last_checkpoint_size] = estimate_checkpoint_size
 
             true
-
-          rescue => e
+          rescue
             @stats[:checkpoint_failures] += 1
             raise
           end
@@ -87,7 +86,7 @@ module RubyDB
 
       def restore_checkpoint
         @lock.synchronize do
-          start_time = Time.now
+          Time.now
 
           begin
             # Find the latest checkpoint in the WAL
@@ -106,8 +105,7 @@ module RubyDB
             @stats[:checkpoints_restored] += 1
 
             checkpoint_data
-
-          rescue => e
+          rescue
             @stats[:checkpoint_failures] += 1
             raise
           end
@@ -189,7 +187,9 @@ module RubyDB
       end
 
       def list_tables
-        @engine.list_tables rescue []
+        @engine.list_tables
+      rescue
+        []
       end
 
       def list_sequences
@@ -214,7 +214,11 @@ module RubyDB
         size = 1024  # Base overhead
 
         tables.each do |table|
-          row_count = @engine.table_row_count(table) rescue 0
+          row_count = begin
+            @engine.table_row_count(table)
+          rescue
+            0
+          end
           size += row_count * 100  # Rough estimate per row
         end
 

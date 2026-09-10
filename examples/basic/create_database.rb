@@ -27,8 +27,8 @@ begin
   SQL
 
   puts "Database: #{database_path}"
-  puts "Tables: #{engine.list_tables.join(', ')}"
-  puts "Rows: #{connection.execute('SELECT * FROM app_info').to_a.inspect}"
+  puts "Tables: #{engine.list_tables.join(", ")}"
+  puts "Rows: #{connection.execute("SELECT * FROM app_info").to_a.inspect}"
 ensure
   connection.disconnect
   engine.close

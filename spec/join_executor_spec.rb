@@ -11,8 +11,8 @@ RSpec.describe RubyDB::Execution::JoinExecutor do
       RubyDB::Execution::Expression::Column.new("user_id"),
       :eq
     )
-    left = [{ "id" => 1 }, { "id" => 2 }]
-    right = [{ "user_id" => 2 }, { "user_id" => 3 }]
+    left = [{"id" => 1}, {"id" => 2}]
+    right = [{"user_id" => 2}, {"user_id" => 3}]
 
     result = executor.hash_join(left, right, condition)
 
@@ -26,7 +26,7 @@ RSpec.describe RubyDB::Execution::JoinExecutor do
       :gt
     )
 
-    result = executor.hash_join([{ "id" => 2 }], [{ "value" => "x" }], condition)
+    result = executor.hash_join([{"id" => 2}], [{"value" => "x"}], condition)
 
     expect(result.size).to eq(1)
   end
@@ -39,7 +39,7 @@ RSpec.describe RubyDB::Execution::JoinExecutor do
     )
     allow(executor).to receive(:hash_join).and_call_original
 
-    executor.inner_join([{ "id" => 7 }], [{ "user_id" => 7 }], condition)
+    executor.inner_join([{"id" => 7}], [{"user_id" => 7}], condition)
 
     expect(executor).to have_received(:hash_join).once
   end

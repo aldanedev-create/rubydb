@@ -63,7 +63,11 @@ class TcpPartitionProxy
       @pairs.clear
       current
     end
-    @server.close rescue nil
+    begin
+      @server.close
+    rescue
+      nil
+    end
     pairs.each { |client, target| close_pair(client, target) }
     @thread&.join(2)
     @thread&.kill if @thread&.alive?
@@ -89,7 +93,7 @@ class TcpPartitionProxy
     end
   rescue IOError, Errno::EBADF
     # Expected when stop closes the listener.
-  rescue StandardError
+  rescue
     retry if @lock.synchronize { @running }
   end
 
@@ -101,7 +105,7 @@ class TcpPartitionProxy
       destination.write(source.readpartial(16_384))
       destination.flush
     end
-  rescue EOFError, IOError, SystemCallError
+  rescue IOError, SystemCallError
     # A dropped stream is the modeled partition.
   ensure
     @lock.synchronize { @pairs.delete(pair) }
@@ -109,8 +113,16 @@ class TcpPartitionProxy
   end
 
   def close_pair(first, second)
-    first.close rescue nil
-    second.close rescue nil
+    begin
+      first.close
+    rescue
+      nil
+    end
+    begin
+      second.close
+    rescue
+      nil
+    end
   end
 end
 
@@ -134,8 +146,12 @@ def insert(engine, id)
   engine.begin_transaction
   engine.insert_row(TABLE, COLUMNS, id: id)
   engine.commit_transaction
-rescue StandardError
-  engine.rollback_transaction rescue nil
+rescue
+  begin
+    engine.rollback_transaction
+  rescue
+    nil
+  end
   raise
 end
 
@@ -150,103 +166,119 @@ original_stdout = $stdout
 $stdout = StringIO.new
 begin
   Dir.mktmpdir("rubydb-network-failover-") do |directory|
-  primary_engine = RubyDB::Storage::Engine.new(File.join(directory, "primary.rdb"), auto_cleanup: false, auto_vacuum: false)
-  replica_engine = RubyDB::Storage::Engine.new(File.join(directory, "replica.rdb"), auto_cleanup: false, auto_vacuum: false)
-  primary = replica = promoted = proxy = nil
-  fence_path = File.join(directory, "cluster.fence")
+    primary_engine = RubyDB::Storage::Engine.new(File.join(directory, "primary.rdb"), auto_cleanup: false, auto_vacuum: false)
+    replica_engine = RubyDB::Storage::Engine.new(File.join(directory, "replica.rdb"), auto_cleanup: false, auto_vacuum: false)
+    primary = replica = promoted = proxy = nil
+    fence_path = File.join(directory, "cluster.fence")
 
-  primary_engine.create_table(TABLE, COLUMNS)
-  primary_port = available_port
-  proxy = TcpPartitionProxy.new("127.0.0.1", primary_port).start
+    primary_engine.create_table(TABLE, COLUMNS)
+    primary_port = available_port
+    proxy = TcpPartitionProxy.new("127.0.0.1", primary_port).start
 
-  begin
-    primary = RubyDB::Replication::Primary.new(
-      primary_engine,
-      host: "127.0.0.1",
-      replication_port: primary_port,
-      log_dir: File.join(directory, "primary-log"),
-      fence_path: fence_path,
-      heartbeat_interval: 0.05,
-      replication_timeout: 0.5,
-      node_id: "network-primary"
-    )
-    replica = RubyDB::Replication::Replica.new(
-      replica_engine,
-      primary_host: "127.0.0.1",
-      replication_port: proxy.port,
-      retry_interval: 0.02,
-      max_retry_attempts: 500,
-      heartbeat_interval: 0.05,
-      state_path: File.join(directory, "replica-state.json")
-    )
-    primary.start
-    replica.start
-  end
+    begin
+      primary = RubyDB::Replication::Primary.new(
+        primary_engine,
+        host: "127.0.0.1",
+        replication_port: primary_port,
+        log_dir: File.join(directory, "primary-log"),
+        fence_path: fence_path,
+        heartbeat_interval: 0.05,
+        replication_timeout: 0.5,
+        node_id: "network-primary"
+      )
+      replica = RubyDB::Replication::Replica.new(
+        replica_engine,
+        primary_host: "127.0.0.1",
+        replication_port: proxy.port,
+        retry_interval: 0.02,
+        max_retry_attempts: 500,
+        heartbeat_interval: 0.05,
+        state_path: File.join(directory, "replica-state.json")
+      )
+      primary.start
+      replica.start
+    end
 
-  wait_until { replica.replication_status[:state].to_s == "streaming" }
-  insert(primary_engine, 1)
-  wait_until { rows(replica_engine) == [1] }
+    wait_until { replica.replication_status[:state].to_s == "streaming" }
+    insert(primary_engine, 1)
+    wait_until { rows(replica_engine) == [1] }
 
-  proxy.partition!
-  wait_until { %w[disconnected failed].include?(replica.replication_status[:state].to_s) }
-  insert(primary_engine, 2)
-  raise "partition did not isolate replica" unless rows(replica_engine) == [1]
+    proxy.partition!
+    wait_until { %w[disconnected failed].include?(replica.replication_status[:state].to_s) }
+    insert(primary_engine, 2)
+    raise "partition did not isolate replica" unless rows(replica_engine) == [1]
 
-  proxy.heal!
-  wait_until { replica.replication_status[:state].to_s == "streaming" }
-  wait_until { rows(replica_engine) == [1, 2] }
+    proxy.heal!
+    wait_until { replica.replication_status[:state].to_s == "streaming" }
+    wait_until { rows(replica_engine) == [1, 2] }
 
-  # Partition a synchronized stream, fence the old writer, and promote only
-  # the replica that is known to have replayed through the recovery point.
-  proxy.partition!
-  wait_until { %w[disconnected failed].include?(replica.replication_status[:state].to_s) }
-  # Put the replica into the stable disconnected state before promotion. A
-  # continuously retrying, failed connection is not itself proof of a safe
-  # promotion even when its replay positions match.
-  replica.stop
-  RubyDB::Replication::FencingLease.new(fence_path, "external-fencer").acquire!
-  old_primary_rejected = false
-  begin
-    insert(primary_engine, 3)
-  rescue RubyDB::ReplicationError
-    old_primary_rejected = true
-  end
-  raise "stale primary accepted a write" unless old_primary_rejected
+    # Partition a synchronized stream, fence the old writer, and promote only
+    # the replica that is known to have replayed through the recovery point.
+    proxy.partition!
+    wait_until { %w[disconnected failed].include?(replica.replication_status[:state].to_s) }
+    # Put the replica into the stable disconnected state before promotion. A
+    # continuously retrying, failed connection is not itself proof of a safe
+    # promotion even when its replay positions match.
+    replica.stop
+    RubyDB::Replication::FencingLease.new(fence_path, "external-fencer").acquire!
+    old_primary_rejected = false
+    begin
+      insert(primary_engine, 3)
+    rescue RubyDB::ReplicationError
+      old_primary_rejected = true
+    end
+    raise "stale primary accepted a write" unless old_primary_rejected
 
-  replica.promote_to_primary(recovery_point: 2)
-  promoted_port = available_port
-  begin
-    promoted = RubyDB::Replication::Primary.new(
-      replica_engine,
-      host: "127.0.0.1",
-      replication_port: promoted_port,
-      log_dir: File.join(directory, "promoted-log"),
-      fence_path: fence_path,
-      heartbeat_interval: 0.05,
-      replication_timeout: 0.5,
-      node_id: "promoted-primary"
-    )
-    promoted.start
-  end
-  insert(replica_engine, 3)
-  raise "promoted primary did not accept a write" unless rows(replica_engine) == [1, 2, 3]
+    replica.promote_to_primary(recovery_point: 2)
+    promoted_port = available_port
+    begin
+      promoted = RubyDB::Replication::Primary.new(
+        replica_engine,
+        host: "127.0.0.1",
+        replication_port: promoted_port,
+        log_dir: File.join(directory, "promoted-log"),
+        fence_path: fence_path,
+        heartbeat_interval: 0.05,
+        replication_timeout: 0.5,
+        node_id: "promoted-primary"
+      )
+      promoted.start
+    end
+    insert(replica_engine, 3)
+    raise "promoted primary did not accept a write" unless rows(replica_engine) == [1, 2, 3]
 
-  result = {
-    success: true,
-    network_partition: true,
-    partitioned_primary_stayed_running: true,
-    replica_caught_up_after_heal: true,
-    stale_primary_rejected: old_primary_rejected,
-    promoted_rows: rows(replica_engine),
-    fencing_epoch_after_promotion: promoted.fencing_status[:epoch]
-  }
-ensure
-  promoted&.stop rescue nil
-  primary&.stop rescue nil
-  replica&.stop rescue nil
-  proxy&.stop rescue nil
-  replica_engine&.close if replica_engine&.open?
-  primary_engine&.close if primary_engine&.open?
+    result = {
+      success: true,
+      network_partition: true,
+      partitioned_primary_stayed_running: true,
+      replica_caught_up_after_heal: true,
+      stale_primary_rejected: old_primary_rejected,
+      promoted_rows: rows(replica_engine),
+      fencing_epoch_after_promotion: promoted.fencing_status[:epoch]
+    }
+  ensure
+    begin
+      promoted&.stop
+    rescue
+      nil
+    end
+    begin
+      primary&.stop
+    rescue
+      nil
+    end
+    begin
+      replica&.stop
+    rescue
+      nil
+    end
+    begin
+      proxy&.stop
+    rescue
+      nil
+    end
+    replica_engine&.close if replica_engine&.open?
+    primary_engine&.close if primary_engine&.open?
   end
 ensure
   $stdout = original_stdout

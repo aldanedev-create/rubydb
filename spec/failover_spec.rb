@@ -7,7 +7,7 @@ RSpec.describe "replication failover safety" do
     replica = instance_double(
       RubyDB::Replication::Replica,
       running?: true,
-      config: { node_id: "replica-1" },
+      config: {node_id: "replica-1"},
       primary_host: "127.0.0.1",
       primary_port: 7433,
       replication_status: {
@@ -20,7 +20,7 @@ RSpec.describe "replication failover safety" do
       RubyDB::Replication::ReplicationManager,
       replica: replica,
       mode: RubyDB::Replication::ReplicationManager::MODE_PRIMARY,
-      health_check: { healthy: true }
+      health_check: {healthy: true}
     )
     allow(manager).to receive(:promote_to_primary).and_return(success: true)
 
@@ -37,7 +37,7 @@ RSpec.describe "replication failover safety" do
       RubyDB::Replication::Replica,
       running?: true,
       config: {},
-      replication_status: { state: RubyDB::Replication::Replica::STATE_STREAMING }
+      replication_status: {state: RubyDB::Replication::Replica::STATE_STREAMING}
     )
     manager = instance_double(RubyDB::Replication::ReplicationManager, replica: replica)
     failover = RubyDB::Replication::Failover.new(manager)

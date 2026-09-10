@@ -5,6 +5,10 @@
 # This is the main entry point for the RubyDB library.
 # It provides the core database functionality and loads all required components.
 
+# Ruby 3.3 does not ship Set as a built-in; keep the entrypoint standalone.
+# rubocop:disable Lint/RedundantRequireStatement
+require "set"
+# rubocop:enable Lint/RedundantRequireStatement
 require_relative "version"
 require_relative "constants"
 require_relative "build_info"
@@ -359,7 +363,7 @@ module RubyDB
         results << result
       end
 
-      results.size == 1 ? results.first : results
+      (results.size == 1) ? results.first : results
     rescue => e
       raise ExecutionError, "Failed to execute SQL: #{e.message}"
     end
@@ -369,7 +373,7 @@ module RubyDB
       if result.is_a?(Hash) && result[:rows]
         result[:rows]
       elsif result.is_a?(Array)
-        result.map { |r| r.is_a?(Hash) && r[:rows] ? r[:rows] : r }.flatten
+        result.map { |r| (r.is_a?(Hash) && r[:rows]) ? r[:rows] : r }.flatten
       else
         []
       end
@@ -379,8 +383,8 @@ module RubyDB
       @lock.synchronize do
         return true unless @is_open
 
-        @connection&.disconnect if @connection
-        @engine&.close if @engine
+        @connection&.disconnect
+        @engine&.close
 
         @is_open = false
         @engine = nil
@@ -424,9 +428,9 @@ module RubyDB
       @engine.list_tables
     end
 
-    def create_table(name, &block)
+    def create_table(name, &)
       ensure_connected
-      @engine.create_table(name, &block)
+      @engine.create_table(name, &)
     end
 
     def drop_table(name)

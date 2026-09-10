@@ -36,11 +36,11 @@ module RubyDB
           b = @branch_manager.get_branch(branch_b)
 
           unless a
-            return { success: false, error: "Branch '#{branch_a}' not found" }
+            return {success: false, error: "Branch '#{branch_a}' not found"}
           end
 
           unless b
-            return { success: false, error: "Branch '#{branch_b}' not found" }
+            return {success: false, error: "Branch '#{branch_b}' not found"}
           end
 
           diff_type = options[:type] || DIFF_ALL
@@ -120,7 +120,7 @@ module RubyDB
       def compare_changes(branch_a, branch_b, tables, type)
         a = branch_a.respond_to?(:logical_changes) ? branch_a : @branch_manager.get_branch(branch_a)
         b = branch_b.respond_to?(:logical_changes) ? branch_b : @branch_manager.get_branch(branch_b)
-        return { success: false, error: "Branch not found: #{branch_a.inspect}, #{branch_b.inspect}" } unless a && b
+        return {success: false, error: "Branch not found: #{branch_a.inspect}, #{branch_b.inspect}"} unless a && b
 
         filter = tables && Array(tables).map(&:to_s)
         changes_a = a.respond_to?(:logical_changes) ? a.logical_changes : a.changes
@@ -129,10 +129,9 @@ module RubyDB
         changes_b = changes_b.select { |change| filter.include?(change[:table].to_s) } if filter
         added = changes_b.reject { |change| changes_a.include?(change) }
         removed = changes_a.reject { |change| changes_b.include?(change) }
-        { success: true, type: type, tables: (changes_a + changes_b).map { |c| c[:table] }.compact.uniq,
-          rows: { added: added, removed: removed }, changes: { added: added, removed: removed } }
+        {success: true, type: type, tables: (changes_a + changes_b).map { |c| c[:table] }.compact.uniq,
+         rows: {added: added, removed: removed}, changes: {added: added, removed: removed}}
       end
-
     end
   end
 end

@@ -10,9 +10,6 @@ RSpec.describe "CLI doctor repair safety" do
     output.define_singleton_method(:json) { |_data| }
     formatter = Object.new
     formatter.define_singleton_method(:format_doctor) { |_data| }
-
-    health = { passed: false, total_count: 1, passed_count: 0,
-               checks: [{ name: "Connection", passed: false, errors: ["offline"] }] }
     command = RubyDB::CLI::Commands::Doctor.new(output, formatter)
     allow(RubyDB::Configuration::Config.instance).to receive(:get)
       .with("storage.data_dir").and_return("Z:/missing/rubydb.rdb")

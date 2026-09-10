@@ -14,15 +14,15 @@ module RubyDB
         @migrated = false
       end
 
-      def up(&block)
+      def up(&)
         @direction = :up
-        instance_eval(&block) if block_given?
+        instance_eval(&) if block_given?
         @migrated = true
       end
 
-      def down(&block)
+      def down(&)
         @direction = :down
-        instance_eval(&block) if block_given?
+        instance_eval(&) if block_given?
         @migrated = true
       end
 
@@ -35,9 +35,9 @@ module RubyDB
         end
       end
 
-      def method_missing(method, *args, &block)
+      def method_missing(method, *, &)
         if @connection.respond_to?(method)
-          @connection.send(method, *args, &block)
+          @connection.send(method, *, &)
         else
           super
         end
@@ -47,8 +47,8 @@ module RubyDB
         @connection.respond_to?(method) || super
       end
 
-      def create_table(table_name, options = {}, &block)
-        @connection.create_table(table_name, options, &block)
+      def create_table(table_name, options = {}, &)
+        @connection.create_table(table_name, options, &)
       end
 
       def drop_table(table_name, options = {})

@@ -29,7 +29,7 @@ RSpec.describe "concurrent engine reads and writes" do
             id = 2 + (writer * inserts_per_writer) + offset
             engine.insert_row(:events, columns, id: id, payload: "writer-#{writer}-#{offset}")
           end
-        rescue StandardError => error
+        rescue => error
           errors << error
         end
       end
@@ -44,7 +44,7 @@ RSpec.describe "concurrent engine reads and writes" do
             scanned_row = engine.select_rows(:events, columns, row_id: 1, limit: 1).first
             raise "stable row changed during scan" unless scanned_row && scanned_row[:payload] == "stable"
           end
-        rescue StandardError => error
+        rescue => error
           errors << error
         end
       end

@@ -2,9 +2,8 @@
 
 module RubyDB
   module Transactions
-
     # Import transaction dependency
-require_relative "transaction"
+    require_relative "transaction"
     # Savepoint - Represents a savepoint within a transaction
     class Savepoint
       attr_reader :name, :transaction, :created_at, :position
@@ -20,7 +19,7 @@ require_relative "transaction"
         @changes = []
         @state = :active
         @lock = Mutex.new
-        
+
         # Save current state
         save_state
       end
@@ -40,12 +39,12 @@ require_relative "transaction"
       def rollback
         @lock.synchronize do
           return false unless active?
-          
+
           # Rollback changes in reverse order
           @changes.reverse.each do |change|
             undo_change(change)
           end
-          
+
           @state = :rollbacked
           true
         end

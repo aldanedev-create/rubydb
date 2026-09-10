@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Run the security checks that are deterministic on a developer or CI host.
+# Hosted CodeQL and an independent penetration review remain separate release
+# requirements; this script must not be mistaken for either of those.
+
+require "rbconfig"
+
+ROOT = File.expand_path("..", __dir__)
+
+def run!(label, *command)
+  puts "== #{label} =="
+  abort "#{label} failed" unless system(*command, chdir: ROOT)
+end
+
+audit_command = Gem.win_platform? ? "bundler-audit.bat" : "bundler-audit"
+
+unless system(audit_command, "--version", out: File::NULL, err: File::NULL)
+  abort "bundler-audit is required; install it with: gem install bundler-audit --no-document"
+end
+
+run!("Bundler dependency audit", audit_command, "check", "--update")
+
+secret_patterns = [
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bgh[pousr]_[A-Za-z0-9_]{30,}\b/
+].freeze
+
+tracked_files = IO.popen(["git", "ls-files", "-z"], chdir: ROOT, &:read).split("\0")
+findings = tracked_files.filter_map do |relative_path|
+  next if relative_path.empty?
+
+  absolute_path = File.join(ROOT, relative_path)
+  next unless File.file?(absolute_path)
+
+  contents = File.binread(absolute_path)
+  relative_path if secret_patterns.any? { |pattern| pattern.match?(contents) }
+end
+
+abort "Potential credential material found in tracked files: #{findings.join(", ")}" unless findings.empty?
+
+puts "Security baseline passed: dependency audit and tracked-secret scan."
+puts "Hosted CodeQL and independent security review are still required for certification."

@@ -40,14 +40,14 @@ module RubyDB
           # Find base backup if not specified
           base_backup ||= find_latest_backup
           unless base_backup
-            return { success: false, error: "No base backup found" }
+            return {success: false, error: "No base backup found"}
           end
 
           # Get last LSN from base backup or previous incremental
           last_lsn = get_last_lsn(base_backup)
 
           # Create incremental backup
-          incremental_name = "inc_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+          incremental_name = "inc_#{Time.now.strftime("%Y%m%d_%H%M%S")}"
           incremental_path = File.join(@incremental_dir, incremental_name)
           FileUtils.mkdir_p(incremental_path)
 
@@ -117,7 +117,7 @@ module RubyDB
           # Find the chain that covers the target LSN
           chain = find_chain_for_lsn(target_lsn)
           unless chain
-            return { success: false, error: "No chain found for LSN" }
+            return {success: false, error: "No chain found for LSN"}
           end
 
           # Restore base backup
@@ -125,7 +125,7 @@ module RubyDB
           restore_base = restore_backup(base_backup)
 
           unless restore_base[:success]
-            return { success: false, error: "Failed to restore base backup" }
+            return {success: false, error: "Failed to restore base backup"}
           end
 
           # Apply incrementals in order
@@ -165,7 +165,7 @@ module RubyDB
           end
 
           unless best
-            return { success: false, error: "No incremental found for time" }
+            return {success: false, error: "No incremental found for time"}
           end
 
           restore_to_lsn(best[:new_lsn], options)
@@ -187,7 +187,7 @@ module RubyDB
       def delete_incremental(incremental_name)
         @lock.synchronize do
           inc = @incrementals[incremental_name]
-          return { success: false, error: "Incremental not found" } unless inc
+          return {success: false, error: "Incremental not found"} unless inc
 
           path = File.join(@incremental_dir, incremental_name)
           size = calculate_size(path)
@@ -196,7 +196,7 @@ module RubyDB
           @incrementals.delete(incremental_name)
           @stats[:total_size_bytes] -= size
 
-          { success: true }
+          {success: true}
         end
       end
 
@@ -218,17 +218,13 @@ module RubyDB
           metadata_path = File.join(path, "metadata.json")
           next unless File.exist?(metadata_path)
 
-          begin
-            metadata = JSON.parse(File.read(metadata_path), symbolize_names: true)
-            validate_incremental_metadata!(path, metadata)
-            @incrementals[metadata[:name]] = metadata
+          metadata = JSON.parse(File.read(metadata_path), symbolize_names: true)
+          validate_incremental_metadata!(path, metadata)
+          @incrementals[metadata[:name]] = metadata
 
-            base = metadata[:base_backup]
-            @chains[base] ||= []
-            @chains[base] << metadata
-          rescue StandardError => error
-            raise error
-          end
+          base = metadata[:base_backup]
+          @chains[base] ||= []
+          @chains[base] << metadata
         end
 
         # Sort chains by time
@@ -246,7 +242,7 @@ module RubyDB
         @chains.each do |base, chain|
           last = chain.last
           if last && last[:new_lsn] >= target_lsn
-            return { base: base, incrementals: chain }
+            return {base: base, incrementals: chain}
           end
         end
         nil

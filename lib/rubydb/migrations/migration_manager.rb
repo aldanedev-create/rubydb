@@ -16,10 +16,10 @@ module RubyDB
         @database = database
         @engine = database.respond_to?(:engine) ? database.engine : database
         @options = options
-        @migration_path = options[:path] || options[:migrations_path] || "db/migrate"
+        @migration_path = File.expand_path(options[:path] || options[:migrations_path] || "db/migrate")
         @migrations = options[:migrations] || load_migrations
         @lock = MigrationLock.new(@engine, options)
-        @stats = { applied: 0, rolled_back: 0, failed: 0 }
+        @stats = {applied: 0, rolled_back: 0, failed: 0}
       end
 
       def migrate
@@ -42,9 +42,9 @@ module RubyDB
           applied = applied_versions
           validate_applied_migrations(applied)
           to_rollback = ordered_migrations.select { |m| applied.key?(m.version.to_s) }
-                                      .sort_by { |m| migration_key(m.version) }
-                                      .reverse
-                                      .first(steps)
+            .sort_by { |m| migration_key(m.version) }
+            .reverse
+            .first(steps)
           to_rollback.each { |migration| rollback_migration(migration) }
           to_rollback
         end
@@ -55,8 +55,8 @@ module RubyDB
         applied = applied_versions
         ordered_migrations.map do |migration|
           record = applied[migration.version.to_s]
-          { version: migration.version.to_s, name: migration.name,
-            state: record ? :applied : :pending, checksum: record && record[:checksum] }
+          {version: migration.version.to_s, name: migration.name,
+           state: record ? :applied : :pending, checksum: record && record[:checksum]}
         end
       end
 
@@ -77,7 +77,7 @@ module RubyDB
 
       def ensure_column(name, type)
         @database.execute("ALTER TABLE schema_migrations ADD COLUMN #{name} #{type}")
-      rescue StandardError => error
+      rescue => error
         raise unless error.message =~ /already exists|duplicate|exists/i
       end
 
@@ -85,7 +85,7 @@ module RubyDB
         rows = @database.query("SELECT version, migration_name, checksum FROM schema_migrations")
         Array(rows).each_with_object({}) do |row, result|
           version = row[:version] || row["version"]
-          result[version.to_s] = { name: row[:migration_name] || row["migration_name"], checksum: row[:checksum] || row["checksum"] }
+          result[version.to_s] = {name: row[:migration_name] || row["migration_name"], checksum: row[:checksum] || row["checksum"]}
         end
       end
 
@@ -102,7 +102,7 @@ module RubyDB
               insert_version(migration)
             end
             @stats[:applied] += 1
-          rescue StandardError
+          rescue
             migration.mark_failed
             @stats[:failed] += 1
             raise
@@ -120,7 +120,7 @@ module RubyDB
 
       def insert_version(migration)
         values = [migration.version.to_s, migration.name.to_s, Time.now.iso8601, migration_checksum(migration)].map { |v| quote(v) }
-        @database.execute("INSERT INTO schema_migrations (version, migration_name, applied_at, checksum) VALUES (#{values.join(', ')})")
+        @database.execute("INSERT INTO schema_migrations (version, migration_name, applied_at, checksum) VALUES (#{values.join(", ")})")
       end
 
       def quote(value)
@@ -132,7 +132,7 @@ module RubyDB
       end
 
       def migration_key(version)
-        version.to_s =~ /\A\d+\z/ ? version.to_i : version.to_s
+        (version.to_s =~ /\A\d+\z/) ? version.to_i : version.to_s
       end
 
       def target_version
@@ -163,8 +163,19 @@ module RubyDB
       def load_migrations
         return [] unless Dir.exist?(@migration_path)
 
-        Dir.glob(File.join(@migration_path, "*.rb")).sort.map do |path|
-          migration = eval(File.read(path), TOPLEVEL_BINDING, path, 1)
+        migration_root = File.realpath(@migration_path)
+        Dir.glob(File.join(migration_root, "*.rb")).sort.map do |path|
+          path = File.realpath(path)
+          unless File.dirname(path) == migration_root
+            raise MigrationError, "migration path escapes #{@migration_path}: #{path}"
+          end
+
+          # Migration files are trusted deployment code, like Rails migrations.
+          # The root and every file are resolved above so a symlink cannot make
+          # the loader execute Ruby from outside the configured migration tree.
+          # rubocop:disable Security/Eval
+          migration = eval(File.binread(path), TOPLEVEL_BINDING, path, 1)
+          # rubocop:enable Security/Eval
           unless migration.is_a?(Migration)
             raise MigrationError, "#{path} must evaluate to a Migration"
           end

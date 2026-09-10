@@ -14,7 +14,7 @@ RSpec.describe "variable-length row storage" do
       ]
       engine = RubyDB::Storage::Engine.new(path, auto_vacuum: false)
       engine.create_table("users", columns)
-      engine.insert_row("users", columns, { id: 1, name: "Ada Lovelace", active: true })
+      engine.insert_row("users", columns, {id: 1, name: "Ada Lovelace", active: true})
       engine.close
 
       reopened = RubyDB::Storage::Engine.new(path, auto_vacuum: false)

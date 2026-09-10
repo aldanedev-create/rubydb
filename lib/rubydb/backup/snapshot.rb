@@ -35,13 +35,13 @@ module RubyDB
 
       def create_snapshot(name = nil)
         @lock.synchronize do
-          start_time = Time.now
-          snapshot_name = name || "snapshot_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+          Time.now
+          snapshot_name = name || "snapshot_#{Time.now.strftime("%Y%m%d_%H%M%S")}"
           snapshot_path = snapshot_path_for_name(snapshot_name)
-          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
+          return {success: false, error: "Invalid snapshot name"} unless snapshot_path
 
           if Dir.exist?(snapshot_path)
-            return { success: false, error: "Snapshot already exists" }
+            return {success: false, error: "Snapshot already exists"}
           end
 
           begin
@@ -84,11 +84,10 @@ module RubyDB
             # Clean old snapshots
             clean_old_snapshots
 
-            { success: true, snapshot_name: snapshot_name, metadata: metadata }
-
+            {success: true, snapshot_name: snapshot_name, metadata: metadata}
           rescue => e
             FileUtils.rm_rf(snapshot_path) if Dir.exist?(snapshot_path)
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -96,15 +95,15 @@ module RubyDB
       def restore_snapshot(snapshot_name, options = {})
         @lock.synchronize do
           snapshot_path = snapshot_path_for_name(snapshot_name)
-          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
+          return {success: false, error: "Invalid snapshot name"} unless snapshot_path
 
           unless Dir.exist?(snapshot_path)
-            return { success: false, error: "Snapshot does not exist" }
+            return {success: false, error: "Snapshot does not exist"}
           end
 
           metadata_path = File.join(snapshot_path, "snapshot.json")
           unless File.exist?(metadata_path)
-            return { success: false, error: "Snapshot metadata not found" }
+            return {success: false, error: "Snapshot metadata not found"}
           end
 
           begin
@@ -116,10 +115,9 @@ module RubyDB
 
             @stats[:snapshots_restored] += 1
 
-            { success: true, snapshot_name: snapshot_name, metadata: metadata }
-
+            {success: true, snapshot_name: snapshot_name, metadata: metadata}
           rescue => e
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -133,10 +131,10 @@ module RubyDB
       def delete_snapshot(snapshot_name)
         @lock.synchronize do
           snapshot_path = snapshot_path_for_name(snapshot_name)
-          return { success: false, error: "Invalid snapshot name" } unless snapshot_path
+          return {success: false, error: "Invalid snapshot name"} unless snapshot_path
 
           unless Dir.exist?(snapshot_path)
-            return { success: false, error: "Snapshot does not exist" }
+            return {success: false, error: "Snapshot does not exist"}
           end
 
           size = calculate_snapshot_size(snapshot_path)
@@ -146,7 +144,7 @@ module RubyDB
           @stats[:snapshots_deleted] += 1
           @stats[:total_size_bytes] -= size
 
-          { success: true }
+          {success: true}
         end
       end
 
@@ -168,7 +166,7 @@ module RubyDB
 
         root = File.expand_path(@snapshot_dir)
         path = File.expand_path(File.join(root, name))
-        path == root || path.start_with?("#{root}#{File::SEPARATOR}") ? path : nil
+        (path == root || path.start_with?("#{root}#{File::SEPARATOR}")) ? path : nil
       end
 
       def load_snapshots

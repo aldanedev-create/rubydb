@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "time"
-require "set"
 
 module RubyDB
   module Recovery
@@ -40,8 +39,8 @@ module RubyDB
           begin
             # Step 1: Find the latest checkpoint
             checkpoint_lsn = find_latest_checkpoint
-            puts "RECOVERY DEBUG: checkpoint_lsn = #{checkpoint_lsn.inspect}" if ENV['DEBUG_RECOVERY']
-            @recovery_log << { step: "checkpoint", lsn: checkpoint_lsn }
+            puts "RECOVERY DEBUG: checkpoint_lsn = #{checkpoint_lsn.inspect}" if ENV["DEBUG_RECOVERY"]
+            @recovery_log << {step: "checkpoint", lsn: checkpoint_lsn}
 
             # Step 2: Read records after checkpoint
             records = if checkpoint_lsn
@@ -49,28 +48,28 @@ module RubyDB
             else
               @wal.read_all
             end
-            puts "RECOVERY DEBUG: found #{records.count} WAL records" if ENV['DEBUG_RECOVERY']
-            records.each { |r| puts "  - #{r.type}: #{r.data.inspect}" } if ENV['DEBUG_RECOVERY']
-            @recovery_log << { step: "read_records", count: records.size }
+            puts "RECOVERY DEBUG: found #{records.count} WAL records" if ENV["DEBUG_RECOVERY"]
+            records.each { |r| puts "  - #{r.type}: #{r.data.inspect}" } if ENV["DEBUG_RECOVERY"]
+            @recovery_log << {step: "read_records", count: records.size}
 
             # Step 3: Analyze records for redo/undo
             analysis = analyze_records(records)
-            puts "RECOVERY DEBUG: analysis redo=#{analysis[:redo].count}, undo=#{analysis[:undo].count}" if ENV['DEBUG_RECOVERY']
-            @recovery_log << { step: "analyze", redo: analysis[:redo].size, undo: analysis[:undo].size }
+            puts "RECOVERY DEBUG: analysis redo=#{analysis[:redo].count}, undo=#{analysis[:undo].count}" if ENV["DEBUG_RECOVERY"]
+            @recovery_log << {step: "analyze", redo: analysis[:redo].size, undo: analysis[:undo].size}
 
             # Step 4: REDO committed transactions
             redo_count = redo_records(analysis[:redo])
             @stats[:redo_records] += redo_count
-            @recovery_log << { step: "redo", count: redo_count }
+            @recovery_log << {step: "redo", count: redo_count}
 
             # Step 5: UNDO uncommitted transactions
             undo_count = undo_records(analysis[:undo])
             @stats[:undo_records] += undo_count
-            @recovery_log << { step: "undo", count: undo_count }
+            @recovery_log << {step: "undo", count: undo_count}
 
             # Step 6: Verify consistency
             consistency_check = verify_consistency
-            @recovery_log << { step: "consistency", passed: consistency_check }
+            @recovery_log << {step: "consistency", passed: consistency_check}
 
             # Step 7: Create new checkpoint
             if consistency_check
@@ -92,10 +91,9 @@ module RubyDB
               records_processed: records.size,
               log: @recovery_log
             }
-
           rescue => e
             @stats[:corrupted_records] += 1
-            @recovery_log << { step: "error", error: e.message }
+            @recovery_log << {step: "error", error: e.message}
 
             if @stop_on_error || errors >= @max_errors
               raise
@@ -155,7 +153,7 @@ module RubyDB
         # Determine which transactions to redo and undo
         records.each do |record|
           tx_id = record.transaction_id
-          
+
           # Mutations without explicit transaction markers are auto-committed
           if tx_id.nil? || tx_id == 0
             if [:insert, :update, :delete, :create_table, :drop_table].include?(record.type)
@@ -188,14 +186,12 @@ module RubyDB
         @engine.with_recovery do
           count = 0
           records.each do |record|
-            begin
-              redo_record(record)
-              count += 1
-            rescue => e
-              @stats[:corrupted_records] += 1
-              @recovery_log << { step: "redo_error", record: record.lsn.to_s, error: e.message }
-              raise if @stop_on_error
-            end
+            redo_record(record)
+            count += 1
+          rescue => e
+            @stats[:corrupted_records] += 1
+            @recovery_log << {step: "redo_error", record: record.lsn.to_s, error: e.message}
+            raise if @stop_on_error
           end
           count
         end
@@ -206,14 +202,12 @@ module RubyDB
           count = 0
           # Undo in reverse order
           records.reverse_each do |record|
-            begin
-              undo_record(record)
-              count += 1
-            rescue => e
-              @stats[:corrupted_records] += 1
-              @recovery_log << { step: "undo_error", record: record.lsn.to_s, error: e.message }
-              raise if @stop_on_error
-            end
+            undo_record(record)
+            count += 1
+          rescue => e
+            @stats[:corrupted_records] += 1
+            @recovery_log << {step: "undo_error", record: record.lsn.to_s, error: e.message}
+            raise if @stop_on_error
           end
           count
         end
@@ -357,8 +351,8 @@ module RubyDB
           listed_pages = table_pages.values.flatten
           (required_pages + listed_pages).compact.all? do |page_number|
             page = @engine.read_page(page_number)
-            page && page.respond_to?(:header)
-          rescue StandardError
+            page&.respond_to?(:header)
+          rescue
             false
           end
         end

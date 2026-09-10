@@ -55,7 +55,7 @@ RSpec.describe "logical replication failover" do
       wait_until { manager.replica.replication_status[:state] == RubyDB::Replication::Replica::STATE_STREAMING }
 
       primary_engine.insert_row(:events, columns, id: 1, message: "committed before failover")
-      primary.write(operation: :insert, table: :events, values: { id: 1, message: "committed before failover" })
+      primary.write(operation: :insert, table: :events, values: {id: 1, message: "committed before failover"})
       begin
         wait_until { replica_engine.select_rows(:events, columns).any? }
       rescue Timeout::Error

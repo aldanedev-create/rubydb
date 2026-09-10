@@ -43,18 +43,18 @@ module RubyDB
           backup_dir = options[:backup_dir] || config.get("backup.backup_dir") || "backups"
 
           selected_path = if options[:backup]
-                            File.join(backup_dir, options[:backup])
-                          elsif options[:latest]
-                            nil
-                          end
+            File.join(backup_dir, options[:backup])
+          elsif options[:latest]
+            nil
+          end
 
           if options[:dry_run]
             available = RubyDB::Backup::Restore.new(nil, backup_dir: backup_dir).list_available_backups
             selected = if selected_path
-                         available.find { |backup| backup[:path] == selected_path }
-                       else
-                         available.first
-                       end
+              available.find { |backup| backup[:path] == selected_path }
+            else
+              available.first
+            end
             raise "No matching backup available" unless selected
             @output.info("Would restore #{selected[:name]} from #{selected[:path]}")
             return 0
@@ -83,7 +83,7 @@ module RubyDB
               end
             end
           elsif options[:backup]
-          backup_path = File.join(backup_dir, options[:backup])
+            backup_path = File.join(backup_dir, options[:backup])
             @output.spinner("Restoring backup #{options[:backup]}...") do
               result = restore.restore(backup_path)
 

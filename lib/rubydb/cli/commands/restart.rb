@@ -17,7 +17,10 @@ module RubyDB
             opts.banner = "Usage: rubydb restart [options]"
             opts.on("--pid-file FILE", "PID file") { |file| options[:pid_file] = file }
             opts.on("--force", "Send KILL instead of TERM") { options[:force] = true }
-            opts.on("-h", "--help", "Show help") { @output.puts opts; return 0 }
+            opts.on("-h", "--help", "Show help") {
+              @output.puts opts
+              return 0
+            }
           end
           parser.parse!(args)
 

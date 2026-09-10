@@ -12,7 +12,7 @@ module RubyDB
         @result = nil
         @executed = false
         @params = []
-        @param_count = sql.scan(/\$/).size
+        @param_count = sql.scan("$").size
         @created_at = Time.now
         @lock = Mutex.new
       end
@@ -45,7 +45,7 @@ module RubyDB
       end
 
       def inspect
-        "#<Statement sql=\"#{@sql[0..50]}#{'...' if @sql.length > 50}\">"
+        "#<Statement sql=\"#{@sql[0..50]}#{"..." if @sql.length > 50}\">"
       end
     end
   end

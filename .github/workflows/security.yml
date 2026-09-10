@@ -25,6 +25,8 @@ jobs:
         run: |
           gem install bundler-audit --no-document
           bundle audit check --update
+      - name: Run repository security baseline
+        run: ruby scripts/security
 
   codeql:
     runs-on: ubuntu-latest

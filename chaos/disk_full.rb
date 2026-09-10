@@ -58,7 +58,7 @@ module RubyDB
             begin
               @engine.recover
               @stats[:successful_recoveries] += 1
-            rescue => e
+            rescue
               @stats[:failed_recoveries] += 1
             end
           end
@@ -98,7 +98,7 @@ module RubyDB
 
       def create_disk_full_files
         # Create files to simulate disk full
-        file_count = (rand(5..20))
+        file_count = rand(5..20)
         file_count.times do |i|
           file_path = File.join(@test_directory, "test_file_#{i}.dat")
           size = rand(1024..@file_size_limit / file_count)

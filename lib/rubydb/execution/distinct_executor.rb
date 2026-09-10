@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Execution
     # DistinctExecutor - Executes DISTINCT operations
@@ -33,7 +31,7 @@ module RubyDB
           end
 
           distinct_columns = plan.distinct_columns || []
-          
+
           @stats[:rows_input] += rows.size
 
           # Perform distinct
@@ -104,7 +102,7 @@ module RubyDB
           else
             columns.map { |col| row[col] }.join("||")
           end
-          
+
           hash[key] = row unless hash.key?(key)
         end
 
@@ -114,22 +112,20 @@ module RubyDB
       # Distinct with ordering
       def distinct_with_order(rows, columns, order_by)
         distinct_rows = distinct_on_columns(rows, columns)
-        
+
         # Sort results
         sort_executor = SortExecutor.new(@engine)
         sort_plan = Plan::Select.new(nil)
         sort_plan.input_rows = distinct_rows
         sort_plan.set_order_by(order_by)
-        
+
         result = sort_executor.execute(sort_plan)
         result[:rows]
       end
 
       private
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

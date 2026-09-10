@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Indexes
     # IndexScan - Executes index scans for queries with full production features
@@ -59,7 +57,7 @@ module RubyDB
           if @limit
             @results = @results[@offset, @limit]
           elsif @offset > 0
-            @results = @results[@offset..-1] || []
+            @results = @results[@offset..] || []
           end
 
           # Apply distinct if needed
@@ -179,7 +177,7 @@ module RubyDB
           @stats[:index_pages_accessed] = 1
 
           @results = row_ids.map do |row_id|
-            { row_id: row_id, key: key }
+            {row_id: row_id, key: key}
           end
         else
           @results = []
@@ -203,7 +201,7 @@ module RubyDB
           @stats[:index_pages_accessed] = (results.size / 10.0).ceil + 1
 
           @results = results.map do |r|
-            { row_id: r[:value], key: r[:key] }
+            {row_id: r[:value], key: r[:key]}
           end
 
           # Filter by inclusivity
@@ -236,7 +234,7 @@ module RubyDB
           @stats[:index_pages_accessed] = (results.size / 20.0).ceil + 1
 
           @results = results.map do |r|
-            { row_id: r[:value], key: r[:key] }
+            {row_id: r[:value], key: r[:key]}
           end
         else
           # For hash indexes, full scan with prefix filter
@@ -257,7 +255,7 @@ module RubyDB
         keys.each do |key|
           if @index.type == :btree || @index.type == :hash
             row_ids = @index.search(key)
-            all_row_ids.concat(row_ids.map { |rid| { row_id: rid, key: key } })
+            all_row_ids.concat(row_ids.map { |rid| {row_id: rid, key: key} })
           end
         end
 
@@ -302,7 +300,7 @@ module RubyDB
               next unless apply_filter_to_entry(entry)
             end
 
-            @results << { row_id: entry[:value], key: entry[:key] }
+            @results << {row_id: entry[:value], key: entry[:key]}
             break if @limit && @results.size >= @limit + @offset
           end
           @stats[:index_pages_accessed] = (page_count / 50.0).ceil + 1
@@ -343,7 +341,7 @@ module RubyDB
               next unless apply_filter_to_entry(entry)
             end
 
-            @results << { row_id: entry[:value], key: entry[:key] }
+            @results << {row_id: entry[:value], key: entry[:key]}
             break if @limit && @results.size >= @limit + @offset
           end
           @stats[:index_pages_accessed] = (results.size / 20.0).ceil + 1
@@ -385,7 +383,7 @@ module RubyDB
               next unless apply_filter_to_entry(entry)
             end
 
-            @results << { row_id: entry[:value], key: entry[:key] }
+            @results << {row_id: entry[:value], key: entry[:key]}
             break if @limit && @results.size >= @limit + @offset
           end
         else
@@ -405,21 +403,19 @@ module RubyDB
         results = []
         hash_table = @index.instance_variable_get(:@hash_table)
 
-        if hash_table
-          hash_table.each do |_bucket_key, bucket|
-            bucket.each do |entry|
-              @stats[:rows_scanned] += 1
-              @stats[:keys_checked] += 1
+        hash_table&.each do |_bucket_key, bucket|
+          bucket.each do |entry|
+            @stats[:rows_scanned] += 1
+            @stats[:keys_checked] += 1
 
-              if @filter
-                next unless apply_filter_to_entry(entry)
-              end
-
-              results << { row_id: entry[:row_id], key: entry[:key] }
-              break if @limit && results.size >= @limit + @offset
+            if @filter
+              next unless apply_filter_to_entry(entry)
             end
+
+            results << {row_id: entry[:row_id], key: entry[:key]}
             break if @limit && results.size >= @limit + @offset
           end
+          break if @limit && results.size >= @limit + @offset
         end
 
         results

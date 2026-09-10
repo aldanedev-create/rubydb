@@ -32,13 +32,13 @@ module RubyDB
           branch = @branch_manager.get_branch(branch_name)
           unless branch
             @stats[:failed_checkouts] += 1
-            return { success: false, error: "Branch '#{branch_name}' not found" }
+            return {success: false, error: "Branch '#{branch_name}' not found"}
           end
 
           # Check if branch can be checked out
           if branch.locked? && !options[:force]
             @stats[:failed_checkouts] += 1
-            return { success: false, error: "Branch '#{branch_name}' is locked" }
+            return {success: false, error: "Branch '#{branch_name}' is locked"}
           end
 
           begin
@@ -63,10 +63,9 @@ module RubyDB
             end
 
             result.merge(elapsed_ms: elapsed_ms)
-
           rescue => e
             @stats[:failed_checkouts] += 1
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -93,7 +92,7 @@ module RubyDB
         @lock.synchronize do
           # Find latest branch by creation time
           branches = @branch_manager.list_branches
-          return { success: false, error: "No branches available" } if branches.empty?
+          return {success: false, error: "No branches available"} if branches.empty?
 
           latest = branches.max_by { |b| b[:created_at] }
           checkout(latest[:name], options)
@@ -127,7 +126,7 @@ module RubyDB
         # Update engine to branch head
         @engine.apply_branch_head(branch.head_lsn) if branch.head_lsn
 
-        { success: true, branch_name: branch_name, head_lsn: branch.head_lsn }
+        {success: true, branch_name: branch_name, head_lsn: branch.head_lsn}
       end
 
       def get_branch_data(branch_name)
@@ -135,7 +134,7 @@ module RubyDB
         raise ArgumentError, "Branch '#{branch_name}' not found" unless branch
         snapshot = branch.respond_to?(:state_snapshot) ? branch.state_snapshot : nil
         changes = branch.respond_to?(:logical_changes) ? branch.logical_changes : branch.changes
-        { base: snapshot, changes: changes }
+        {base: snapshot, changes: changes}
       end
 
       def apply_branch_state(branch_data)

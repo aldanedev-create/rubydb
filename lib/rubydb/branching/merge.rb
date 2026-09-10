@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module Branching
     # Merge - Handles branch merging
@@ -40,13 +38,13 @@ module RubyDB
           @stats[:merges] += 1
 
           target_branch ||= if @branch_manager.respond_to?(:current_branch_name)
-                              @branch_manager.current_branch_name
-                            else
-                              @branch_manager.current_branch&.name
-                            end
+            @branch_manager.current_branch_name
+          else
+            @branch_manager.current_branch&.name
+          end
           unless target_branch
             @stats[:failed_merges] += 1
-            return { success: false, error: "No target branch specified" }
+            return {success: false, error: "No target branch specified"}
           end
 
           source = @branch_manager.get_branch(source_branch)
@@ -54,17 +52,17 @@ module RubyDB
 
           unless source
             @stats[:failed_merges] += 1
-            return { success: false, error: "Source branch '#{source_branch}' not found" }
+            return {success: false, error: "Source branch '#{source_branch}' not found"}
           end
 
           unless target
             @stats[:failed_merges] += 1
-            return { success: false, error: "Target branch '#{target_branch}' not found" }
+            return {success: false, error: "Target branch '#{target_branch}' not found"}
           end
 
           if source == target
             @stats[:failed_merges] += 1
-            return { success: false, error: "Cannot merge a branch with itself" }
+            return {success: false, error: "Cannot merge a branch with itself"}
           end
 
           begin
@@ -90,7 +88,7 @@ module RubyDB
               end
               if conflicts.any?
                 @stats[:failed_merges] += 1
-                return { success: false, conflicts: conflicts, message: "Unresolved conflicts" }
+                return {success: false, conflicts: conflicts, message: "Unresolved conflicts"}
               end
             end
 
@@ -119,7 +117,7 @@ module RubyDB
                   @engine.apply_branch_state(base: target.state_snapshot, changes: merged_changes)
                 rescue => error
                   @stats[:failed_merges] += 1
-                  return { success: false, error: "Unable to apply merged state: #{error.message}" }
+                  return {success: false, error: "Unable to apply merged state: #{error.message}"}
                 end
               end
 
@@ -147,10 +145,9 @@ module RubyDB
               @stats[:failed_merges] += 1
               result
             end
-
           rescue => e
             @stats[:failed_merges] += 1
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -158,11 +155,11 @@ module RubyDB
       def merge_abort
         @lock.synchronize do
           merge = @last_merge
-          return { success: false, error: "No merge to abort" } unless merge
+          return {success: false, error: "No merge to abort"} unless merge
 
           target = @branch_manager.get_branch(merge[:target])
           unless target
-            return { success: false, error: "Target branch '#{merge[:target]}' not found" }
+            return {success: false, error: "Target branch '#{merge[:target]}' not found"}
           end
 
           target.rollback(merge[:merged_count]) if merge[:merged_count].positive?
@@ -175,7 +172,7 @@ module RubyDB
           @merge_history.pop
           @last_merge = nil
 
-          { success: true, target: merge[:target], reverted_changes: merge[:merged_count] }
+          {success: true, target: merge[:target], reverted_changes: merge[:merged_count]}
         end
       end
 
@@ -202,7 +199,7 @@ module RubyDB
         source_changes.filter_map do |change|
           next unless target_keys.include?(change_key(change))
           other = target_changes.find { |candidate| change_key(candidate) == change_key(change) }
-          { key: change_key(change), source: change, target: other } unless other == change
+          {key: change_key(change), source: change, target: other} unless other == change
         end
       end
 
@@ -210,7 +207,7 @@ module RubyDB
         resolver = options[:conflict_resolver]
         raise ArgumentError, "conflict_resolver is required" unless resolver.respond_to?(:call)
         remaining = conflicts.filter_map { |conflict| resolver.call(conflict) ? nil : conflict }
-        { remaining: remaining }
+        {remaining: remaining}
       end
 
       def change_key(change)

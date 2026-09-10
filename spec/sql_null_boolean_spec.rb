@@ -15,9 +15,9 @@ RSpec.describe "SQL NULL and boolean semantics" do
       connection.execute("INSERT INTO flags (id, active, note) VALUES (3, NULL, NULL)")
 
       expect(connection.execute("SELECT id, active FROM flags WHERE active = FALSE ORDER BY id").to_a)
-        .to eq([{ "id" => 2, "active" => false }])
+        .to eq([{"id" => 2, "active" => false}])
       expect(connection.execute("SELECT id FROM flags WHERE note = NULL").to_a).to eq([])
-      expect(connection.execute("SELECT id FROM flags WHERE active IS NULL").to_a).to eq([{ "id" => 3 }])
+      expect(connection.execute("SELECT id FROM flags WHERE active IS NULL").to_a).to eq([{"id" => 3}])
     ensure
       connection&.disconnect
       engine&.close if engine&.open?
@@ -41,8 +41,8 @@ RSpec.describe "SQL NULL and boolean semantics" do
         ORDER BY parents.id
       SQL
       expect(result).to eq([
-        { "parent_id" => 1, "active" => false },
-        { "parent_id" => 2, "active" => nil }
+        {"parent_id" => 1, "active" => false},
+        {"parent_id" => 2, "active" => nil}
       ])
     ensure
       connection&.disconnect

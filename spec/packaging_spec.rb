@@ -39,7 +39,7 @@ RSpec.describe "deployment packaging" do
   it "fails closed when a release tag has no matching changelog or version" do
     script = File.join(root, "scripts/release_check")
     stdout, stderr, status = Open3.capture3(
-      { "GITHUB_REF_NAME" => "v999.999.999" },
+      {"GITHUB_REF_NAME" => "v999.999.999"},
       RbConfig.ruby, script
     )
 
@@ -50,7 +50,7 @@ RSpec.describe "deployment packaging" do
   it "accepts the current tagged version and reviewed changelog entry" do
     script = File.join(root, "scripts/release_check")
     stdout, stderr, status = Open3.capture3(
-      { "GITHUB_REF_NAME" => "v#{RubyDB::VERSION}" },
+      {"GITHUB_REF_NAME" => "v#{RubyDB::VERSION}"},
       RbConfig.ruby, script
     )
 

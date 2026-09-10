@@ -69,8 +69,8 @@ module RubyDB
 
         def like_match?(value, pattern)
           regex_str = Regexp.escape(pattern)
-            .gsub('%', '.*')
-            .gsub('_', '.')
+            .gsub("%", ".*")
+            .gsub("_", ".")
           Regexp.new("^#{regex_str}$", Regexp::IGNORECASE).match?(value)
         end
       end
@@ -221,8 +221,8 @@ module RubyDB
           pat_str = @case_sensitive ? pat.to_s : pat.to_s.downcase
 
           regex_str = Regexp.escape(pat_str)
-            .gsub('%', '.*')
-            .gsub('_', '.')
+            .gsub("%", ".*")
+            .gsub("_", ".")
           Regexp.new("^#{regex_str}$").match?(str)
         end
 

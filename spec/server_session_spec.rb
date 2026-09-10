@@ -36,7 +36,7 @@ RSpec.describe "server session execution" do
       session = RubyDB::Server::Session.new(
         nil,
         engine: engine,
-        authorization: { users: { "reader" => { permissions: [:read] } } }
+        authorization: {users: {"reader" => {permissions: [:read]}}}
       )
       session.authenticate(username: "reader", database: "server")
 

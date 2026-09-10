@@ -37,7 +37,6 @@ module RubyDB
       def read_from_lsn(start_lsn)
         @lock.synchronize do
           records = []
-          found_start = false
 
           @segments.each do |segment|
             if segment.segment_id < start_lsn.segment_id
@@ -107,11 +106,11 @@ module RubyDB
         records = []
         offset = 0
 
-        puts "WAL DEBUG: _read_segment starting for segment #{segment.segment_id}" if ENV['DEBUG_RECOVERY']
-        while true
+        puts "WAL DEBUG: _read_segment starting for segment #{segment.segment_id}" if ENV["DEBUG_RECOVERY"]
+        loop do
           record_data = segment.read_record_at(offset)
           break if record_data.nil? || record_data.empty?
-          puts "WAL DEBUG: read record at offset #{offset}, size=#{record_data.bytesize}" if ENV['DEBUG_RECOVERY']
+          puts "WAL DEBUG: read record at offset #{offset}, size=#{record_data.bytesize}" if ENV["DEBUG_RECOVERY"]
 
           begin
             lsn = LSN.new(segment.segment_id, offset)
@@ -120,16 +119,16 @@ module RubyDB
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
             offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
-            puts "WAL DEBUG: deserialized record #{record.type}" if ENV['DEBUG_RECOVERY']
+            puts "WAL DEBUG: deserialized record #{record.type}" if ENV["DEBUG_RECOVERY"]
           rescue => e
             @stats[:corrupted_records] += 1
-            puts "WAL DEBUG: failed to deserialize at offset #{offset}: #{e.message}" if ENV['DEBUG_RECOVERY']
+            puts "WAL DEBUG: failed to deserialize at offset #{offset}: #{e.message}" if ENV["DEBUG_RECOVERY"]
             break
           end
         end
 
         @stats[:segments_read] += 1
-        puts "WAL DEBUG: finished reading segment #{segment.segment_id}, found #{records.count} records" if ENV['DEBUG_RECOVERY']
+        puts "WAL DEBUG: finished reading segment #{segment.segment_id}, found #{records.count} records" if ENV["DEBUG_RECOVERY"]
         records
       end
 
@@ -137,7 +136,7 @@ module RubyDB
         records = []
         current_offset = offset
 
-        while true
+        loop do
           record_data = segment.read_record_at(current_offset)
           break if record_data.nil? || record_data.empty?
 
@@ -148,7 +147,7 @@ module RubyDB
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
             current_offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
-          rescue => e
+          rescue
             @stats[:corrupted_records] += 1
             break
           end
@@ -172,7 +171,7 @@ module RubyDB
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
             current_offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
-          rescue => e
+          rescue
             @stats[:corrupted_records] += 1
             break
           end
@@ -196,7 +195,7 @@ module RubyDB
             @stats[:records_read] += 1
             @stats[:bytes_read] += record_data.bytesize
             current_offset += Segment::FRAME_HEADER_SIZE + record_data.bytesize
-          rescue => e
+          rescue
             @stats[:corrupted_records] += 1
             break
           end
@@ -240,7 +239,7 @@ module RubyDB
 
         # Find all WAL segment files
         wal_files = Dir.glob(File.join(@wal_dir, "wal_*.log"))
-        puts "WAL DEBUG: found #{wal_files.count} WAL files: #{wal_files.map { |f| File.basename(f) }.inspect}" if ENV['DEBUG_RECOVERY']
+        puts "WAL DEBUG: found #{wal_files.count} WAL files: #{wal_files.map { |f| File.basename(f) }.inspect}" if ENV["DEBUG_RECOVERY"]
         wal_files.sort.each do |file_path|
           # Extract segment ID from filename
           if file_path =~ /wal_(\d+)\.log$/
@@ -249,11 +248,11 @@ module RubyDB
             if segment.exists?
               segment.open
               @segments << segment
-              puts "WAL DEBUG: loaded segment #{segment_id}" if ENV['DEBUG_RECOVERY']
+              puts "WAL DEBUG: loaded segment #{segment_id}" if ENV["DEBUG_RECOVERY"]
             end
           end
         end
-        puts "WAL DEBUG: total segments loaded: #{@segments.count}" if ENV['DEBUG_RECOVERY']
+        puts "WAL DEBUG: total segments loaded: #{@segments.count}" if ENV["DEBUG_RECOVERY"]
       end
     end
   end

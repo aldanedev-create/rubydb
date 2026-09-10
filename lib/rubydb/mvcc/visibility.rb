@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubyDB
   module MVCC
     # Visibility - Determines visibility of versions to transactions

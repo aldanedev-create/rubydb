@@ -63,7 +63,6 @@ module RubyDB
             perform_handshake
 
             true
-
           rescue => e
             @stats[:errors] += 1
             @connected = false
@@ -133,25 +132,25 @@ module RubyDB
       end
 
       def query(sql, params = [])
-        message = Message.new(Message::TYPE_QUERY, { sql: sql, params: params })
+        message = Message.new(Message::TYPE_QUERY, {sql: sql, params: params})
         send_message(message)
         receive_message
       end
 
       def prepare(sql)
-        message = Message.new(Message::TYPE_PREPARE, { sql: sql })
+        message = Message.new(Message::TYPE_PREPARE, {sql: sql})
         send_message(message)
         receive_message
       end
 
       def execute(statement_id, params = [])
-        message = Message.new(Message::TYPE_EXECUTE, { statement_id: statement_id, params: params })
+        message = Message.new(Message::TYPE_EXECUTE, {statement_id: statement_id, params: params})
         send_message(message)
         receive_message
       end
 
       def close_statement(statement_id)
-        message = Message.new(Message::TYPE_CLOSE, { statement_id: statement_id })
+        message = Message.new(Message::TYPE_CLOSE, {statement_id: statement_id})
         send_message(message)
         receive_message
       end

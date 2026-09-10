@@ -28,7 +28,7 @@ module RubyDB
       end
 
       def generate_version
-        "#{@timestamp.strftime('%Y%m%d%H%M%S')}_#{@sequence}"
+        "#{@timestamp.strftime("%Y%m%d%H%M%S")}_#{@sequence}"
       end
 
       def to_s
@@ -55,12 +55,12 @@ module RubyDB
       end
 
       def next
-        MigrationVersion.new("#{@timestamp.strftime('%Y%m%d%H%M%S')}_#{@sequence + 1}")
+        MigrationVersion.new("#{@timestamp.strftime("%Y%m%d%H%M%S")}_#{@sequence + 1}")
       end
 
       def prev
         return nil if @sequence == 0
-        MigrationVersion.new("#{@timestamp.strftime('%Y%m%d%H%M%S')}_#{@sequence - 1}")
+        MigrationVersion.new("#{@timestamp.strftime("%Y%m%d%H%M%S")}_#{@sequence - 1}")
       end
 
       def inspect

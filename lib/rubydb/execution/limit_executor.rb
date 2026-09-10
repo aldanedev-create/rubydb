@@ -36,7 +36,7 @@ module RubyDB
           result_rows = if limit
             rows[offset, limit] || []
           elsif offset > 0
-            rows[offset..-1] || []
+            rows[offset..] || []
           else
             rows
           end
@@ -58,28 +58,26 @@ module RubyDB
 
       def execute_with_count(plan, transaction_id = nil)
         result = execute(plan, transaction_id)
-        
+
         # Also get total count without limit
         if plan.input_plan
           count_plan = plan.input_plan.dup
           count_plan.set_limit(nil)
           count_plan.set_offset(nil)
-          
+
           executor = Executor.new(@engine)
           count_result = executor.execute(count_plan, transaction_id)
           result[:total_available] = count_result[:row_count]
         else
           result[:total_available] = result[:total_rows]
         end
-        
+
         result
       end
 
       private
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

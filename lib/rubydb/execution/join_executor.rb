@@ -141,7 +141,7 @@ module RubyDB
       def full_join(left_rows, right_rows, condition)
         # Left join
         left_result = left_join(left_rows, right_rows, condition)
-        
+
         # Right join (only rows not already matched)
         right_rows.each do |right_row|
           matched = left_result.any? do |row|
@@ -151,7 +151,7 @@ module RubyDB
             left_result << merge_rows(nil, right_row)
           end
         end
-        
+
         left_result
       end
 
@@ -184,12 +184,12 @@ module RubyDB
 
       def evaluate_join_condition(condition, left_row, right_row)
         return true if condition.nil?
-        
+
         # Bind row context
         # Include both original sides and the merged column namespace. The
         # latter lets ordinary column expressions evaluate during joins while
         # preserving explicit _left/_right access for join predicates.
-        context = { "_left" => left_row, "_right" => right_row }
+        context = {"_left" => left_row, "_right" => right_row}
         context.merge!(merge_rows(left_row, right_row))
         condition.evaluate(context)
       end
@@ -205,27 +205,23 @@ module RubyDB
 
       def merge_rows(left_row, right_row)
         result = {}
-        
+
         # Add left row with prefix
-        if left_row
-          left_row.each do |key, value|
-            result["_left_#{key}"] = value
-            result[key] = value unless result.key?(key)
-          end
+        left_row&.each do |key, value|
+          result["_left_#{key}"] = value
+          result[key] = value unless result.key?(key)
         end
-        
+
         # Add right row with prefix
-        if right_row
-          right_row.each do |key, value|
-            result["_right_#{key}"] = value
-            result[key] = value unless result.key?(key)
-          end
+        right_row&.each do |key, value|
+          result["_right_#{key}"] = value
+          result[key] = value unless result.key?(key)
         end
-        
+
         # Store original rows for reference
         result["_left_row"] = left_row
         result["_right_row"] = right_row
-        
+
         result
       end
 
@@ -241,9 +237,7 @@ module RubyDB
         result
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

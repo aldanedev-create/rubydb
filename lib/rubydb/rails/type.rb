@@ -73,29 +73,29 @@ module RubyDB
       def self.native_database_types
         {
           primary_key: "INTEGER PRIMARY KEY AUTOINCREMENT",
-          string: { name: "VARCHAR", limit: 255 },
-          text: { name: "TEXT" },
-          integer: { name: "INTEGER" },
-          bigint: { name: "BIGINT" },
-          float: { name: "FLOAT" },
-          decimal: { name: "DECIMAL", precision: 10, scale: 2 },
-          datetime: { name: "TIMESTAMP" },
-          timestamp: { name: "TIMESTAMP" },
-          time: { name: "TIME" },
-          date: { name: "DATE" },
-          binary: { name: "BLOB" },
-          boolean: { name: "BOOLEAN" },
-          json: { name: "JSON" },
-          uuid: { name: "UUID" }
+          string: {name: "VARCHAR", limit: 255},
+          text: {name: "TEXT"},
+          integer: {name: "INTEGER"},
+          bigint: {name: "BIGINT"},
+          float: {name: "FLOAT"},
+          decimal: {name: "DECIMAL", precision: 10, scale: 2},
+          datetime: {name: "TIMESTAMP"},
+          timestamp: {name: "TIMESTAMP"},
+          time: {name: "TIME"},
+          date: {name: "DATE"},
+          binary: {name: "BLOB"},
+          boolean: {name: "BOOLEAN"},
+          json: {name: "JSON"},
+          uuid: {name: "UUID"}
         }
       end
 
       def self.serialize(value, type)
         case type.to_sym
         when :integer, :bigint, :smallint
-          value.to_i if value
+          value&.to_i
         when :float, :decimal
-          value.to_f if value
+          value&.to_f
         when :boolean
           !!value
         when :json

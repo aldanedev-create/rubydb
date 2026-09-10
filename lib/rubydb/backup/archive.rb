@@ -43,11 +43,11 @@ module RubyDB
           start_time = Time.now
 
           unless Dir.exist?(backup_path)
-            return { success: false, error: "Backup path does not exist" }
+            return {success: false, error: "Backup path does not exist"}
           end
 
           backup_name = File.basename(backup_path)
-          archive_name = "archive_#{backup_name}_#{Time.now.strftime('%Y%m%d_%H%M%S')}.tar"
+          archive_name = "archive_#{backup_name}_#{Time.now.strftime("%Y%m%d_%H%M%S")}.tar"
           archive_path = File.join(@archive_dir, archive_name)
 
           begin
@@ -99,11 +99,10 @@ module RubyDB
               metadata: metadata,
               elapsed_ms: (Time.now - start_time) * 1000
             }
-
           rescue => e
             @stats[:errors] += 1
             File.delete(archive_path) if File.exist?(archive_path)
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           end
         end
       end
@@ -114,11 +113,11 @@ module RubyDB
           temporary_paths = []
 
           unless File.exist?(archive_path)
-            return { success: false, error: "Archive file does not exist" }
+            return {success: false, error: "Archive file does not exist"}
           end
 
           # Determine destination
-          destination ||= File.join(@archive_dir, "restored_#{Time.now.strftime('%Y%m%d_%H%M%S')}")
+          destination ||= File.join(@archive_dir, "restored_#{Time.now.strftime("%Y%m%d_%H%M%S")}")
           FileUtils.mkdir_p(destination)
 
           begin
@@ -148,10 +147,9 @@ module RubyDB
               destination: destination,
               elapsed_ms: (Time.now - start_time) * 1000
             }
-
           rescue => e
             @stats[:errors] += 1
-            { success: false, error: e.message }
+            {success: false, error: e.message}
           ensure
             temporary_paths.each { |path| File.delete(path) if File.file?(path) }
           end
@@ -180,10 +178,10 @@ module RubyDB
       def delete_archive(archive_name)
         @lock.synchronize do
           archive_path = archive_path_for_name(archive_name)
-          return { success: false, error: "Invalid archive name" } unless archive_path
+          return {success: false, error: "Invalid archive name"} unless archive_path
 
           unless File.exist?(archive_path)
-            return { success: false, error: "Archive not found" }
+            return {success: false, error: "Archive not found"}
           end
 
           File.delete(archive_path)
@@ -192,7 +190,7 @@ module RubyDB
 
           @stats[:archives_deleted] += 1
 
-          { success: true }
+          {success: true}
         end
       end
 
@@ -250,13 +248,13 @@ module RubyDB
             path.start_with?("#{root}#{File::SEPARATOR}")
           end
         end
-        raise "Archive contains unsafe paths: #{invalid_entries.join(', ')}" if invalid_entries.any?
+        raise "Archive contains unsafe paths: #{invalid_entries.join(", ")}" if invalid_entries.any?
       end
 
       def compress_file(file_path)
         Zlib::GzipWriter.open("#{file_path}.gz") do |gz|
           File.open(file_path, "rb") do |file|
-            while chunk = file.read(10 * 1024 * 1024)
+            while (chunk = file.read(10 * 1024 * 1024))
               gz.write(chunk)
             end
           end
@@ -267,7 +265,7 @@ module RubyDB
       def decompress_file(file_path, destination)
         Zlib::GzipReader.open(file_path) do |gz|
           File.open(destination, "wb") do |file|
-            while chunk = gz.read(10 * 1024 * 1024)
+            while (chunk = gz.read(10 * 1024 * 1024))
               file.write(chunk)
             end
           end
@@ -326,7 +324,7 @@ module RubyDB
         return "0 B" if bytes == 0
         units = ["B", "KB", "MB", "GB", "TB"]
         exp = (Math.log(bytes) / Math.log(1024)).floor
-        size = bytes / (1024.0 ** exp)
+        size = bytes / (1024.0**exp)
         "#{size.round(2)} #{units[exp]}"
       end
     end

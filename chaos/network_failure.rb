@@ -41,7 +41,7 @@ module RubyDB
         @lock.synchronize do
           @stats[:failures] += 1
           @stats[:drop_packets] += 1
-          @stats[:last_failure] = { type: :drop_packets, time: Time.now, percentage: percentage }
+          @stats[:last_failure] = {type: :drop_packets, time: Time.now, percentage: percentage}
         end
       end
 
@@ -50,7 +50,7 @@ module RubyDB
           delay_ms ||= @latency_ms
           @stats[:failures] += 1
           @stats[:delayed_packets] += 1
-          @stats[:last_failure] = { type: :delay_packets, time: Time.now, delay_ms: delay_ms }
+          @stats[:last_failure] = {type: :delay_packets, time: Time.now, delay_ms: delay_ms}
 
           if @simulate_latency
             sleep(delay_ms / 1000.0)
@@ -58,11 +58,11 @@ module RubyDB
         end
       end
 
-      def corrupt_packet()
+      def corrupt_packet
         @lock.synchronize do
           @stats[:failures] += 1
           @stats[:corrupted_packets] += 1
-          @stats[:last_failure] = { type: :corrupt_packet, time: Time.now }
+          @stats[:last_failure] = {type: :corrupt_packet, time: Time.now}
         end
       end
 
@@ -70,7 +70,7 @@ module RubyDB
         @lock.synchronize do
           @stats[:failures] += 1
           @stats[:disconnects] += 1
-          @stats[:last_failure] = { type: :disconnect, time: Time.now }
+          @stats[:last_failure] = {type: :disconnect, time: Time.now}
 
           if connection
             connection.close if connection.respond_to?(:close)
@@ -84,9 +84,9 @@ module RubyDB
       def reconnect(connection = nil)
         @lock.synchronize do
           @stats[:reconnects] += 1
-          @stats[:last_failure] = { type: :reconnect, time: Time.now }
+          @stats[:last_failure] = {type: :reconnect, time: Time.now}
 
-          if connection && connection.respond_to?(:reconnect)
+          if connection&.respond_to?(:reconnect)
             connection.reconnect
             @stats[:active_connections] << connection
           elsif @engine.respond_to?(:reconnect_all)

@@ -50,9 +50,7 @@ module RubyDB
           statement = normalize_expressions(statement)
 
           # Remove redundant conditions
-          statement = simplify_conditions(statement)
-
-          statement
+          simplify_conditions(statement)
         end
 
         private
@@ -91,7 +89,6 @@ module RubyDB
             end
             node.left = normalize_expressions(node.left)
             node.right = normalize_expressions(node.right)
-            node
 
           when AST::UnaryOp
             # Simplify constant unary expressions
@@ -99,22 +96,18 @@ module RubyDB
               return evaluate_constant_unary(node)
             end
             node.operand = normalize_expressions(node.operand)
-            node
 
           when AST::Between
             node.expression = normalize_expressions(node.expression)
             node.low = normalize_expressions(node.low)
             node.high = normalize_expressions(node.high)
-            node
 
           when AST::In
             node.expression = normalize_expressions(node.expression)
             node.values = node.values.map { |v| normalize_expressions(v) }
-            node
 
           when AST::IsNull
             node.expression = normalize_expressions(node.expression)
-            node
 
           when AST::Select
             if node.where
@@ -129,11 +122,9 @@ module RubyDB
             node.order_by.each do |order_item|
               order_item.expression = normalize_expressions(order_item.expression)
             end
-            node
 
           when AST::Insert
             node.values = node.values.map { |v| normalize_expressions(v) }
-            node
 
           when AST::Update
             node.assignments.each do |assignment|
@@ -142,17 +133,14 @@ module RubyDB
             if node.where
               node.where = normalize_expressions(node.where)
             end
-            node
 
           when AST::Delete
             if node.where
               node.where = normalize_expressions(node.where)
             end
-            node
 
-          else
-            node
           end
+          node
         end
 
         def evaluate_constant_expression(expr)
@@ -190,7 +178,7 @@ module RubyDB
             return AST::NullLiteral.new
           end
 
-          token_type = result.is_a?(Integer) ? Token::Type::NUMBER : Token::Type::NUMBER
+          token_type = Token::Type::NUMBER
           AST::Literal.new(result, token_type)
         end
 
@@ -212,7 +200,7 @@ module RubyDB
             return AST::NullLiteral.new
           end
 
-          token_type = result.is_a?(Integer) ? Token::Type::NUMBER : Token::Type::NUMBER
+          token_type = Token::Type::NUMBER
           AST::Literal.new(result, token_type)
         end
 
@@ -223,23 +211,19 @@ module RubyDB
             if node.where
               node.where = simplify_condition(node.where)
             end
-            node
 
           when AST::Update
             if node.where
               node.where = simplify_condition(node.where)
             end
-            node
 
           when AST::Delete
             if node.where
               node.where = simplify_condition(node.where)
             end
-            node
 
-          else
-            node
           end
+          node
         end
 
         def simplify_condition(condition)
@@ -290,11 +274,8 @@ module RubyDB
               end
             end
 
-            condition
-
-          else
-            condition
           end
+          condition
         end
       end
     end

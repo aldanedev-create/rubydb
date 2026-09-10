@@ -17,7 +17,7 @@ module RubyDB
 
       def deserialize(bytes)
         return nil if bytes.nil? || bytes.empty?
-        bytes.unpack("E").first
+        bytes.unpack1("E")
       end
 
       def validate(value)

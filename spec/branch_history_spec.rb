@@ -5,7 +5,7 @@ require "spec_helper"
 RSpec.describe RubyDB::Branching::Branch do
   it "persists committed logical changes in its serialized state" do
     branch = described_class.new("feature")
-    change = { table: "users", row_id: 1, values: { name: "Ada" } }
+    change = {table: "users", row_id: 1, values: {name: "Ada"}}
     branch.commit(change)
 
     restored = described_class.new("feature", id: branch.id)

@@ -38,12 +38,10 @@ module RubyDB
           # Process each transaction
           count = 0
           grouped.each do |transaction_id, transaction_records|
-            begin
-              count += redo_transaction(transaction_records)
-            rescue => e
-              @stats[:redo_failures] += 1
-              raise if @config[:stop_on_error]
-            end
+            count += redo_transaction(transaction_records)
+          rescue
+            @stats[:redo_failures] += 1
+            raise if @config[:stop_on_error]
           end
 
           elapsed_ms = (Time.now - start_time) * 1000
@@ -166,10 +164,10 @@ module RubyDB
         case data[:operation]
         when :add_column
           table = @engine.find_table(data[:table_name])
-          table.add_column(data[:column_name], data[:column_type]) if table
+          table&.add_column(data[:column_name], data[:column_type])
         when :drop_column
           table = @engine.find_table(data[:table_name])
-          table.drop_column(data[:column_name]) if table
+          table&.drop_column(data[:column_name])
         when :rename_table
           @engine.rename_table(data[:old_name], data[:new_name])
         end
@@ -195,7 +193,7 @@ module RubyDB
         else
           false
         end
-      rescue StandardError
+      rescue
         false
       end
 
@@ -203,7 +201,7 @@ module RubyDB
         case data[:operation]
         when :add_column
           table = @engine.find_table(data[:table_name])
-          table && table.columns.any? { |column| column.name.to_s == data[:column_name].to_s }
+          table&.columns&.any? { |column| column.name.to_s == data[:column_name].to_s }
         when :drop_column
           table = @engine.find_table(data[:table_name])
           table && !table.columns.any? { |column| column.name.to_s == data[:column_name].to_s }

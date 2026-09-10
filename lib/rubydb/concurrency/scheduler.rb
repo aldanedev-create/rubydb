@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-require "set"
 require "time"
 
 module RubyDB
@@ -158,7 +156,7 @@ module RubyDB
       end
 
       def worker_loop
-        while !@shutdown
+        until @shutdown
           task_entry = nil
 
           @lock.synchronize do
@@ -176,7 +174,7 @@ module RubyDB
       end
 
       def schedule_loop
-        while !@shutdown
+        until @shutdown
           sleep(1) if @thread_pool.size >= @max_threads
 
           @lock.synchronize do

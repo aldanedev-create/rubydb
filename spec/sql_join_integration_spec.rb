@@ -27,10 +27,10 @@ RSpec.describe "SQL joins" do
         ORDER BY accounts.id
       SQL
 
-      expect(inner.to_a).to eq([{ "project_name" => "RubyDB", "account_email" => "ada@example.test" }])
+      expect(inner.to_a).to eq([{"project_name" => "RubyDB", "account_email" => "ada@example.test"}])
       expect(left.to_a).to eq([
-        { "id" => 1, "email" => "ada@example.test", "project_name" => "RubyDB" },
-        { "id" => 2, "email" => "grace@example.test", "project_name" => nil }
+        {"id" => 1, "email" => "ada@example.test", "project_name" => "RubyDB"},
+        {"id" => 2, "email" => "grace@example.test", "project_name" => nil}
       ])
 
       right = connection.execute(<<~SQL).to_a
@@ -45,13 +45,13 @@ RSpec.describe "SQL joins" do
       SQL
 
       expect(right).to eq([
-        { "account_email" => "ada@example.test", "project_name" => "RubyDB" },
-        { "account_email" => "grace@example.test", "project_name" => nil }
+        {"account_email" => "ada@example.test", "project_name" => "RubyDB"},
+        {"account_email" => "grace@example.test", "project_name" => nil}
       ])
       expect(full).to contain_exactly(
-        { "account_email" => "ada@example.test", "project_name" => "RubyDB" },
-        { "account_email" => "grace@example.test", "project_name" => nil },
-        { "account_email" => nil, "project_name" => "Unassigned" }
+        {"account_email" => "ada@example.test", "project_name" => "RubyDB"},
+        {"account_email" => "grace@example.test", "project_name" => nil},
+        {"account_email" => nil, "project_name" => "Unassigned"}
       )
 
       cross = connection.execute("SELECT accounts.id AS account_id, projects.id AS project_id FROM accounts CROSS JOIN projects").to_a

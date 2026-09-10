@@ -9,8 +9,11 @@ module RubyDB
           super(location: location)
           @name, @timing, @event, @table_name, @function_name = name, timing, event, table_name, function_name
         end
+
         def accept(visitor) = visitor.visit_create_trigger(self)
+
         def clone = self.class.new(@name, @timing, @event, @table_name, @function_name, location: @location)
+
         def to_sql = "CREATE TRIGGER #{@name} #{@timing.to_s.upcase} #{@event.to_s.upcase} ON #{@table_name} EXECUTE FUNCTION #{@function_name}()"
       end
 
@@ -20,8 +23,11 @@ module RubyDB
           super(location: location)
           @name, @if_exists = name, if_exists
         end
+
         def accept(visitor) = visitor.visit_drop_trigger(self)
+
         def clone = self.class.new(@name, if_exists: @if_exists, location: @location)
+
         def to_sql = "DROP TRIGGER #{@name}"
       end
     end

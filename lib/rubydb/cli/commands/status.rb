@@ -39,8 +39,8 @@ module RubyDB
             storage_size: File.exist?(db_path) ? File.size(db_path) : 0,
             memory_usage: get_memory_usage,
             wal_enabled: true,
-            replication: { role: "unknown", status: "not_configured", lag_ms: nil },
-            branch: { current: "unknown", total: nil }
+            replication: {role: "unknown", status: "not_configured", lag_ms: nil},
+            branch: {current: "unknown", total: nil}
           }
 
           engine = nil
@@ -48,7 +48,11 @@ module RubyDB
             engine = RubyDB::Storage::Engine.new(db_path, {})
             status_data[:status] = "running"
             status_data[:tables] = engine.list_tables.size
-            status_data[:connections] = engine.connection_count rescue 0
+            status_data[:connections] = begin
+              engine.connection_count
+            rescue
+              0
+            end
             status_data[:wal_enabled] = !engine.wal.nil?
           rescue => error
             status_data[:error] = error.message

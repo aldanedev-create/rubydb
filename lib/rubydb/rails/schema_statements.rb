@@ -152,10 +152,10 @@ module RubyDB
         return unless options.key?(:default)
 
         sql = "ALTER TABLE #{quote_table_name(table_name)} ALTER COLUMN #{quote_column_name(column_name)}"
-        if options[:default].nil?
-          sql << " DROP DEFAULT"
+        sql << if options[:default].nil?
+          " DROP DEFAULT"
         else
-          sql << " SET DEFAULT #{quote_default(options[:default])}"
+          " SET DEFAULT #{quote_default(options[:default])}"
         end
         execute(sql)
       end
@@ -168,12 +168,12 @@ module RubyDB
       end
 
       def add_index(table_name, column_name, options = {})
-        index_name = options[:name] || "idx_#{table_name}_#{Array(column_name).join('_')}"
+        index_name = options[:name] || "idx_#{table_name}_#{Array(column_name).join("_")}"
         sql = +"CREATE"
         sql << " UNIQUE" if options[:unique]
         sql << " INDEX #{quote_column_name(index_name)}"
         sql << " ON #{quote_table_name(table_name)}"
-        sql << " (#{Array(column_name).map { |c| quote_column_name(c) }.join(', ')})"
+        sql << " (#{Array(column_name).map { |c| quote_column_name(c) }.join(", ")})"
         execute(sql)
       end
 
@@ -181,7 +181,7 @@ module RubyDB
         index_name = options[:name]
         if index_name.nil?
           column_name = options[:column] || options[:columns]
-          index_name = "idx_#{table_name}_#{Array(column_name).join('_')}"
+          index_name = "idx_#{table_name}_#{Array(column_name).join("_")}"
         end
 
         sql = "DROP INDEX #{quote_column_name(index_name)}"
@@ -193,7 +193,7 @@ module RubyDB
         fk_name = options[:name] || "fk_#{from_table}_to_#{to_table}"
         sql = "ALTER TABLE #{quote_table_name(from_table)}"
         sql << " ADD CONSTRAINT #{quote_column_name(fk_name)}"
-        column = options[:column] || "#{to_table.to_s.sub(/s\z/, '')}_id"
+        column = options[:column] || "#{to_table.to_s.sub(/s\z/, "")}_id"
         sql << " FOREIGN KEY (#{quote_column_name(column)})"
         sql << " REFERENCES #{quote_table_name(to_table)}"
         sql << " (#{quote_column_name(options[:primary_key] || :id)})"
@@ -234,10 +234,10 @@ module RubyDB
       def change_column_default(table_name, column_name, default)
         sql = "ALTER TABLE #{quote_table_name(table_name)}"
         sql << " ALTER COLUMN #{quote_column_name(column_name)}"
-        if default.nil?
-          sql << " DROP DEFAULT"
+        sql << if default.nil?
+          " DROP DEFAULT"
         else
-          sql << " SET DEFAULT #{quote(default)}"
+          " SET DEFAULT #{quote(default)}"
         end
         execute(sql)
       end
@@ -324,11 +324,11 @@ module RubyDB
       end
 
       def quote_table_name(name)
-        "\"#{name.to_s}\""
+        "\"#{name}\""
       end
 
       def quote_column_name(name)
-        "\"#{name.to_s}\""
+        "\"#{name}\""
       end
 
       def quote_default(value)

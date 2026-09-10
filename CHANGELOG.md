@@ -23,6 +23,22 @@ All notable changes to RubyDB are documented here. Versions follow
   vacuum, maintenance, and release workflows.
 - Clarified the tested common SQLite-style profile and production limits.
 
+## 0.1.5 - 2026-09-10
+
+- Applied network query and prepared-statement parameters through the server
+  protocol before SQL parsing, using shared safe literal binding rules.
+- Added the initial Python DB-API adapter and live protocol validation under
+  `adapters/python`.
+- Added a ten-lesson guided journey with copy-and-paste development,
+  PostgreSQL, RubyDB server, Rails, microservice, recovery, security, and
+  release examples.
+- Expanded the lesson journey with a direct RubyDB-to-production deployment
+  path covering persistent storage, TLS, secrets, migrations, smoke tests,
+  backup/restore, canary traffic, and rollback evidence.
+- Added the initial `rubydb-python` DB-API 2.0 adapter under
+  `adapters/python`, including TLS URLs, prepared statements, transactions,
+  pooling, timeouts, cancellation, tests, and PyPI build instructions.
+
 ## 0.1.4 - 2026-09-09
 
 - Returned logical generated primary-key values to ActiveRecord separately

@@ -64,7 +64,7 @@ module RubyDB
             start_health_check
 
             true
-          rescue => e
+          rescue
             change_state(STATE_FAILED)
             @stats[:failure_count] += 1
             raise
@@ -81,18 +81,17 @@ module RubyDB
           begin
             if graceful
               # Graceful shutdown
-              @server.stop
             else
               # Force shutdown
-              @server.stop
             end
+            @server.stop
 
             change_state(STATE_STOPPED)
             @stats[:stop_count] += 1
             @running = false
 
             true
-          rescue => e
+          rescue
             change_state(STATE_FAILED)
             @stats[:failure_count] += 1
             raise
@@ -109,7 +108,7 @@ module RubyDB
             stop(graceful)
             start
             true
-          rescue => e
+          rescue
             change_state(STATE_FAILED)
             @stats[:failure_count] += 1
             false
@@ -138,7 +137,7 @@ module RubyDB
             end
 
             true
-          rescue => e
+          rescue
             @stats[:health_check_failures] += 1
             false
           end

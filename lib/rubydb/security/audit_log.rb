@@ -98,8 +98,7 @@ module RubyDB
             @stats[:events_buffered] = 0
             @buffer.clear
             @stats[:buffer_size] = 0
-
-          rescue => e
+          rescue
             @stats[:errors] += 1
           end
         end
@@ -114,23 +113,20 @@ module RubyDB
 
           File.open(@log_path, "r") do |file|
             file.each_line do |line|
-              begin
-                entry = JSON.parse(line, symbolize_names: true)
+              entry = JSON.parse(line, symbolize_names: true)
 
-                # Apply filters
-                matched = true
-                conditions.each do |key, value|
-                  if entry[key] != value
-                    matched = false
-                    break
-                  end
+              # Apply filters
+              matched = true
+              conditions.each do |key, value|
+                if entry[key] != value
+                  matched = false
+                  break
                 end
-
-                entries << entry if matched
-
-              rescue JSON::ParserError
-                # Skip malformed lines
               end
+
+              entries << entry if matched
+            rescue JSON::ParserError
+              # Skip malformed lines
             end
           end
 
@@ -139,11 +135,11 @@ module RubyDB
       end
 
       def query_by_user(username, limit = 100)
-        query({ user: username }).last(limit)
+        query({user: username}).last(limit)
       end
 
       def query_by_event(event_type, limit = 100)
-        query({ event: event_type }).last(limit)
+        query({event: event_type}).last(limit)
       end
 
       def query_by_time(start_time, end_time, limit = 100)
@@ -202,7 +198,7 @@ module RubyDB
             sleep(5)
             begin
               flush
-            rescue => e
+            rescue
               # Log error but continue
             end
           end

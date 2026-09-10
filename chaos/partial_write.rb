@@ -156,7 +156,7 @@ module RubyDB
             page.write_header
             @engine.write_page(page)
             @stats[:recovered] += 1
-          rescue => e
+          rescue
             @stats[:failed_recoveries] += 1
           end
         end

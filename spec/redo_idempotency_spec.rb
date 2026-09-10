@@ -2,17 +2,17 @@
 
 require "spec_helper"
 
-RSpec.describe RubyDB::Recovery::Redo do
-  EngineDouble = Struct.new(:rows, :tables) do
-    def select_row(table, row_id, _columns)
-      rows[[table, row_id]]
-    end
-
-    def table_exists?(table)
-      tables.include?(table)
-    end
+EngineDouble = Struct.new(:rows, :tables) do
+  def select_row(table, row_id, _columns)
+    rows[[table, row_id]]
   end
 
+  def table_exists?(table)
+    tables.include?(table)
+  end
+end
+
+RSpec.describe RubyDB::Recovery::Redo do
   def redo_checker(engine)
     described_class.new(engine, nil)
   end
@@ -22,11 +22,11 @@ RSpec.describe RubyDB::Recovery::Redo do
   end
 
   it "detects an already-applied insert, update, and delete" do
-    engine = EngineDouble.new({ ["users", 1] => { id: 1, name: "Ada" } }, ["users"])
+    engine = EngineDouble.new({["users", 1] => {id: 1, name: "Ada"}}, ["users"])
     checker = redo_checker(engine)
 
     expect(checker.send(:already_applied?, record(:insert, table: "users", row_id: 1))).to be(true)
-    expect(checker.send(:already_applied?, record(:update, table: "users", row_id: 1, values: { name: "Ada" }))).to be(true)
+    expect(checker.send(:already_applied?, record(:update, table: "users", row_id: 1, values: {name: "Ada"}))).to be(true)
     expect(checker.send(:already_applied?, record(:delete, table: "users", row_id: 2))).to be(true)
   end
 

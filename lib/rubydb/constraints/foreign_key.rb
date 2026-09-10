@@ -59,7 +59,7 @@ module RubyDB
 
       def validate_batch(rows)
         @reference_cache.clear
-        results = { valid: [], invalid: [] }
+        results = {valid: [], invalid: []}
 
         rows.each do |row|
           if validate(row)
@@ -95,7 +95,7 @@ module RubyDB
         # This API is used for a referenced-row delete check. The lookup is
         # intentionally authoritative: inability to query the referencing
         # table fails closed instead of allowing an orphaned row.
-        conditions = { @reference_columns.first => row_id }
+        conditions = {@reference_columns.first => row_id}
         !lookup.call(@reference_table, conditions)
       end
 
@@ -123,7 +123,7 @@ module RubyDB
       end
 
       def inspect
-        "#<ForeignKeyConstraint name=#{@name} columns=#{@columns.join(', ')} references=#{@reference_table}>"
+        "#<ForeignKeyConstraint name=#{@name} columns=#{@columns.join(", ")} references=#{@reference_table}>"
       end
     end
   end

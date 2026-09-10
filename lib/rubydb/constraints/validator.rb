@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require "monitor"
 
 module RubyDB
@@ -91,7 +90,7 @@ module RubyDB
 
           constraints.each do |constraint|
             next unless constraint.enabled?
-            next if options[:skip] && options[:skip].include?(constraint.type)
+            next if options[:skip]&.include?(constraint.type)
 
             @stats[:constraint_violations] += 1
             result[:constraints_checked] << constraint.name
@@ -169,7 +168,7 @@ module RubyDB
           constraints_by_type = {}
           constraints.each do |c|
             next unless c.enabled?
-            next if options[:skip] && options[:skip].include?(c.type)
+            next if options[:skip]&.include?(c.type)
 
             constraints_by_type[c.type] ||= []
             constraints_by_type[c.type] << c
@@ -203,7 +202,7 @@ module RubyDB
             else
               results[:invalid] << row
               results[:summary][:invalid] += 1
-              results[:errors] << { row: row, errors: row_errors }
+              results[:errors] << {row: row, errors: row_errors}
               results[:summary][:constraint_violations] += row_errors.size
             end
           end

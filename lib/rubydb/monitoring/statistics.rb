@@ -40,7 +40,7 @@ module RubyDB
       def variance(values)
         return 0 if values.size < 2
         m = mean(values)
-        values.sum { |v| (v - m) ** 2 } / (values.size - 1).to_f
+        values.sum { |v| (v - m)**2 } / (values.size - 1).to_f
       end
 
       def standard_deviation(values)
@@ -157,14 +157,12 @@ module RubyDB
           p95: percentile(values, 95),
           p99: percentile(values, 99)
         }
-      rescue => e
+      rescue
         @stats[:errors] += 1
         {}
       end
 
-      def stats
-        @stats
-      end
+      attr_reader :stats
     end
   end
 end

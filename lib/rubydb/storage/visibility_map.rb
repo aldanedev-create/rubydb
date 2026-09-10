@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "json"
-require "set"
 require "fileutils"
 require "time"
 
@@ -56,11 +55,11 @@ module RubyDB
         @version_history = Hash.new { |hash, row_id| hash[row_id] = {} }
         @next_version_id = 1
         @is_loaded = false
-        
+
         # Create directory for visibility data
         @data_dir = config[:data_dir] || "."
         FileUtils.mkdir_p(@data_dir) unless Dir.exist?(@data_dir)
-        
+
         load_visibility
         start_vacuum_thread if config[:auto_vacuum] != false
       end
@@ -69,18 +68,18 @@ module RubyDB
       def mark_visible(row_id, transaction_id, commit_id = nil)
         @lock.synchronize do
           @stats[:visible_checks] += 1
-          
+
           version_id = @next_version_id
           @next_version_id += 1
-          
+
           existing = @visibility_info[row_id]
           prev_version = existing ? existing[:version] : 0
-          prev_chain = existing ? @row_version_chains[row_id] : nil
-          
+          existing ? @row_version_chains[row_id] : nil
+
           @visibility_info[row_id] = {
             state: VISIBLE,
             visible_to: transaction_id,
-            commit_id: commit_id || (transaction_id.to_i == 0 ? 0 : nil),
+            commit_id: commit_id || ((transaction_id.to_i == 0) ? 0 : nil),
             created_at: Time.now,
             last_modified: Time.now,
             version: version_id,
@@ -89,16 +88,16 @@ module RubyDB
             deleted: false
           }
           remember_version(row_id, @visibility_info[row_id])
-          
+
           # Track version chain
           @row_version_chains[row_id] ||= []
           @row_version_chains[row_id] << version_id
-          
+
           if @row_version_chains[row_id].size > 100
             # Trim old version chains to prevent unbounded growth
             @row_version_chains[row_id] = @row_version_chains[row_id].last(50)
           end
-          
+
           true
         end
       end
@@ -107,17 +106,17 @@ module RubyDB
       def mark_hidden(row_id, transaction_id, commit_id = nil)
         @lock.synchronize do
           @stats[:hidden_checks] += 1
-          
+
           version_id = @next_version_id
           @next_version_id += 1
-          
+
           existing = @visibility_info[row_id]
           prev_version = existing ? existing[:version] : 0
-          
+
           @visibility_info[row_id] = {
             state: HIDDEN,
             hidden_from: transaction_id,
-            commit_id: commit_id || (transaction_id.to_i == 0 ? 0 : nil),
+            commit_id: commit_id || ((transaction_id.to_i == 0) ? 0 : nil),
             created_at: Time.now,
             last_modified: Time.now,
             version: version_id,
@@ -126,10 +125,10 @@ module RubyDB
             deleted: false
           }
           remember_version(row_id, @visibility_info[row_id])
-          
+
           @row_version_chains[row_id] ||= []
           @row_version_chains[row_id] << version_id
-          
+
           true
         end
       end
@@ -139,14 +138,14 @@ module RubyDB
         @lock.synchronize do
           version_id = @next_version_id
           @next_version_id += 1
-          
+
           existing = @visibility_info[row_id]
           prev_version = existing ? existing[:version] : 0
-          
+
           @visibility_info[row_id] = {
             state: DELETED,
             deleted_by: transaction_id,
-            commit_id: commit_id || (transaction_id.to_i == 0 ? 0 : nil),
+            commit_id: commit_id || ((transaction_id.to_i == 0) ? 0 : nil),
             created_at: Time.now,
             last_modified: Time.now,
             version: version_id,
@@ -155,10 +154,10 @@ module RubyDB
             deleted: true
           }
           remember_version(row_id, @visibility_info[row_id])
-          
+
           @row_version_chains[row_id] ||= []
           @row_version_chains[row_id] << version_id
-          
+
           true
         end
       end
@@ -167,16 +166,16 @@ module RubyDB
       def is_visible?(row_id, transaction_id, snapshot_id = nil)
         @lock.synchronize do
           @stats[:visible_checks] += 1
-          
+
           info = @visibility_info[row_id]
-          
+
           # Rows created before visibility tracking was introduced remain
           # visible; newly written rows always receive visibility metadata.
           return true if info.nil?
-          
+
           # Check if row is deleted
           return false if info[:state] == DELETED && info[:deleted_by] != transaction_id
-          
+
           # Check if there's a snapshot for this transaction
           if snapshot_id && @snapshot_cache.key?(snapshot_id)
             @stats[:snapshot_cache_hits] += 1
@@ -184,7 +183,7 @@ module RubyDB
             update_lru(snapshot_id)
             return snapshot_visibility_check(info, snapshot, transaction_id)
           end
-          
+
           # Check state-based visibility
           case info[:state]
           when VISIBLE, COMMITTED
@@ -197,16 +196,16 @@ module RubyDB
               if info[:visible_to] == transaction_id
                 return true
               end
-              
+
               if info[:commit_id]
                 return true if info[:commit_id].to_i == 0
                 return true if @committed_transactions.include?(info[:commit_id])
               end
-              
+
               return false
             end
             true
-            
+
           when HIDDEN
             # Row is hidden from this transaction if:
             # 1. hidden_from matches transaction_id (same transaction hid it)
@@ -214,18 +213,18 @@ module RubyDB
             # 3. Or transaction is the one that hid it
             if info[:hidden_from]
               return false if info[:hidden_from] == transaction_id
-              
+
               if info[:commit_id] && info[:commit_id] > transaction_id
                 return false
               end
             end
             true
-            
+
           when DELETED
             # Deleted rows are not visible to anyone except the transaction that deleted them
             return info[:deleted_by] == transaction_id if info[:deleted_by]
             false
-            
+
           else
             true
           end
@@ -237,34 +236,34 @@ module RubyDB
         snapshot_start = snapshot[:start_time]
         snapshot_active = snapshot[:active_transactions]
         snapshot_committed = snapshot[:committed_transactions] || []
-        
+
         # If row was created after snapshot, it's not visible
         if info[:created_at] > snapshot_start
           return false
         end
-        
+
         # If row was modified after snapshot, check if it's visible
         if info[:last_modified] > snapshot_start
           # Check if the modifying transaction is in the snapshot's active list
           if info[:commit_id]
             # If commit_id is in active transactions when snapshot was taken, it's not visible
             return false if snapshot_active.include?(info[:commit_id])
-            
+
             # If commit_id was committed after snapshot, it's not visible
             return false if snapshot_committed.include?(info[:commit_id])
-            
+
             # If commit_id is the current transaction, it might be visible
             return true if info[:commit_id] == transaction_id
           end
-          
+
           # Check if this is the current transaction's own changes
           if info[:visible_to] == transaction_id || info[:hidden_from] == transaction_id
             return true
           end
-          
+
           return false
         end
-        
+
         # Row was created before snapshot and not modified after
         true
       end
@@ -273,9 +272,9 @@ module RubyDB
       def create_snapshot(transaction_id)
         @lock.synchronize do
           @stats[:snapshot_creations] += 1
-          
+
           snapshot_id = "snapshot_#{transaction_id}_#{Time.now.to_i}_#{@stats[:snapshot_creations]}"
-          
+
           snapshot = {
             id: snapshot_id,
             transaction_id: transaction_id,
@@ -286,18 +285,18 @@ module RubyDB
             created_at: Time.now,
             last_access: Time.now
           }
-          
+
           # Store snapshot with LRU management
           if @snapshot_cache.size >= @max_snapshot_cache_size
             evict_oldest_snapshot
           end
-          
+
           @snapshot_cache[snapshot_id] = snapshot
           @snapshot_cache_lru.unshift(snapshot_id)
-          
+
           # Clean old snapshots
           clean_old_snapshots
-          
+
           snapshot_id
         end
       end
@@ -321,11 +320,11 @@ module RubyDB
             row_locks: Set.new,
             snapshot_id: nil
           }
-          
+
           # Stronger isolation levels are rejected by Engine until historical
           # row versions are persisted. Do not create a snapshot here while
           # holding @lock; create_snapshot also takes this lock.
-          
+
           true
         end
       end
@@ -334,55 +333,55 @@ module RubyDB
       def commit_transaction(transaction_id, commit_id = nil)
         @lock.synchronize do
           commit_id ||= transaction_id
-          
+
           # Get transaction's snapshot
           tx_info = @active_transactions[transaction_id]
           snapshot_id = tx_info ? tx_info[:snapshot_id] : nil
-          
+
           # Update all visibility info committed by this transaction
           updated_rows = []
-          
+
           @visibility_info.each do |row_id, info|
-            if info[:visible_to] == transaction_id || 
-               info[:hidden_from] == transaction_id ||
-               info[:deleted_by] == transaction_id
-              
+            if info[:visible_to] == transaction_id ||
+                info[:hidden_from] == transaction_id ||
+                info[:deleted_by] == transaction_id
+
               # Mark as committed
               info[:commit_id] = commit_id
               info[:state] = COMMITTED if info[:state] == VISIBLE || info[:state] == HIDDEN
               info[:last_modified] = Time.now
               updated_rows << row_id
-              
+
               # Update version chain
               if @row_version_chains[row_id]
                 @row_version_chains[row_id] << info[:version]
               end
             end
           end
-          
+
           # Move to committed transactions
           @committed_transactions.add(transaction_id)
           @active_transactions.delete(transaction_id)
-          
-          @commit_log << { 
-            transaction_id: transaction_id, 
-            commit_id: commit_id, 
+
+          @commit_log << {
+            transaction_id: transaction_id,
+            commit_id: commit_id,
             time: Time.now,
             rows_updated: updated_rows.size,
             snapshot_id: snapshot_id
           }
-          
+
           # Clean commit log if too large
           if @commit_log.size > 1000
             @commit_log = @commit_log.last(500)
           end
-          
+
           # Remove transaction's snapshot
           if snapshot_id
             @snapshot_cache.delete(snapshot_id)
             @snapshot_cache_lru.delete(snapshot_id)
           end
-          
+
           # Return commit info
           {
             transaction_id: transaction_id,
@@ -397,25 +396,25 @@ module RubyDB
       def abort_transaction(transaction_id)
         @lock.synchronize do
           @stats[:transaction_rollbacks] += 1
-          
+
           # Get transaction's snapshot
           tx_info = @active_transactions[transaction_id]
           snapshot_id = tx_info ? tx_info[:snapshot_id] : nil
-          
+
           # Track which rows were affected
           affected_rows = []
-          
+
           # Revert visibility changes made by this transaction
           @visibility_info.each do |row_id, info|
-            if info[:visible_to] == transaction_id || 
-               info[:hidden_from] == transaction_id ||
-               info[:deleted_by] == transaction_id
-              
+            if info[:visible_to] == transaction_id ||
+                info[:hidden_from] == transaction_id ||
+                info[:deleted_by] == transaction_id
+
               affected_rows << row_id
-              
+
               # Revert to previous version if exists
               prev_version = info[:prev_version]
-              
+
               if prev_version > 0
                 # Find previous version in version chain
                 if @row_version_chains[row_id]
@@ -434,29 +433,29 @@ module RubyDB
               end
             end
           end
-          
+
           # Move to aborted transactions
           @aborted_transactions.add(transaction_id)
           @active_transactions.delete(transaction_id)
-          
-          @abort_log << { 
-            transaction_id: transaction_id, 
+
+          @abort_log << {
+            transaction_id: transaction_id,
             time: Time.now,
             rows_affected: affected_rows.size,
             snapshot_id: snapshot_id
           }
-          
+
           # Clean abort log if too large
           if @abort_log.size > 1000
             @abort_log = @abort_log.last(500)
           end
-          
+
           # Remove transaction's snapshot
           if snapshot_id
             @snapshot_cache.delete(snapshot_id)
             @snapshot_cache_lru.delete(snapshot_id)
           end
-          
+
           affected_rows.size
         end
       end
@@ -516,9 +515,9 @@ module RubyDB
         @lock.synchronize do
           info = @visibility_info[row_id]
           return [] unless info
-          
+
           history = [info.dup]
-          
+
           # Follow version chain backwards
           current = info
           while current && current[:prev_version] > 0
@@ -530,7 +529,7 @@ module RubyDB
               break
             end
           end
-          
+
           history.reverse
         end
       end
@@ -540,10 +539,10 @@ module RubyDB
         @lock.synchronize do
           info = @visibility_info[row_id]
           return [] unless info
-          
+
           versions = []
           current = info
-          
+
           while current
             versions << {
               version: current[:version],
@@ -552,12 +551,12 @@ module RubyDB
               created_at: current[:created_at],
               commit_id: current[:commit_id]
             }
-            
+
             break if current[:prev_version] == 0
-            
+
             current = find_version_by_id(row_id, current[:prev_version])
           end
-          
+
           versions
         end
       end
@@ -566,54 +565,54 @@ module RubyDB
       def vacuum(max_age = @vacuum_threshold, batch_size = @vacuum_batch_size)
         @vacuum_lock.synchronize do
           @stats[:vacuum_runs] += 1
-          
+
           removed = 0
           now = Time.now
           rows_to_remove = []
-          
+
           # Collect rows to vacuum
           @visibility_info.each do |row_id, info|
             should_remove = false
-            
+
             case info[:state]
             when DELETED
               age = now - info[:last_modified]
               should_remove = age > max_age && !needed_for_rollback?(row_id)
-              
+
             when COMMITTED
               # Check if all transactions that need this version are gone
               should_remove = committed_version_expired?(info)
-              
+
             when ABORTED
               should_remove = true
             end
-            
+
             if should_remove
               rows_to_remove << row_id
               removed += 1
             end
-            
+
             break if removed >= batch_size
           end
-          
+
           # Remove rows
           rows_to_remove.each do |row_id|
             @visibility_info.delete(row_id)
             @row_version_chains.delete(row_id)
             remove_row_from_disk(row_id)
           end
-          
+
           @stats[:vacuum_removed] += removed
-          
+
           # Clean up old snapshots and transactions
           clean_old_snapshots
           clean_old_transactions
-          
+
           # Flush if we removed a significant number of rows
           if removed > 0
             flush
           end
-          
+
           {
             removed: removed,
             total_rows: @visibility_info.size,
@@ -627,10 +626,10 @@ module RubyDB
         # Check if any active transaction might need to rollback this row
         @active_transactions.each do |tx_id, _info|
           # If a transaction modified this row, it might need to rollback
-          if @visibility_info[row_id] && 
-             (@visibility_info[row_id][:visible_to] == tx_id ||
-              @visibility_info[row_id][:hidden_from] == tx_id ||
-              @visibility_info[row_id][:deleted_by] == tx_id)
+          if @visibility_info[row_id] &&
+              (@visibility_info[row_id][:visible_to] == tx_id ||
+               @visibility_info[row_id][:hidden_from] == tx_id ||
+               @visibility_info[row_id][:deleted_by] == tx_id)
             return true
           end
         end
@@ -640,7 +639,7 @@ module RubyDB
       # Check if a committed version has expired
       def committed_version_expired?(info)
         return true if @active_transactions.empty?
-        
+
         # If no active transactions need this version
         min_active = @active_transactions.keys.min || 0
         info[:commit_id] && info[:commit_id] < min_active
@@ -657,35 +656,31 @@ module RubyDB
           @snapshot_cache_lru.clear
           @row_version_chains.clear
           @version_history.clear
-          
+
           # Try to load from storage
           begin
             if File.exist?(visibility_path)
               data = File.read(visibility_path)
               parsed = JSON.parse(data, symbolize_names: true)
-              
-              if parsed[:visibility_info]
-                parsed[:visibility_info].each do |row_id_str, info|
-                  row_id = row_id_str.to_s.to_i
-                  symbolized_info = {}
-                  info.each do |key, value|
-                    value = value.to_sym if %i[state].include?(key.to_sym) && value.respond_to?(:to_sym)
-                    symbolized_info[key.to_sym] = value
-                  end
-                  @visibility_info[row_id] = symbolized_info
-                  remember_version(row_id, symbolized_info)
+
+              parsed[:visibility_info]&.each do |row_id_str, info|
+                row_id = row_id_str.to_s.to_i
+                symbolized_info = {}
+                info.each do |key, value|
+                  value = value.to_sym if %i[state].include?(key.to_sym) && value.respond_to?(:to_sym)
+                  symbolized_info[key.to_sym] = value
+                end
+                @visibility_info[row_id] = symbolized_info
+                remember_version(row_id, symbolized_info)
+              end
+
+              parsed[:version_history]&.each do |row_id_str, versions|
+                versions.each do |version_id, info|
+                  normalized = normalize_loaded_info(info)
+                  @version_history[row_id_str.to_s.to_i][version_id.to_s.to_i] = normalized
                 end
               end
 
-              if parsed[:version_history]
-                parsed[:version_history].each do |row_id_str, versions|
-                  versions.each do |version_id, info|
-                    normalized = normalize_loaded_info(info)
-                    @version_history[row_id_str.to_s.to_i][version_id.to_s.to_i] = normalized
-                  end
-                end
-              end
-              
               @active_transactions = normalize_numeric_keyed_hash(parsed[:active_transactions])
               @committed_transactions = Set.new(parsed[:committed_transactions] || [])
               @aborted_transactions = Set.new(parsed[:aborted_transactions] || [])
@@ -693,14 +688,14 @@ module RubyDB
               @row_version_chains = normalize_numeric_keyed_hash(parsed[:row_version_chains]) do |versions|
                 Array(versions).map(&:to_i)
               end
-              
+
               # Clean up any invalid data
               @active_transactions.each do |tx_id, info|
                 if info[:started_at]
                   info[:started_at] = Time.parse(info[:started_at]) if info[:started_at].is_a?(String)
                 end
               end
-              
+
               @is_loaded = true
             end
           rescue => e
@@ -714,29 +709,27 @@ module RubyDB
       # Flush visibility map to disk
       def flush
         @lock.synchronize do
-          begin
-            data = {
-              visibility_info: @visibility_info,
-              active_transactions: @active_transactions,
-              committed_transactions: @committed_transactions.to_a,
-              aborted_transactions: @aborted_transactions.to_a,
-              next_version_id: @next_version_id,
-              row_version_chains: @row_version_chains,
-              version_history: @version_history,
-              timestamp: Time.now.iso8601,
-              version: 2
-            }
-            
-            # Write to a temp file first, then rename
-            temp_path = "#{visibility_path}.tmp"
-            File.write(temp_path, JSON.generate(data))
-            FileUtils.mv(temp_path, visibility_path)
-            
-            true
-          rescue => e
-            File.delete(temp_path) if defined?(temp_path) && File.file?(temp_path)
-            raise StorageError, "Failed to flush visibility map: #{e.message}"
-          end
+          data = {
+            visibility_info: @visibility_info,
+            active_transactions: @active_transactions,
+            committed_transactions: @committed_transactions.to_a,
+            aborted_transactions: @aborted_transactions.to_a,
+            next_version_id: @next_version_id,
+            row_version_chains: @row_version_chains,
+            version_history: @version_history,
+            timestamp: Time.now.iso8601,
+            version: 2
+          }
+
+          # Write to a temp file first, then rename
+          temp_path = "#{visibility_path}.tmp"
+          File.write(temp_path, JSON.generate(data))
+          FileUtils.mv(temp_path, visibility_path)
+
+          true
+        rescue => e
+          File.delete(temp_path) if defined?(temp_path) && File.file?(temp_path)
+          raise StorageError, "Failed to flush visibility map: #{e.message}"
         end
       end
 
@@ -780,7 +773,7 @@ module RubyDB
           else
             @row_version_chains.values.map(&:size).sum.to_f / @row_version_chains.size
           end
-          
+
           {
             total_rows: @visibility_info.size,
             visible_rows: @visibility_info.count { |_, info| info[:state] == VISIBLE || info[:state] == COMMITTED },
@@ -815,14 +808,14 @@ module RubyDB
         @lock.synchronize do
           now = Time.now
           to_remove = []
-          
+
           @snapshot_cache.each do |id, snapshot|
             age = now - snapshot[:created_at]
             if age > @max_snapshot_age
               to_remove << id
             end
           end
-          
+
           to_remove.each do |id|
             @snapshot_cache.delete(id)
             @snapshot_cache_lru.delete(id)
@@ -836,20 +829,20 @@ module RubyDB
         @lock.synchronize do
           now = Time.now
           cutoff = now - 86400 # 24 hours
-          
+
           @active_transactions.each do |tx_id, info|
             if info[:started_at] < cutoff
               @active_transactions.delete(tx_id)
             end
           end
-          
+
           # Clean up old committed transactions
-          old_committed = @committed_transactions.to_a.select do |tx_id|
+          @committed_transactions.to_a.select do |tx_id|
             # Check if transaction is older than cutoff
             # For simplicity, we'll just keep recent ones
             false
           end
-          
+
           # Keep committed transactions that might still be needed
           @committed_transactions = Set.new(@committed_transactions.to_a.last(1000))
         end
@@ -971,20 +964,18 @@ module RubyDB
 
       # Path for visibility data file
       def visibility_path
-        @visibility_path ||= begin
-          if @configured_visibility_path
-            FileUtils.mkdir_p(File.dirname(@configured_visibility_path))
-            @configured_visibility_path
-          elsif @page_manager && @page_manager.respond_to?(:path)
-            base_path = @page_manager.path
-            if base_path
-              File.join(@data_dir, "#{File.basename(base_path)}.visibility")
-            else
-              File.join(@data_dir, "visibility_map.json")
-            end
+        @visibility_path ||= if @configured_visibility_path
+          FileUtils.mkdir_p(File.dirname(@configured_visibility_path))
+          @configured_visibility_path
+        elsif @page_manager&.respond_to?(:path)
+          base_path = @page_manager.path
+          if base_path
+            File.join(@data_dir, "#{File.basename(base_path)}.visibility")
           else
             File.join(@data_dir, "visibility_map.json")
           end
+        else
+          File.join(@data_dir, "visibility_map.json")
         end
       end
 

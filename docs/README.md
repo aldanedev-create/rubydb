@@ -16,6 +16,7 @@ Start here:
 - [SQL compatibility contract](sql/compatibility.md)
 - [SQL compatibility guide](sql/compatibility-guide.md)
 - [Rails compatibility guide](rails/compatibility-guide.md)
+- [Python adapter](../adapters/python/README.md)
 - [Production validation](production_validation.md)
 - [Production-readiness audit](production-readiness.md)
 - [Production runbook](operations/production-runbook.md)
@@ -26,6 +27,7 @@ Start here:
 - [Workload testing](operations/workload-testing.md)
 - [Release checklist](release.md)
 - [Lessons learned](lessons-learned.md)
+- [Ten-lesson production journey](../lessons/01-foundations.md)
 
 Architecture and development:
 
@@ -63,6 +65,8 @@ reference:
   operational behavior.
 * `operations/` covers backups, restore drills, monitoring, workload tests,
   production procedures, and incident response.
+* `../lessons/` is a guided beginner-to-production journey that combines local
+  RubyDB, Rails, PostgreSQL, and hybrid microservice decisions.
 * `contributing/` and the root policy files cover testing, release, governance,
   support, security, and contribution requirements.
 

@@ -12,8 +12,10 @@ module RubyDB
         end
 
         def accept(visitor) = visitor.visit_set_operation(self)
+
         def clone = SetOperation.new(@left.clone, @right.clone, @operator, all: @all, location: @location)
-        def to_sql = "#{@left.to_sql} #{@operator.to_s.upcase}#{@all ? ' ALL' : ''} #{@right.to_sql}"
+
+        def to_sql = "#{@left.to_sql} #{@operator.to_s.upcase}#{@all ? " ALL" : ""} #{@right.to_sql}"
       end
     end
   end

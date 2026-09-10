@@ -39,17 +39,17 @@ module RubyDB
 
       def create_branch(name, options = {})
         @lock.synchronize do
-          return { success: false, error: "Invalid branch name" } unless valid_branch_name?(name)
+          return {success: false, error: "Invalid branch name"} unless valid_branch_name?(name)
 
           if @branches.key?(name)
-            return { success: false, error: "Branch '#{name}' already exists" }
+            return {success: false, error: "Branch '#{name}' already exists"}
           end
 
           parent = options[:from] || @current_branch&.name
           parent_branch = parent ? @branches[parent] : nil
 
           unless parent_branch || options[:from_lsn]
-            return { success: false, error: "No parent branch or LSN specified" }
+            return {success: false, error: "No parent branch or LSN specified"}
           end
 
           base_lsn = options[:from_lsn] || parent_branch.head_lsn
@@ -61,8 +61,7 @@ module RubyDB
             owner: options[:owner],
             protected: options[:protected] || false,
             default: options[:default] || false,
-            metadata: options[:metadata] || {}
-          )
+            metadata: options[:metadata] || {})
           branch.instance_variable_set(:@state_snapshot, @engine.export_state) if @engine.respond_to?(:export_state)
 
           @branches[name] = branch
@@ -75,23 +74,23 @@ module RubyDB
           # Save branches
           save_branches
 
-          { success: true, branch: branch }
+          {success: true, branch: branch}
         end
       end
 
       def delete_branch(name, force = false)
         @lock.synchronize do
-          return { success: false, error: "Invalid branch name" } unless valid_branch_name?(name)
+          return {success: false, error: "Invalid branch name"} unless valid_branch_name?(name)
 
           branch = @branches[name]
-          return { success: false, error: "Branch '#{name}' not found" } unless branch
+          return {success: false, error: "Branch '#{name}' not found"} unless branch
 
           if branch.protected? && !force
-            return { success: false, error: "Branch '#{name}' is protected" }
+            return {success: false, error: "Branch '#{name}' is protected"}
           end
 
           if branch == @current_branch && !force
-            return { success: false, error: "Cannot delete current branch" }
+            return {success: false, error: "Cannot delete current branch"}
           end
 
           # Delete branch data
@@ -103,41 +102,41 @@ module RubyDB
 
           save_branches
 
-          { success: true }
+          {success: true}
         end
       end
 
       def checkout(name)
         @lock.synchronize do
           branch = @branches[name]
-          return { success: false, error: "Branch '#{name}' not found" } unless branch
+          return {success: false, error: "Branch '#{name}' not found"} unless branch
 
           if branch.locked?
-            return { success: false, error: "Branch '#{name}' is locked" }
+            return {success: false, error: "Branch '#{name}' is locked"}
           end
 
           unless @engine.respond_to?(:apply_branch_state)
-            return { success: false, error: "Branch checkout requires an engine state-application hook" }
+            return {success: false, error: "Branch checkout requires an engine state-application hook"}
           end
 
           # Apply the persisted state before publishing the branch switch. If
           # state application fails, the manager and engine must continue to
           # agree about the active branch.
           applied = apply_branch_state(name)
-          return { success: false, error: "Unable to apply branch state" } if applied == false
+          return {success: false, error: "Unable to apply branch state"} if applied == false
 
           @current_branch = branch
 
-          { success: true, branch: branch }
+          {success: true, branch: branch}
         end
       end
 
       def commit(change_data)
         @lock.synchronize do
-          return { success: false, error: "No current branch" } unless @current_branch
+          return {success: false, error: "No current branch"} unless @current_branch
 
           branch = @current_branch
-          return { success: false, error: "Branch is locked" } if branch.locked?
+          return {success: false, error: "Branch is locked"} if branch.locked?
 
           # Create commit
           commit = {
@@ -153,24 +152,24 @@ module RubyDB
           # Save branch state
           save_branches
 
-          { success: true, commit: commit }
+          {success: true, commit: commit}
         end
       end
 
       def rollback(count = 1)
         @lock.synchronize do
-          return { success: false, error: "No current branch" } unless @current_branch
+          return {success: false, error: "No current branch"} unless @current_branch
 
           branch = @current_branch
-          return { success: false, error: "Branch is locked" } if branch.locked?
+          return {success: false, error: "Branch is locked"} if branch.locked?
 
           removed = branch.rollback(count)
 
           if removed&.any?
             save_branches
-            { success: true, removed: removed }
+            {success: true, removed: removed}
           else
-            { success: false, error: "Nothing to rollback" }
+            {success: false, error: "Nothing to rollback"}
           end
         end
       end
@@ -232,8 +231,7 @@ module RubyDB
               protected: branch_data[:is_protected] || false,
               default: branch_data[:is_default] || false,
               metadata: branch_data[:metadata] || {},
-              state_snapshot: branch_data[:state_snapshot]
-            )
+              state_snapshot: branch_data[:state_snapshot])
             branch.instance_variable_set(:@head_lsn, branch_data[:head_lsn])
             branch.instance_variable_set(:@created_at, Time.parse(branch_data[:created_at]))
             branch.instance_variable_set(:@updated_at, Time.parse(branch_data[:updated_at]))
@@ -250,8 +248,7 @@ module RubyDB
 
           @stats[:branches_created] = data[:stats][:branches_created] || 0
           @stats[:total_commits] = data[:stats][:total_commits] || 0
-
-        rescue StandardError => error
+        rescue => error
           raise BranchingError, "Invalid branch catalog #{branches_file}: #{error.message}"
         end
       end
@@ -293,8 +290,7 @@ module RubyDB
           default: true,
           description: "Default branch",
           protected: true,
-          state_snapshot: (@engine.export_state if @engine.respond_to?(:export_state))
-        )
+          state_snapshot: (@engine.export_state if @engine.respond_to?(:export_state)))
         @branches["main"] = branch
         @current_branch = branch
         @stats[:branches_created] += 1

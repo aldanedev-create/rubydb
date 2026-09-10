@@ -105,7 +105,7 @@ module RubyDB
       def grant_permission(user, action, object, object_type = OBJECT_TABLE, options = {})
         @lock.synchronize do
           key = permission_key(action, object, object_type)
-          @permissions[key] ||= { users: [], roles: [], public: false }
+          @permissions[key] ||= {users: [], roles: [], public: false}
 
           if options[:grantor]
             @grant_options[key] ||= {}
@@ -152,9 +152,9 @@ module RubyDB
 
       def add_role(role_name, parent_role = nil)
         @lock.synchronize do
-          @roles[role_name] ||= { name: role_name, parent: parent_role }
+          @roles[role_name] ||= {name: role_name, parent: parent_role}
           if parent_role
-            @roles[parent_role] ||= { name: parent_role, parent: nil }
+            @roles[parent_role] ||= {name: parent_role, parent: nil}
           end
           true
         end

@@ -104,12 +104,15 @@ module RubyDB
       end
 
       def worker_loop(worker_id)
-        while !@shutdown
+        until @shutdown
           task = nil
 
           begin
             task = @task_queue.pop
-            @lock.synchronize { @idle_count -= 1; @active_count += 1 }
+            @lock.synchronize {
+              @idle_count -= 1
+              @active_count += 1
+            }
 
             start_time = Time.now
 
@@ -125,8 +128,7 @@ module RubyDB
               @stats[:total_processing_time_ms] += processing_time
               @stats[:avg_processing_time_ms] = @stats[:total_processing_time_ms] / @stats[:tasks_processed]
             end
-
-          rescue => e
+          rescue
             @lock.synchronize do
               @stats[:tasks_failed] += 1
             end

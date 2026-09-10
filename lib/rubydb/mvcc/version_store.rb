@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require "json"
 require "fileutils"
 require "time"
@@ -94,7 +93,6 @@ module RubyDB
       def get_latest_version(row_id, transaction_id = nil, snapshot = nil, key: row_id)
         @lock.synchronize do
           # Check cache for snapshot
-          cache_key = "#{row_id}:#{transaction_id}:#{snapshot&.id}"
 
           versions = @versions[key]
           return nil unless versions

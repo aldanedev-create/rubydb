@@ -43,7 +43,7 @@ RSpec.describe RubyDB::Rails::SchemaStatements do
     end
 
     expect(adapter.executed.first).to include('"repository_id" INTEGER NOT NULL')
-    expect(adapter.executed.first).to include('FOREIGN KEY (repository_id) REFERENCES repositories(id)')
+    expect(adapter.executed.first).to include("FOREIGN KEY (repository_id) REFERENCES repositories(id)")
   end
 
   it "supports the engine's documented block table builder" do

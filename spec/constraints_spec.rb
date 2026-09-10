@@ -10,8 +10,8 @@ RSpec.describe RubyDB::Constraints::Validator do
       RubyDB::Constraints::NotNullConstraint.new(:users, :email)
     )
 
-    valid = validator.validate_row({ email: "user@example.com" }, :users)
-    invalid = validator.validate_row({ email: nil }, :users)
+    valid = validator.validate_row({email: "user@example.com"}, :users)
+    invalid = validator.validate_row({email: nil}, :users)
 
     expect(valid[:valid]).to be(true)
     expect(invalid[:valid]).to be(false)
