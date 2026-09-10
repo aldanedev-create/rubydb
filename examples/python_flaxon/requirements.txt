@@ -1,0 +1,4 @@
+flaxon>=0.2,<0.3
+rubydb-python>=0.1.0,<0.2
+uvicorn>=0.30,<1
+

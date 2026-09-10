@@ -53,6 +53,61 @@ for connection failures, timeouts, duplicate requests, and empty results. In a
 long-running app, put client lifecycle management in the application’s
 dependency/container layer and close it during shutdown.
 
+## Python services with the RubyDB adapter
+
+Python applications connect to RubyDB server mode through the published
+`rubydb-python` DB-API 2.0 adapter. The Python process must not open an
+embedded `.rdb` file. Put the server URL in a secret-managed environment
+variable:
+
+```powershell
+$env:RUBYDB_URL = "rubydbs://service_user:URL_ENCODED_PASSWORD@rubydb.internal:7432/orders?verify_peer=true&ca_file=%2Fetc%2Frubydb%2Ftls%2Fca.crt"
+python -m pip install rubydb-python
+```
+
+Use parameterized queries and a bounded pool in workers:
+
+```python
+import os
+from rubydb import ConnectionPool
+
+pool = ConnectionPool(os.environ["RUBYDB_URL"], min_size=1, max_size=8)
+try:
+    with pool.connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, status FROM jobs WHERE account_id = ?",
+                [account_id],
+            )
+            rows = cursor.fetchall()
+finally:
+    pool.close()
+```
+
+The adapter is synchronous DB-API code. In an async framework such as Flaxon,
+run database calls in a worker thread so a slow query does not block the event
+loop:
+
+```python
+import asyncio
+from rubydb import connect
+
+async def load_jobs(url):
+    def query():
+        with connect(url, timeout=5) as db:
+            with db.cursor() as cursor:
+                cursor.execute("SELECT id, status FROM jobs ORDER BY id")
+                return cursor.fetchall()
+
+    return await asyncio.to_thread(query)
+```
+
+Run the complete examples in `examples/python_flask` and
+`examples/python_flaxon`. Both examples use real RubyDB TCP traffic and have
+live integration tests; they are intentionally small starting points, not a
+replacement for application-specific authorization, migrations, backups,
+timeouts, monitoring, and load testing.
+
 ## A small Rails service
 
 ```yaml

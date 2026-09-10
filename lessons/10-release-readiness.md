@@ -81,6 +81,46 @@ storage; do not put them in the repository or a checked-in `.env` file.
 Release the adapter separately when its version changes, update the changelog,
 tag the source commit, and publish the checksums and supported-version notes.
 
+## Publish the Python adapter to PyPI
+
+The Python adapter is a separate distribution named `rubydb-python`; publishing
+the Ruby gem does not publish this package. Build it from the adapter directory
+and validate both distribution formats before upload:
+
+```powershell
+cd adapters/python
+python -m pip install --upgrade build twine
+python -m build
+python -m twine check dist/*
+```
+
+Prefer PyPI Trusted Publishing from CI. For a local upload, use a short-lived,
+scope-limited PyPI token through the environment or Twine's prompt. Never
+commit a token:
+
+```powershell
+$env:TWINE_USERNAME = "__token__"
+$env:TWINE_PASSWORD = (Get-Clipboard).Trim()
+python -m twine upload dist/*
+Remove-Item Env:TWINE_PASSWORD
+```
+
+After upload, verify the package from a clean environment and run the live
+adapter tests against a RubyDB server:
+
+```powershell
+python -m venv .venv-clean
+.venv-clean\Scripts\Activate.ps1
+python -m pip install rubydb-python
+$env:RUBYDB_URL = "rubydbs://service_user:password@127.0.0.1:7432/rubydb"
+python -m unittest discover -s adapters/python/tests -v
+```
+
+The package provides DB-API 2.0 access to RubyDB server mode. It is not a
+PostgreSQL driver and does not make PostgreSQL SQL portable to RubyDB. Pin the
+adapter and server versions together, use TLS in production, and keep the
+application's migration and rollback procedure under version control.
+
 ## Deployment gate
 
 For a direct RubyDB production deployment, follow [lesson 5](05-rubydb-production-server.md)

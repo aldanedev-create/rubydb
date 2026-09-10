@@ -1,0 +1,4 @@
+Flask>=3.0,<4
+rubydb-python>=0.1.0,<0.2
+gunicorn>=22,<24
+

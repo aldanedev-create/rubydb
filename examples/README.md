@@ -20,6 +20,11 @@ tree. Run commands from the repository root with `ruby path/to/example.rb`.
   terminal to execute a query.
 - `production_smoke/` contains regular Ruby and Rails application smoke tests.
 - `rails_app/` and `github_clone/` contain complete small Rails applications.
+- `python_flask/` is a real Flask JSON API using `rubydb-python`.
+- `python_flaxon/` is a real async Flaxon JSON API using `rubydb-python`.
+
+The Python examples require a running RubyDB server and use `RUBYDB_URL`; see
+each directory's README for setup, schema initialization, and live tests.
 
 The branching and replication examples use temporary directories and clean up
 after successful runs. The server example stores data under

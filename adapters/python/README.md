@@ -125,6 +125,20 @@ python -m twine upload dist/*
 Configure PyPI credentials through trusted publishing or a protected token;
 never put a token in this repository or in a committed shell script.
 
+## Example applications
+
+The repository includes two small applications that use this adapter against a
+real RubyDB server:
+
+- [`examples/python_flask`](../../examples/python_flask) — synchronous Flask
+  JSON API with live tests.
+- [`examples/python_flaxon`](../../examples/python_flaxon) — async Flaxon JSON
+  API using `asyncio.to_thread` for database calls, with live tests.
+
+Each example documents server startup, `RUBYDB_URL`, schema initialization,
+development commands, and production boundaries. Run the tests with a live
+RubyDB server before deploying an application-specific integration.
+
 ## Compatibility boundary
 
 This is a RubyDB client, not a PostgreSQL driver. It does not provide
