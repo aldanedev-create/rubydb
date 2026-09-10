@@ -7,6 +7,7 @@ Start here:
 - [Debugging playbook](debugging.md)
 - [Production operations guide](operations/production-guide.md)
 - [Quick start](getting-started/quickstart.md)
+- [Local development to production](getting-started/local-to-production.md)
 - [First database](getting-started/first-database.md)
 - [First query](getting-started/first-query.md)
 - [Rails installation](rails/installation.md)

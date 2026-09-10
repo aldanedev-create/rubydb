@@ -12,6 +12,9 @@ All notable changes to RubyDB are documented here. Versions follow
 - Added RubyDB connection URLs (`rubydb://` and TLS-enabled `rubydbs://`) for
   regular Ruby clients and Rails `database.yml`, including percent-encoded
   credentials and documented TLS/query options.
+- Added a beginner-friendly local-to-production guide covering local RubyDB,
+  PostgreSQL migration, RubyDB server deployment, environment URLs, Render-style
+  hosting, data transfer, smoke tests, and production checklists.
 - Added a documentation index and lessons-learned guide covering durability,
   ownership, replication fencing, cancellation, deadlocks, Rails adapters,
   operations, evidence, and security review boundaries.

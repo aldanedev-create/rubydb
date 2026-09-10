@@ -134,6 +134,7 @@ by the presence of an adapter.
 - [Production operations guide](docs/operations/production-guide.md)
 - [Lessons learned](docs/lessons-learned.md)
 - [Getting started](docs/getting-started/quickstart.md)
+- [Local development to production](docs/getting-started/local-to-production.md)
 - [SQL compatibility](docs/sql/compatibility.md)
 - [SQL compatibility guide](docs/sql/compatibility-guide.md)
 - [SQLite compatibility profile](docs/sql/sqlite-compatibility.md)
