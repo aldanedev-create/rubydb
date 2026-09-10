@@ -686,11 +686,13 @@ module RubyDB
                 end
               end
               
-              @active_transactions = parsed[:active_transactions] || {}
+              @active_transactions = normalize_numeric_keyed_hash(parsed[:active_transactions])
               @committed_transactions = Set.new(parsed[:committed_transactions] || [])
               @aborted_transactions = Set.new(parsed[:aborted_transactions] || [])
               @next_version_id = parsed[:next_version_id] || 1
-              @row_version_chains = parsed[:row_version_chains] || {}
+              @row_version_chains = normalize_numeric_keyed_hash(parsed[:row_version_chains]) do |versions|
+                Array(versions).map(&:to_i)
+              end
               
               # Clean up any invalid data
               @active_transactions.each do |tx_id, info|
@@ -732,7 +734,8 @@ module RubyDB
             
             true
           rescue => e
-            false
+            File.delete(temp_path) if defined?(temp_path) && File.file?(temp_path)
+            raise StorageError, "Failed to flush visibility map: #{e.message}"
           end
         end
       end
@@ -744,6 +747,16 @@ module RubyDB
 
       def remember_version(row_id, info)
         @version_history[row_id][info[:version].to_i] = info.dup
+      end
+
+      # JSON object keys are strings. Normalize numeric-keyed runtime maps on
+      # load so a reopened database cannot accumulate both "1" and 1 keys.
+      def normalize_numeric_keyed_hash(value)
+        normalized = {}
+        (value || {}).each do |key, entry|
+          normalized[key.to_s.to_i] = block_given? ? yield(entry) : entry
+        end
+        normalized
       end
 
       def normalize_loaded_info(info)

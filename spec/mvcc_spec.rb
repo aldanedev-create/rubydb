@@ -52,6 +52,22 @@ RSpec.describe "RubyDB MVCC visibility" do
     end
   end
 
+  it "normalizes persisted numeric map keys after restart" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "visibility.json")
+      first = RubyDB::Storage::VisibilityMap.new(nil, visibility_path: path, auto_vacuum: false)
+      first.mark_visible(1, 0)
+      first.flush
+
+      reopened = RubyDB::Storage::VisibilityMap.new(nil, visibility_path: path, auto_vacuum: false)
+      reopened.mark_visible(2, 0)
+      expect { reopened.flush }.not_to raise_error
+
+      persisted = JSON.parse(File.read(path))
+      expect(persisted.fetch("row_version_chains").keys).to contain_exactly("1", "2")
+    end
+  end
+
   it "retains and traverses the complete visibility version chain" do
     visibility = RubyDB::Storage::VisibilityMap.new(nil, auto_vacuum: false)
     visibility.mark_visible(12, 0, 1)

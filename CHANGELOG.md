@@ -23,6 +23,13 @@ All notable changes to RubyDB are documented here. Versions follow
   vacuum, maintenance, and release workflows.
 - Clarified the tested common SQLite-style profile and production limits.
 
+## 0.1.3 - 2026-09-09
+
+- Normalized numeric MVCC visibility-map keys after restart to prevent mixed
+  string/integer keys and duplicate-key warnings on Ruby 4.
+- Made visibility-map persistence failures raise `RubyDB::StorageError`
+  instead of silently reporting success.
+
 ## 0.1.2 - 2026-09-09
 
 - Added SQLite/ActiveRecord-compatible `INSERT ... DEFAULT VALUES` parsing,
