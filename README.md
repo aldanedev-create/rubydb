@@ -69,7 +69,7 @@ unsupported or unverified dialect features must not be assumed to work.
 
 ## Quick start
 
-Install the prerelease gem:
+Install the release gem:
 
 ```sh
 gem install rubydb 
