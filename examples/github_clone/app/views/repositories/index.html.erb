@@ -1,0 +1,11 @@
+<h2>Repositories</h2>
+<% if @repositories.empty? %>
+  <p>No repositories yet. Run <code>bin/rails db:seed</code>.</p>
+<% end %>
+<% @repositories.each do |repository| %>
+  <section class="repo">
+    <h3><%= link_to repository.name, repository_path(repository) %></h3>
+    <p><%= repository.description %></p>
+    <small><%= repository.issues.count %> issues · <%= repository.commits.count %> commits</small>
+  </section>
+<% end %>

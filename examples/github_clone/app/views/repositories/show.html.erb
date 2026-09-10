@@ -1,0 +1,43 @@
+<p><%= link_to "← all repositories", root_path %></p>
+<h2><%= @repository.name %></h2>
+<p><%= @repository.description %></p>
+
+<section class="panel">
+  <h3>Open an issue</h3>
+  <%= form_with model: [@repository, @issue] do |form| %>
+    <%= form.label :title %>
+    <%= form.text_field :title, required: true %>
+    <%= form.label :body %>
+    <%= form.text_area :body, rows: 3 %>
+    <%= form.submit "Open issue" %>
+  <% end %>
+</section>
+
+<section class="panel">
+  <h3>Record a commit</h3>
+  <%= form_with model: [@repository, @commit] do |form| %>
+    <%= form.label :sha, "SHA" %>
+    <%= form.text_field :sha, required: true %>
+    <%= form.label :message %>
+    <%= form.text_field :message, required: true %>
+    <%= form.label :author %>
+    <%= form.text_field :author, required: true %>
+    <%= form.submit "Record commit" %>
+  <% end %>
+</section>
+
+<section class="panel">
+  <h3>Issues</h3>
+  <% if @repository.issues.empty? %><p>No issues.</p><% end %>
+  <% @repository.issues.order(created_at: :desc).each do |issue| %>
+    <article class="repo"><strong><%= issue.title %></strong><p><%= issue.body %></p></article>
+  <% end %>
+</section>
+
+<section class="panel">
+  <h3>Recent commits</h3>
+  <% if @repository.commits.empty? %><p>No commits.</p><% end %>
+  <% @repository.commits.order(created_at: :desc).each do |commit| %>
+    <article class="repo"><strong><%= commit.message %></strong> by <%= commit.author %><br><small><%= commit.sha %></small></article>
+  <% end %>
+</section>

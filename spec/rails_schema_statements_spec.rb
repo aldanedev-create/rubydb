@@ -37,6 +37,15 @@ RSpec.describe RubyDB::Rails::SchemaStatements do
     expect(adapter.executed).to include('ALTER TABLE "posts" ADD CONSTRAINT "fk_posts_to_users" FOREIGN KEY ("user_id") REFERENCES "users" ("id")')
   end
 
+  it "supports Rails references shorthand with a foreign key" do
+    adapter.create_table("issues") do |table|
+      table.references(:repository, null: false, foreign_key: true)
+    end
+
+    expect(adapter.executed.first).to include('"repository_id" INTEGER NOT NULL')
+    expect(adapter.executed.first).to include('FOREIGN KEY (repository_id) REFERENCES repositories(id)')
+  end
+
   it "supports the engine's documented block table builder" do
     Dir.mktmpdir do |dir|
       engine = RubyDB::Storage::Engine.new(File.join(dir, "block.rdb"), auto_vacuum: false)

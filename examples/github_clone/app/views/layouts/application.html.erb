@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MiniHub · RubyDB</title>
+    <style>
+      body { max-width: 900px; margin: 2rem auto; padding: 0 1rem; font-family: system-ui, sans-serif; color: #24292f; }
+      a { color: #0969da; text-decoration: none; } a:hover { text-decoration: underline; }
+      .repo, .panel { border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
+      input, textarea { display: block; width: 100%; max-width: 600px; margin: .35rem 0 1rem; padding: .55rem; box-sizing: border-box; }
+      button { padding: .5rem .8rem; cursor: pointer; } small { color: #57606a; }
+      .notice { background: #ddf4ff; padding: .7rem; } .alert { background: #ffebe9; padding: .7rem; }
+    </style>
+  </head>
+  <body>
+    <header><h1><%= link_to "MiniHub", root_path %></h1><p><small>A tiny Rails + RubyDB smoke app</small></p></header>
+    <% if notice %><p class="notice"><%= notice %></p><% end %>
+    <% if alert %><p class="alert"><%= alert %></p><% end %>
+    <%= yield %>
+  </body>
+</html>

@@ -110,6 +110,11 @@ Open <http://127.0.0.1:3001/>. The example uses an embedded database under
 documentation for network configuration, migrations, production deployment,
 backups, restore drills, and monitoring.
 
+For an even smaller end-to-end smoke test, see the tiny GitHub-style app in
+[`examples/github_clone`](examples/github_clone). It covers repositories,
+issues, commits, Rails associations, foreign keys, indexes, seed data, and a
+browser page backed by RubyDB.
+
 ## Compatibility policy
 
 RubyDB does not claim complete PostgreSQL, MySQL, or SQLite compatibility until

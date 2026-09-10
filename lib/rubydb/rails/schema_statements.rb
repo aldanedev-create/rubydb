@@ -31,6 +31,36 @@ module RubyDB
           column(name, type, options.merge(primary_key: true, null: false))
         end
 
+        # Support Rails' common `t.references :repository, foreign_key: true`
+        # shorthand while keeping the generated SQL within RubyDB's schema
+        # contract. Index creation remains an explicit `add_index` operation.
+        def references(name, options = {})
+          reference_name = name.to_s
+          column_name = options[:column] || "#{reference_name}_id"
+          column_options = options.slice(:null, :default, :limit, :precision, :scale)
+          column(column_name, options[:type] || :integer, column_options)
+
+          return self unless options[:foreign_key]
+
+          reference_table = options[:to_table] || pluralize_reference(reference_name)
+          @constraints << RubyDB::Constraints::ForeignKeyConstraint.new(
+            @table_name,
+            column_name,
+            reference_table,
+            options[:primary_key] || :id,
+            options.slice(:name, :on_delete, :on_update)
+          )
+          self
+        end
+
+        def pluralize_reference(name)
+          return name if name.end_with?("s")
+          return "#{name[0...-1]}ies" if name.end_with?("y")
+
+          "#{name}s"
+        end
+        private :pluralize_reference
+
         def method_missing(method, *args, &block)
           if TYPE_METHODS.include?(method)
             name = args.shift
@@ -41,7 +71,7 @@ module RubyDB
         end
 
         def respond_to_missing?(method, include_private = false)
-          TYPE_METHODS.include?(method) || super
+          TYPE_METHODS.include?(method) || method == :references || super
         end
       end
 

@@ -1,0 +1,16 @@
+default: &default
+  adapter: rubydb
+  embedded: true
+  database: <%= ENV.fetch("RUBYDB_DATABASE", Rails.root.join("tmp/github_clone.rdb")) %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", "5") %>
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+  database: <%= Rails.root.join("tmp/github_clone_test.rdb") %>
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("RUBYDB_DATABASE", "/var/lib/rubydb/github_clone.rdb") %>

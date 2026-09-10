@@ -1,0 +1,2 @@
+require_relative "config/application"
+RubyDBGitHubClone::Application.load_tasks

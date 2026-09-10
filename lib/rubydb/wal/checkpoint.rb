@@ -118,7 +118,10 @@ module RubyDB
 
             # Get the latest checkpoint
             latest = checkpoint_records.last
-            @last_checkpoint_lsn = LSN.from_s(latest.data[:lsn])
+            # `latest.data[:lsn]` is the last record covered by the
+            # checkpoint and is an inclusive replay boundary. Return the
+            # marker's own LSN so recovery starts after the covered records.
+            @last_checkpoint_lsn = latest.lsn
             @last_checkpoint_data = latest.data
             @last_checkpoint_time = Time.parse(latest.data[:timestamp])
 

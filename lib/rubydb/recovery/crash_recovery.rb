@@ -118,14 +118,14 @@ module RubyDB
         return nil if checkpoints.empty?
 
         latest = checkpoints.max_by { |r| r.timestamp }
-        lsn = latest.lsn
 
-        # Get the LSN from the checkpoint data
-        if latest.data && latest.data[:lsn]
-          WAL::LSN.from_s(latest.data[:lsn])
-        else
-          lsn
-        end
+        # The checkpoint payload's `lsn` identifies the last WAL record that
+        # was flushed before the marker was written.  It is therefore an
+        # inclusive boundary: starting recovery there replays that record a
+        # second time.  Use the marker's own physical LSN instead.  Reader
+        # ranges are inclusive, so the marker itself is harmless and all
+        # records after it are replayed exactly once.
+        latest.lsn
       end
 
       def analyze_records(records)
@@ -227,7 +227,12 @@ module RubyDB
           table_name = data[:table_name] || data[:table]
           table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
           columns = @engine.table_columns(table_name) || []
-          existing = @engine.select_rows(table_name, columns).any? { |row| row[:_row_id] == data[:row_id] }
+          # JSON-backed WAL payloads may deserialize row_id as a string while
+          # physical row scans expose an integer. Compare the stable numeric
+          # identity so replay remains idempotent across process restarts.
+          existing = @engine.select_rows(table_name, columns).any? do |row|
+            row[:_row_id].to_i == data[:row_id].to_i
+          end
           return if existing
           begin
             @engine.insert_row(table_name, columns, data[:values] || {})

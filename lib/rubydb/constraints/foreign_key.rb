@@ -105,7 +105,9 @@ module RubyDB
         sql = "FOREIGN KEY (#{cols}) REFERENCES #{@reference_table}(#{ref_cols})"
         sql << " ON DELETE #{@on_delete.to_s.upcase}" if @on_delete != ACTION_NO_ACTION
         sql << " ON UPDATE #{@on_update.to_s.upcase}" if @on_update != ACTION_NO_ACTION
-        sql << " MATCH #{@match_type.to_s.upcase}"
+        # MATCH SIMPLE is the SQL default and is not part of RubyDB's
+        # documented parser surface. Emit only an explicitly non-default mode.
+        sql << " MATCH #{@match_type.to_s.upcase}" unless @match_type == :simple
         sql
       end
 

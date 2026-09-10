@@ -263,7 +263,9 @@ module RubyDB
           checkpoint_lsn = @checkpoint.restore_checkpoint(@reader)
 
           if checkpoint_lsn
-            # Read records after checkpoint
+            # Read records from the checkpoint marker. The reader includes
+            # the starting frame; the marker is ignored by replay and all
+            # subsequent WAL records are applied.
             records = @reader.read_from_lsn(checkpoint_lsn)
 
             # Replay committed transactions

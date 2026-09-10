@@ -1,0 +1,11 @@
+source "https://rubygems.org"
+
+gem "rails", "~> 7.2.0"
+# Keep the example installable on Windows Ruby builds without the rbs 4.x
+# native extension/toolchain combination.
+gem "irb", "~> 1.16.0"
+gem "rdoc", "< 8.0"
+gem "rubydb", path: "../.."
+gem "rubydb-activerecord", path: "../../adapters/activerecord"
+gem "puma", "~> 6.0"
+gem "tzinfo-data", platforms: %i[windows jruby]
