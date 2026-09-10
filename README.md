@@ -72,7 +72,7 @@ unsupported or unverified dialect features must not be assumed to work.
 Install the prerelease gem:
 
 ```sh
-gem install rubydb --pre
+gem install rubydb 
 ```
 
 For local development from this repository:
