@@ -38,6 +38,8 @@
 /adapters/python/src/*.egg-info/
 /adapters/node/dist/
 /adapters/node/node_modules/
+/examples/sveltekit_app/node_modules/
+/examples/sveltekit_app/.svelte-kit/
 __pycache__/
 *.py[cod]
 
