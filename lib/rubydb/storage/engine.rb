@@ -617,7 +617,15 @@ module RubyDB
           end
           create_table(table_name.to_s, columns)
           Array(data[:rows]).each do |row|
-            values = row.each_with_object({}) { |(key, value), result| result[key.to_s] = value }
+            # Exported state may come from either the Ruby API (symbol keys)
+            # or JSON-backed catalogs (string keys). Column definitions retain
+            # their original name type, so normalize row keys to symbols just
+            # as insert_row's validation path does.
+            values = row.each_with_object({}) do |(key, value), result|
+              normalized_key = key.respond_to?(:to_sym) ? key.to_sym : key
+              result[normalized_key] = value
+              result[key] = value if key != normalized_key
+            end
             insert_row(table_name.to_s, columns, values)
           end
         end

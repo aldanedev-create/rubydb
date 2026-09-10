@@ -24,6 +24,7 @@
 /data/
 /log/
 *.log
+/examples/server/tmp/
 
 # Environment
 /.bundle/
