@@ -249,7 +249,10 @@ module ActiveRecord
         log(sql, name) do
           params = bind_values(binds)
           result = @connection.execute(sql, params)
-          id = result.row_id
+          # RubyDB keeps a physical row id for storage operations and a
+          # logical primary-key value for SQL/ActiveRecord. They can differ
+          # after deletes, so ActiveRecord must receive the logical id.
+          id = result.inserted_id || result.row_id
           ActiveRecord::Result.new([pk || "id"], id.nil? ? [] : [[id]])
         end
       end

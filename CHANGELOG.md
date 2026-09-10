@@ -23,6 +23,12 @@ All notable changes to RubyDB are documented here. Versions follow
   vacuum, maintenance, and release workflows.
 - Clarified the tested common SQLite-style profile and production limits.
 
+## 0.1.4 - 2026-09-09
+
+- Returned logical generated primary-key values to ActiveRecord separately
+  from physical storage row identifiers, including after deletes.
+- Preserved generated insert identifiers through the RubyDB result boundary.
+
 ## 0.1.3 - 2026-09-09
 
 - Normalized numeric MVCC visibility-map keys after restart to prevent mixed

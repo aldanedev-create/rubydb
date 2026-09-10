@@ -89,6 +89,18 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
     expect(settings_model.create!.reload.label).to eq("")
   end
 
+  it "returns the logical primary key after rows are deleted" do
+    connection = ActiveRecord::Base.connection
+    connection.execute("CREATE TABLE events (id INTEGER PRIMARY KEY, name VARCHAR(255) NOT NULL)")
+
+    events = Class.new(ActiveRecord::Base) { self.table_name = "events" }
+    events.create!(name: "first").destroy!
+    created = events.create!(name: "replacement")
+
+    expect(created.id).to eq(1)
+    expect(events.find(1).name).to eq("replacement")
+  end
+
   it "executes an ActiveRecord association join with qualified filtering" do
     stub_const("RubydbAccount", Class.new(ActiveRecord::Base) do
       self.table_name = "accounts"

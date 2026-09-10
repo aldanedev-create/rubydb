@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name = "rubydb-activerecord"
-  spec.version = "0.1.1"
+  spec.version = "0.1.2"
   spec.authors = ["Aldane Hutchinson"]
   spec.email = ["aldanehutchinson5@gmail.com"]
 

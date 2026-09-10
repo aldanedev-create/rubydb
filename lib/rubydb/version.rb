@@ -11,13 +11,13 @@ module RubyDB
   # - MAJOR: Incompatible API changes
   # - MINOR: Backwards-compatible new functionality
   # - PATCH: Backwards-compatible bug fixes
-  VERSION = "0.1.3"
+  VERSION = "0.1.4"
 
   # Version components for easy access
   module Version
     MAJOR = 0
     MINOR = 1
-    PATCH = 3
+    PATCH = 4
     PRE = nil  # e.g., "alpha", "beta", "rc1"
 
     def self.to_s

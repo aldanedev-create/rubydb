@@ -259,6 +259,8 @@ module RubyDB
             affected_rows: inserted.sum { |result| result[:affected_rows] },
             row_ids: inserted.filter_map { |result| result[:row_id] },
             row_id: inserted.reverse_each.map { |result| result[:row_id] }.compact.first,
+            inserted_ids: inserted.filter_map { |result| result[:inserted_id] },
+            inserted_id: inserted.reverse_each.map { |result| result[:inserted_id] }.compact.first,
             message: "INSERT #{inserted.sum { |result| result[:affected_rows] }}"
           }
         rescue Exception
@@ -278,11 +280,17 @@ module RubyDB
         # Insert into engine
         table_columns = @engine.table_columns(table_name)
         row_id = @engine.insert_row(table_name, table_columns, row_data)
+        primary_key = table_columns.find(&:primary_key?)
+        inserted_row = @engine.select_row(table_name, row_id, table_columns)
+        inserted_id = if primary_key && inserted_row
+          inserted_row[primary_key.name] || inserted_row[primary_key.name.to_sym]
+        end
 
         {
           row_count: 1,
           affected_rows: 1,
           row_id: row_id,
+          inserted_id: inserted_id,
           message: "INSERT 1"
         }
       rescue DatabaseError => error
@@ -313,7 +321,8 @@ module RubyDB
         end
         row_id = existing[:_row_id] || existing["_row_id"]
         @engine.update_row(table_name, row_id, values)
-        { row_count: 1, affected_rows: 1, row_id: row_id, message: "INSERT 0 UPDATE 1" }
+        inserted_id = target.map { |column| existing[column] || existing[column.to_sym] }.first
+        { row_count: 1, affected_rows: 1, row_id: row_id, inserted_id: inserted_id, message: "INSERT 0 UPDATE 1" }
       end
 
       def execute_update(plan)

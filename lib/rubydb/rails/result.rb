@@ -7,7 +7,7 @@ module RubyDB
       include Enumerable
 
       attr_reader :columns, :rows, :row_count, :affected_rows
-      attr_reader :command_tag, :statement_id, :row_id
+      attr_reader :command_tag, :statement_id, :row_id, :inserted_id
 
       def initialize(result)
         @columns = result[:columns] || result[:column_names] || []
@@ -17,6 +17,7 @@ module RubyDB
         @command_tag = result[:command_tag] || "SELECT"
         @statement_id = result[:statement_id]
         @row_id = result[:row_id]
+        @inserted_id = result[:inserted_id]
         @transaction_id = result[:transaction_id]
         @success = result[:success] != false
         @error = result[:error]
@@ -85,6 +86,8 @@ module RubyDB
           row_count: @row_count,
           affected_rows: @affected_rows,
           command_tag: @command_tag,
+          row_id: @row_id,
+          inserted_id: @inserted_id,
           success: @success,
           error: @error,
           execution_time_ms: @execution_time
