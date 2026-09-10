@@ -23,6 +23,15 @@ All notable changes to RubyDB are documented here. Versions follow
   vacuum, maintenance, and release workflows.
 - Clarified the tested common SQLite-style profile and production limits.
 
+## 0.1.2 - 2026-09-09
+
+- Added SQLite/ActiveRecord-compatible `INSERT ... DEFAULT VALUES` parsing,
+  planning, execution, default materialization, and regression coverage.
+- Normalized literal schema defaults before they reach physical rows so empty
+  strings and other scalar defaults are not persisted as AST wrapper objects.
+- Released `rubydb-activerecord` 0.1.1 with scalar default unwrapping for
+  ActiveRecord column metadata.
+
 ## 0.1.1 - 2026-09-09
 
 - Published the Rails connection configuration fixes for embedded database

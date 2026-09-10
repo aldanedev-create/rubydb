@@ -77,6 +77,18 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
     expect(connection.table_exists?(:projects)).to be(false)
   end
 
+  it "exposes scalar schema defaults to ActiveRecord" do
+    connection = ActiveRecord::Base.connection
+    connection.execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, label VARCHAR(255) NOT NULL DEFAULT '')")
+
+    settings_model = Class.new(ActiveRecord::Base) do
+      self.table_name = "settings"
+    end
+
+    expect(settings_model.new.label).to eq("")
+    expect(settings_model.create!.reload.label).to eq("")
+  end
+
   it "executes an ActiveRecord association join with qualified filtering" do
     stub_const("RubydbAccount", Class.new(ActiveRecord::Base) do
       self.table_name = "accounts"

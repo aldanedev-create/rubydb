@@ -124,13 +124,14 @@ module RubyDB
       end
 
       class Insert < Plan
-        attr_reader :values, :rows, :on_conflict
+        attr_reader :values, :rows, :on_conflict, :default_values
 
-        def initialize(table_name, columns = [], values = [], rows: nil, on_conflict: nil)
+        def initialize(table_name, columns = [], values = [], rows: nil, on_conflict: nil, default_values: false)
           super(:insert, table_name, columns)
           @rows = rows || [values]
           @values = @rows.first || []
           @on_conflict = on_conflict
+          @default_values = default_values
         end
       end
 

@@ -684,6 +684,22 @@ module RubyDB
           metadata = @table_metadata[table_name]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
 
+          # SQL INSERT may omit columns entirely (DEFAULT VALUES) or omit
+          # only selected columns. Materialize declared defaults before
+          # constraint validation so NOT NULL defaults are valid and the
+          # physical row contains scalar values rather than AST wrappers.
+          if values.is_a?(Hash)
+            values = values.dup
+            columns.each do |column|
+              present = values.key?(column.name) || values.key?(column.name.to_sym)
+              next if present || !column.has_default?
+
+              default = column.default
+              default = default.value if default.respond_to?(:value)
+              values[column.name] = default
+            end
+          end
+
           # Rails and other SQL clients omit an INTEGER primary key on insert
           # and expect the database to allocate it. Keep allocation in the
           # engine so embedded and server connections have identical behavior.

@@ -158,7 +158,8 @@ module RubyDB
           statement.columns,
           statement.values,
           rows: statement.rows,
-          on_conflict: statement.on_conflict
+          on_conflict: statement.on_conflict,
+          default_values: statement.default_values?
         )
       end
 
@@ -188,7 +189,10 @@ module RubyDB
 
       def plan_create_table(statement)
         columns = statement.columns.map do |col|
-          Catalog::Column.new(col.name, col.type_class, **col.options)
+          options = col.options.dup
+          default = options[:default]
+          options[:default] = default.value if default.respond_to?(:value) && !default.is_a?(String)
+          Catalog::Column.new(col.name, col.type_class, **options)
         end
 
         Plan::CreateTable.new(

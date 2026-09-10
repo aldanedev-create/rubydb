@@ -758,6 +758,11 @@ module ActiveRecord
       # persists typed defaults, so serialize scalar defaults at this boundary
       # and let ActiveRecord cast them through the column type map.
       def rails_default_value(value)
+        # RubyDB exposes SQL defaults as AST literals. ActiveRecord expects
+        # the scalar payload when it builds its Column metadata; calling
+        # `to_s` on the wrapper would leak the Ruby object inspection into
+        # newly instantiated records.
+        value = value.value if value.respond_to?(:value) && !value.is_a?(String)
         value.is_a?(String) ? value : value.to_s
       end
 
