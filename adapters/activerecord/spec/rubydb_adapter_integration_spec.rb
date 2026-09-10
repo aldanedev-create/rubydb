@@ -41,6 +41,16 @@ RSpec.describe ActiveRecord::ConnectionAdapters::RubyDBAdapter do
     expect(loaded.attributes).to include("id" => 1, "email" => "ada@example.test", "active" => true)
   end
 
+  it "preserves false and zero values in ActiveRecord results" do
+    connection = ActiveRecord::Base.connection
+    connection.execute("CREATE TABLE flags (id INTEGER PRIMARY KEY, enabled BOOLEAN NOT NULL, attempts INTEGER NOT NULL)")
+    connection.execute("INSERT INTO flags (id, enabled, attempts) VALUES (1, FALSE, 0)")
+
+    result = connection.exec_query("SELECT enabled, attempts FROM flags WHERE id = 1")
+
+    expect(result.first).to include("enabled" => false, "attempts" => 0)
+  end
+
   it "runs a Rails migration that creates a table, adds a column, and adds an index" do
     migration = Class.new(ActiveRecord::Migration[migration_version]) do
       def change

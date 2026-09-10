@@ -776,7 +776,13 @@ module ActiveRecord
           end.map(&:to_s)
         end
         values = rows.map do |row|
-          columns.map { |column| row[column] || row[column.to_sym] }
+          columns.map do |column|
+            if row.respond_to?(:key?) && row.key?(column)
+              row[column]
+            elsif row.respond_to?(:key?) && row.key?(column.to_sym)
+              row[column.to_sym]
+            end
+          end
         end
         ActiveRecord::Result.new(columns, values)
       end
