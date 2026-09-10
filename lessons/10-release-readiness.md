@@ -121,6 +121,34 @@ PostgreSQL driver and does not make PostgreSQL SQL portable to RubyDB. Pin the
 adapter and server versions together, use TLS in production, and keep the
 application's migration and rollback procedure under version control.
 
+## Build and publish the Node adapter
+
+The Node adapter is a separate public npm package named `@dbs/rubydb`. npm
+requires new package names to be lowercase, so `@dbS/rubydb` is not a valid
+publish name. The `dbs` scope must belong to the npm account or organization
+that publishes it.
+
+```powershell
+cd adapters/node
+npm ci
+npm test
+npm run publish:check
+npm publish --access public
+```
+
+Use npm Trusted Publishing from CI or a protected npm token. Never commit an
+`.npmrc` containing credentials. The package's live test runs against a real
+RubyDB server when `RUBYDB_URL` is set:
+
+```powershell
+$env:RUBYDB_URL = "rubydb://rubydb@127.0.0.1:7432/rubydb"
+npm test
+```
+
+The package is a Node.js/TypeScript RubyDB client, not a PostgreSQL driver. Pin
+the npm client and RubyDB server versions together and validate the target
+application's SQL, retry, TLS, migration, backup, and failover behavior.
+
 ## Deployment gate
 
 For a direct RubyDB production deployment, follow [lesson 5](05-rubydb-production-server.md)

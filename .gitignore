@@ -36,6 +36,8 @@
 /adapters/python/build/
 /adapters/python/dist/
 /adapters/python/src/*.egg-info/
+/adapters/node/dist/
+/adapters/node/node_modules/
 __pycache__/
 *.py[cod]
 

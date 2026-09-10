@@ -1,0 +1,43 @@
+{
+  "name": "@dbs/rubydb",
+  "version": "0.1.0",
+  "description": "TypeScript and Node.js client for the RubyDB server",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "files": ["dist/src", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/client.test.js",
+    "prepack": "npm run build",
+    "pack:check": "npm pack --dry-run",
+    "publish:check": "npm run build && npm pack --dry-run"
+  },
+  "author": "Aldane Hutchinson",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aldanedev-create/rubydb.git",
+    "directory": "adapters/node"
+  },
+  "bugs": {
+    "url": "https://github.com/aldanedev-create/rubydb/issues"
+  },
+  "homepage": "https://github.com/aldanedev-create/rubydb/tree/main/adapters/node",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -108,6 +108,36 @@ live integration tests; they are intentionally small starting points, not a
 replacement for application-specific authorization, migrations, backups,
 timeouts, monitoring, and load testing.
 
+## Node.js and TypeScript services
+
+Node services use the `@dbs/rubydb` package over the same RubyDB server
+protocol:
+
+```sh
+npm install @dbs/rubydb
+```
+
+```ts
+import { connect } from "@dbs/rubydb";
+
+const db = await connect(process.env.RUBYDB_URL!);
+try {
+  const result = await db.query(
+    "SELECT id, state FROM jobs WHERE account_id = ?",
+    [accountId],
+  );
+  console.log(result.rows);
+} finally {
+  await db.close();
+}
+```
+
+Use `ConnectionPool` for concurrent workers, keep the pool bounded per process,
+and use `rubydbs://` with peer verification in production. The package is
+TypeScript-first, supports prepared statements, transactions, timeouts with
+wire cancellation, and does not access embedded database files. See
+`adapters/node/README.md` for the full Node release and operations boundary.
+
 ## A small Rails service
 
 ```yaml
