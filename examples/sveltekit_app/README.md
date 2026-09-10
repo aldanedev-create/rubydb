@@ -1,6 +1,6 @@
 # SvelteKit + RubyDB example
 
-This is a small SvelteKit notes app that uses `@dbs/rubydb` in server routes.
+This is a small SvelteKit notes app that uses `rubydb-node` in server routes.
 The browser never receives database credentials and never opens a RubyDB file.
 All data is read and written through a real RubyDB server connection.
 
@@ -19,7 +19,7 @@ ruby -Ilib examples/server/server.rb
 Build the checked-out Node adapter first:
 
 ```powershell
-cd adapters/node
+cd adapters/rubydb
 npm ci
 npm run build
 cd ../../examples/sveltekit_app
@@ -31,11 +31,11 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. The page can list and create notes.
 
-The example uses `file:../../adapters/node` while developing in this
+The example uses `file:../../adapters/rubydb` while developing in this
 repository. A deployed application should depend on the published package:
 
 ```json
-"@dbs/rubydb": "^0.1.0"
+"rubydb-node": "^0.1.0"
 ```
 
 ## Test the real HTTP path
@@ -55,4 +55,3 @@ Use `npm run build` and the SvelteKit production adapter appropriate for your
 hosting platform. Set `RUBYDB_URL` only in the server environment, use a
 verified `rubydbs://` URL, and run migrations/setup as a release step. Do not
 expose the RubyDB URL through public page data or client-side code.
-

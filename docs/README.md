@@ -27,7 +27,8 @@ Start here:
 - [Workload testing](operations/workload-testing.md)
 - [Release checklist](release.md)
 - [Lessons learned](lessons-learned.md)
-- [Ten-lesson production journey](../lessons/01-foundations.md)
+- [Production journey](../lessons/01-foundations.md)
+- [Build a community adapter](../lessons/11-community-adapter.md)
 
 Architecture and development:
 

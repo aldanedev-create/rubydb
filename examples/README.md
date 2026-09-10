@@ -22,8 +22,8 @@ tree. Run commands from the repository root with `ruby path/to/example.rb`.
 - `rails_app/` and `github_clone/` contain complete small Rails applications.
 - `python_flask/` is a real Flask JSON API using `rubydb-python`.
 - `python_flaxon/` is a real async Flaxon JSON API using `rubydb-python`.
-- The repository's `adapters/node/` contains the TypeScript/Node.js client
-  package and protocol tests for `@dbs/rubydb`.
+- The repository's `adapters/rubydb/` contains the TypeScript/Node.js client
+  package and protocol tests for `rubydb-node`.
 
 The Python examples require a running RubyDB server and use `RUBYDB_URL`; see
 each directory's README for setup, schema initialization, and live tests.

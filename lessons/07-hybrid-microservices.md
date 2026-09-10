@@ -110,15 +110,15 @@ timeouts, monitoring, and load testing.
 
 ## Node.js and TypeScript services
 
-Node services use the `@dbs/rubydb` package over the same RubyDB server
+Node services use the `rubydb-node` package over the same RubyDB server
 protocol:
 
 ```sh
-npm install @dbs/rubydb
+npm install rubydb-node
 ```
 
 ```ts
-import { connect } from "@dbs/rubydb";
+import { connect } from "rubydb-node";
 
 const db = await connect(process.env.RUBYDB_URL!);
 try {
@@ -136,7 +136,7 @@ Use `ConnectionPool` for concurrent workers, keep the pool bounded per process,
 and use `rubydbs://` with peer verification in production. The package is
 TypeScript-first, supports prepared statements, transactions, timeouts with
 wire cancellation, and does not access embedded database files. See
-`adapters/node/README.md` for the full Node release and operations boundary.
+`adapters/rubydb/README.md` for the full Node release and operations boundary.
 
 ## A small Rails service
 

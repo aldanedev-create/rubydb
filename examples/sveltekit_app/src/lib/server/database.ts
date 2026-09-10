@@ -1,4 +1,4 @@
-import { connect, type Connection } from "@dbs/rubydb";
+import { connect, type Connection } from "rubydb-node";
 
 const DEFAULT_URL = "rubydb://rubydb@127.0.0.1:7432/rubydb";
 

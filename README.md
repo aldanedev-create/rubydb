@@ -26,6 +26,39 @@ PostgreSQL SQL/extensions, and workloads requiring a mature managed database
 ecosystem. A common production architecture is PostgreSQL for the main app and
 RubyDB for smaller, independently operated microservices.
 
+## Ecosystem and community adapters
+
+RubyDB's ecosystem is built around a clear boundary: application code connects
+to a RubyDB server through the documented client/server protocol. The embedded
+`.rdb` file format is an internal storage implementation, not a public API for
+third-party drivers. This lets RubyDB evolve its storage safely while language
+and framework communities build clients that share the same server behavior.
+
+Official integration surfaces include:
+
+- Ruby's direct API and the `rubydb` client/server client
+- `rubydb-activerecord` for Rails applications
+- `rubydb-python` for Python DB-API 2.0 applications
+- `rubydb-node` for Node.js and TypeScript applications
+- Sequel and other Ruby integrations documented under `adapters/`
+
+Community developers can create adapters for another language, framework,
+ORM, query builder, migration tool, observability system, or job framework.
+Every adapter should begin with the [server protocol](docs/server/protocol.md)
+and the executable protocol tests, then provide an idiomatic API for its
+community. A production adapter must preserve parameter binding, transaction
+ownership, deadlines and wire cancellation, TLS verification, bounded frames,
+error details, and clean connection shutdown. A wrapper that only sends a
+string of SQL is not a production adapter.
+
+Use a distinct package name such as `rubydb-go`, `rubydb-django`, or
+`@your-scope/rubydb` and make its ownership clear. Do not present a community
+package as an official RubyDB release. Add the adapter to the ecosystem list
+only after it has live integration tests against a real RubyDB server and its
+supported RubyDB versions are documented. The complete build, test, security,
+and publishing workflow is in
+[Lesson 11: Build a community adapter](lessons/11-community-adapter.md).
+
 ## What works today
 
 The repository contains implementation and automated coverage for:
@@ -218,7 +251,7 @@ by the presence of an adapter.
 ## Documentation
 
 - [Documentation index](docs/README.md)
-- [Ten-lesson production journey](lessons/01-foundations.md)
+- [Production journey](lessons/01-foundations.md)
 - [Developer guide](docs/developer-guide.md)
 - [Troubleshooting guide](docs/troubleshooting.md)
 - [Debugging playbook](docs/debugging.md)

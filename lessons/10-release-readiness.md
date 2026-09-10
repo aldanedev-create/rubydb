@@ -123,13 +123,12 @@ application's migration and rollback procedure under version control.
 
 ## Build and publish the Node adapter
 
-The Node adapter is a separate public npm package named `@dbs/rubydb`. npm
-requires new package names to be lowercase, so `@dbS/rubydb` is not a valid
-publish name. The `dbs` scope must belong to the npm account or organization
-that publishes it.
+The Node adapter is a separate public npm package named `rubydb-node`. The
+literal `node/rubydb` is not a valid npm name because npm reserves `/` for
+scoped packages such as `@scope/package`.
 
 ```powershell
-cd adapters/node
+cd adapters/rubydb
 npm ci
 npm test
 npm run publish:check

@@ -1,5 +1,5 @@
 {
-  "name": "@dbs/rubydb",
+  "name": "rubydb-node",
   "version": "0.1.0",
   "description": "TypeScript and Node.js client for the RubyDB server",
   "type": "module",
@@ -23,13 +23,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aldanedev-create/rubydb.git",
-    "directory": "adapters/node"
+    "url": "git+https://github.com/aldanedev-create/rubydb.git",
+    "directory": "adapters/rubydb"
   },
   "bugs": {
     "url": "https://github.com/aldanedev-create/rubydb/issues"
   },
-  "homepage": "https://github.com/aldanedev-create/rubydb/tree/main/adapters/node",
+  "homepage": "https://github.com/aldanedev-create/rubydb/tree/main/adapters/rubydb",
   "engines": {
     "node": ">=18"
   },

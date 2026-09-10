@@ -1,23 +1,27 @@
-# @dbs/rubydb
+# rubydb-node
 
-`@dbs/rubydb` is a dependency-free Node.js and TypeScript client for the
+`rubydb-node` is a dependency-free Node.js and TypeScript client for the
 RubyDB server protocol. It uses `rubydb://` for trusted private networks and
 `rubydbs://` for TLS connections. It does not open embedded `.rdb` files.
 
+The npm package name is `rubydb-node`. The literal `node/rubydb` is not a
+valid npm package name: a slash is reserved for scoped names, which must use
+the form `@scope/package`.
+
 > npm package names must be lowercase, so the publishable name is
-> `@dbs/rubydb`, the lowercase form of `@dbS/rubydb`. The `dbs` scope must be
-> owned by your npm user or organization before publishing.
+> `rubydb-node` is an unscoped public package, so it does not require an npm
+> organization or scope.
 
 ## Install
 
 ```sh
-npm install @dbs/rubydb
+npm install rubydb-node
 ```
 
 ## Query RubyDB
 
 ```ts
-import { connect } from "@dbs/rubydb";
+import { connect } from "rubydb-node";
 
 const db = await connect(process.env.RUBYDB_URL!);
 try {
@@ -68,7 +72,7 @@ Use one bounded pool per application process. A connection is leased for one
 operation and must be released by `use`:
 
 ```ts
-import { ConnectionPool } from "@dbs/rubydb";
+import { ConnectionPool } from "rubydb-node";
 
 const pool = await ConnectionPool.create(process.env.RUBYDB_URL!, {
   minSize: 1,
