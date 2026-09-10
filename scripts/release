@@ -3,6 +3,7 @@
 
 require "digest"
 require "rbconfig"
+require "rubygems"
 
 root = File.expand_path("..", __dir__)
 Dir.chdir(root)
@@ -37,7 +38,10 @@ actual = Digest::SHA512.file(gem_path).hexdigest
 abort "Checksum verification failed" unless expected == actual
 
 if ENV["RUBYDB_PUBLISH"] == "1"
-  abort "Set GEM_HOST_API_KEY before publishing" if ENV.fetch("GEM_HOST_API_KEY", "").empty?
+  api_key = ENV.fetch("GEM_HOST_API_KEY", "")
+  credentials_path = Gem.configuration.credentials_path
+  credentials_available = File.file?(credentials_path) && !File.zero?(credentials_path)
+  abort "Set GEM_HOST_API_KEY or configure RubyGems credentials at #{credentials_path}" if api_key.empty? && !credentials_available
   abort "gem push failed" unless system("gem", "push", gem_path)
   puts "Published #{gem_path}"
 else

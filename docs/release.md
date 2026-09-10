@@ -34,6 +34,18 @@ $env:GEM_HOST_API_KEY = "YOUR_RUBYGEMS_API_KEY"
 ruby scripts/release
 ```
 
+Instead of `GEM_HOST_API_KEY`, RubyGems can read a credentials file. With the
+RubyGems version bundled with Ruby 4 on Windows, create this file:
+`C:\Users\<your-user>\.local\share\gem\credentials`
+
+```yaml
+---
+:rubygems_api_key: YOUR_RUBYGEMS_API_KEY
+```
+
+Then omit `GEM_HOST_API_KEY`; `scripts/release` and `gem push` will use the
+file automatically. Keep the file private and never commit it.
+
 On macOS/Linux, use:
 
 ```sh
