@@ -3,7 +3,7 @@
 RubyDB requires Ruby 3.3 or newer in the current support policy.
 
 ```sh
-gem install rubydb --pre
+gem install rubydb 
 ```
 
 From a checkout:
