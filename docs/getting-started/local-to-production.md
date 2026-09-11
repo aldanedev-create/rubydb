@@ -178,7 +178,7 @@ persistent storage. The data directory must survive process restarts and
 deploys. Keep backups on a separate system or failure domain.
 
 ```sh
-gem install rubydb -v 0.1.0
+gem install rubydb -v 0.1.5
 install -d -o rubydb -g rubydb -m 0700 /var/lib/rubydb/data
 install -d -o rubydb -g rubydb -m 0750 /var/log/rubydb
 ```
