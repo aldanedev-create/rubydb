@@ -108,6 +108,30 @@ Use `inspect --wal` to correlate WAL growth with checkpoint/backup incidents.
 Do not edit files based on an inspection result; use the documented recovery
 procedure.
 
+## Go accelerator
+
+The accelerator is a private companion process, not a second server. Inspect
+the selected platform binary and perform a protocol handshake with:
+
+```sh
+rubydb accelerator --ping --json
+```
+
+Build it from a source checkout after installing Go:
+
+```sh
+ruby scripts/build_accelerator
+RUBYDB_ACCELERATOR_TARGETS=current ruby scripts/build_accelerator
+```
+
+Use `RUBYDB_ACCELERATOR=off` to reproduce a query on Ruby only. The default
+`mode: auto` uses the binary columnar protocol and calibrates each supported
+workload family against Ruby, falling back automatically when Go is slower or
+returns a mismatched result. `mode: required` is useful for CI differential
+tests and readiness validation. See the [Go accelerator
+architecture](architecture/go-accelerator.md) for modes, checksums, fallback,
+and package behavior.
+
 ## SQL shell
 
 Open the configured local database shell:

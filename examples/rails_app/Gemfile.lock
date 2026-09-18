@@ -1,14 +1,17 @@
 PATH
   remote: ../../adapters/activerecord
   specs:
-    rubydb-activerecord (0.1.0)
+    rubydb-activerecord (0.1.3)
       activerecord (>= 7.1, < 8.1)
       rubydb (~> 0.1.0)
 
 PATH
   remote: ../..
   specs:
-    rubydb (0.1.0)
+    rubydb (0.1.6)
+      base64 (>= 0.2)
+      bigdecimal (>= 3.1)
+      concurrent-ruby (>= 1.2)
       date (~> 3.3)
       digest (~> 3.1)
       json (~> 2.7)
@@ -281,8 +284,8 @@ CHECKSUMS
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
   rdoc (7.2.0) sha256=8650f76cd4009c3b54955eb5d7e3a075c60a57276766ebf36f9085e8c9f23192
   reline (0.7.0) sha256=5b012d8e55dbf9d450f12bde2cf7d15ff546ae80b3f8f3b30e570d431815583d
-  rubydb (0.1.0)
-  rubydb-activerecord (0.1.0)
+  rubydb (0.1.6)
+  rubydb-activerecord (0.1.3)
   securerandom (0.4.1) sha256=cc5193d414a4341b6e225f0cb4446aceca8e50d5e1888743fac16987638ea0b1
   stringio (3.2.0) sha256=c37cb2e58b4ffbd33fe5cd948c05934af997b36e0b6ca6fdf43afa234cf222e1
   thor (1.5.0) sha256=e3a9e55fe857e44859ce104a84675ab6e8cd59c650a49106a05f55f136425e73

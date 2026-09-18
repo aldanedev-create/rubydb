@@ -12,8 +12,8 @@ RubyDB project at the time this lesson was written.
 
 ```ruby
 # Gemfile
-gem "rubydb", "0.1.5"
-gem "rubydb-activerecord", "0.1.2"
+gem "rubydb", "0.1.6"
+gem "rubydb-activerecord", "0.1.3"
 gem "pg" # Keep this when production may use PostgreSQL.
 ```
 

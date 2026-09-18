@@ -9,8 +9,8 @@ topology you will deploy.
 
 ```ruby
 # Gemfile
-gem "rubydb", "0.1.5"
-gem "rubydb-activerecord", "0.1.2"
+gem "rubydb", "0.1.6"
+gem "rubydb-activerecord", "0.1.3"
 ```
 
 Embedded development configuration:

@@ -119,6 +119,18 @@ module RubyDB
           debug: false,
           profile: false,
           fake_data: false
+        },
+
+        # Bundled Go acceleration. Ruby remains the correctness path and
+        # automatically handles operations the accelerator cannot prove safe.
+        accelerator: {
+          mode: "auto",
+          timeout: 30,
+          max_frame_size: 16 * 1024 * 1024,
+          min_rows: 256,
+          read_pipeline: "on",
+          direct_snapshot: true,
+          binary: nil
         }
       }
 

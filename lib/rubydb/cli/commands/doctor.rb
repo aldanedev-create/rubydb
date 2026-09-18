@@ -42,6 +42,9 @@ module RubyDB
             checks << {name: "Connection", passed: true, details: {database: db_path, latency_ms: latency_ms}}
             checks << {name: "Storage", passed: engine.storage_manager.open?, details: engine.storage_manager.stats}
             checks << {name: "WAL", passed: !engine.wal.nil?, details: engine.wal.stats}
+            accelerator = engine.accelerator.stats
+            accelerator_passed = accelerator[:mode] != "required" || accelerator[:available]
+            checks << {name: "Go accelerator", passed: accelerator_passed, details: accelerator}
             unless options[:quick]
               checks << {name: "Indexes", passed: !engine.index_manager.nil?, details: engine.index_manager.stats}
             end

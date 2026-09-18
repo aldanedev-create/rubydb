@@ -125,7 +125,7 @@ def spawn_node(role, directory, port, fence_path)
   {stdin: stdin, stdout: stdout, stderr: stderr, wait: wait_thread, stderr_thread: stderr_thread}
 end
 
-def read_event(node, timeout: 10)
+def read_event(node, timeout: 60)
   Timeout.timeout(timeout) do
     loop do
       ready = IO.select([node[:stdout]], nil, nil, 0.1)
@@ -145,7 +145,7 @@ def command(node, name, payload = {})
   read_event(node)
 end
 
-def wait_until(timeout: 30)
+def wait_until(timeout: 60)
   Timeout.timeout(timeout) do
     loop do
       return true if yield

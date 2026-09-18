@@ -42,8 +42,18 @@ Gem::Specification.new do |spec|
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
   spec.files = Dir.chdir(__dir__) do
-    `git ls-files -z`.split("\x0").reject do |f|
-      f.match(%r{^(test|spec|features|benchmarks|fuzz|chaos|examples|adapters/python)/})
+    tracked_files = `git ls-files -z`.split("\x0")
+    accelerator_files = Dir[
+      "accelerator/bin/rubydb-accelerator-*",
+      "accelerator/bin/SHA256SUMS",
+      "accelerator/cmd/**/*.go",
+      "accelerator/internal/**/*.go",
+      "accelerator/go.mod"
+    ]
+    runtime_files = Dir["lib/rubydb/accelerator.rb", "lib/rubydb/accelerator/**/*.rb", "lib/rubydb/cli/commands/accelerator.rb", "lib/rubydb/storage/snapshot_reader.rb"]
+    physical_execution_files = Dir["lib/rubydb/execution/physical_plan.rb", "lib/rubydb/execution/cost_model.rb", "lib/rubydb/execution/operator_selection.rb", "lib/rubydb/execution/accelerator_dispatch.rb"]
+    (tracked_files + accelerator_files + runtime_files + physical_execution_files).uniq.select { |f| File.file?(f) }.reject do |f|
+      f.match?(%r{^(test|spec|features|benchmarks|fuzz|chaos|examples|adapters/python)/}) || f.end_with?("_test.go")
     end
   end
   spec.bindir = "exe"

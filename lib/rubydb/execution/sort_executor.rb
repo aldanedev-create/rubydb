@@ -97,11 +97,11 @@ module RubyDB
           comparison = 0
           order_by.each do |order|
             col = order.column.to_s
-            val_a = a[col]
-            val_b = b[col]
+            val_a = order_value(a, col)
+            val_b = order_value(b, col)
 
             comparison = compare_values(val_a, val_b)
-            comparison = -comparison if order.direction == :desc
+            comparison = -comparison if order.direction.to_s.casecmp?("desc")
             break unless comparison == 0
           end
           comparison
@@ -112,9 +112,11 @@ module RubyDB
         return 0 if a.nil? && b.nil?
         return -1 if a.nil?
         return 1 if b.nil?
-        if a.is_a?(String) && b.is_a?(String)
-        end
-        b
+
+        comparison = a <=> b
+        return comparison unless comparison.nil?
+
+        a.to_s <=> b.to_s
       end
 
       def external_sort(rows, order_by, temp_dir)
@@ -166,12 +168,24 @@ module RubyDB
       def compare_rows(a, b, order_by)
         order_by.each do |order|
           col = order.column.to_s
-          val_a = a[col]
-          val_b = b[col]
+          val_a = order_value(a, col)
+          val_b = order_value(b, col)
           comparison = compare_values(val_a, val_b)
+          comparison = -comparison if order.direction.to_s.casecmp?("desc")
           return comparison unless comparison == 0
         end
         0
+      end
+
+      def order_value(row, column)
+        return row[column] if row.key?(column)
+        return row[column.to_sym] if row.key?(column.to_sym)
+
+        short_column = column.split(".").last
+        return row[short_column] if row.key?(short_column)
+        return row[short_column.to_sym] if row.key?(short_column.to_sym)
+
+        nil
       end
 
       attr_reader :stats

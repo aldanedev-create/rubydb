@@ -7,7 +7,7 @@ This gem is an adapter to RubyDB's SQL engine. It is not a PostgreSQL, MySQL, or
 ## Requirements
 
 - Ruby 3.3 or newer
-- RubyDB 0.1.x
+- RubyDB 0.1.6 or another compatible `0.1.x` release
 - ActiveRecord 7.1, 7.2, or 8.0 (the dependency range is `>= 7.1`, `< 8.1`)
 
 ## Install
@@ -15,8 +15,8 @@ This gem is an adapter to RubyDB's SQL engine. It is not a PostgreSQL, MySQL, or
 Add both gems to the Rails application's `Gemfile`:
 
 ```ruby
-gem "rubydb"
-gem "rubydb-activerecord"
+gem "rubydb", "~> 0.1.6"
+gem "rubydb-activerecord", "~> 0.1.3"
 ```
 
 Then run:
@@ -24,6 +24,11 @@ Then run:
 ```sh
 bundle install
 ```
+
+The core gem contains the optional Go accelerator and its platform binaries;
+the adapter does not require Go to be installed. RubyDB remains the SQL,
+transaction, WAL, and durability authority while the adapter exposes the
+Rails connection, query, migration, schema, and pool APIs.
 
 The adapter registers itself under the `rubydb` adapter name when it is
 required by Bundler. For a manually loaded application, require it explicitly:

@@ -140,6 +140,13 @@ module RubyDB
         end
       end
 
+      def metadata(table_name = nil)
+        @lock.synchronize do
+          ensure_connected
+          @connection.send_metadata(table_name)
+        end
+      end
+
       def query_async(sql, params = [], timeout: nil)
         @lock.synchronize do
           ensure_connected

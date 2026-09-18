@@ -170,6 +170,36 @@ RSpec.describe "relational constraints" do
     end
   end
 
+  it "does not treat a non-key parent update as a referential key change" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "update-non-key.rdb")
+      engine = RubyDB::Storage::Engine.new(path, auto_vacuum: false)
+      parent_columns = [
+        RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false),
+        RubyDB::Catalog::Column.new(:name, :varchar, null: false)
+      ]
+      child_columns = [
+        RubyDB::Catalog::Column.new(:id, :integer, primary_key: true, null: false),
+        RubyDB::Catalog::Column.new(:parent_id, :integer, null: false)
+      ]
+      engine.create_table(:parents, parent_columns)
+      engine.create_table(:children, child_columns, constraints: [
+        {type: :foreign_key, columns: [:parent_id], reference_table: :parents,
+         reference_columns: [:id], on_update: :restrict}
+      ])
+      engine.insert_row(:parents, parent_columns, [7, "before"])
+      engine.insert_row(:children, child_columns, [1, 7])
+
+      expect(engine.update_row(:parents, 1, {name: "after"})).to be(true)
+      engine.close
+      engine = RubyDB::Storage::Engine.new(path, auto_vacuum: false)
+      parent = engine.select_rows(:parents, parent_columns, visibility_check: false).first
+      expect(parent["name"] || parent[:name]).to eq("after")
+    ensure
+      engine&.close if engine&.open?
+    end
+  end
+
   it "restricts updates that would orphan referencing rows" do
     Dir.mktmpdir do |dir|
       engine = RubyDB::Storage::Engine.new(File.join(dir, "update-restrict.rdb"), auto_vacuum: false)

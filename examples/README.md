@@ -20,6 +20,8 @@ tree. Run commands from the repository root with `ruby path/to/example.rb`.
   terminal to execute a query.
 - `production_smoke/` contains regular Ruby and Rails application smoke tests.
 - `rails_app/` and `github_clone/` contain complete small Rails applications.
+- `rails_ecommerce/` is a small Rails shop with joins, eager loading,
+  transactions, deterministic seed data, and direct/HTTP pressure scripts.
 - `python_flask/` is a real Flask JSON API using `rubydb-python`.
 - `python_flaxon/` is a real async Flaxon JSON API using `rubydb-python`.
 - The repository's `adapters/rubydb/` contains the TypeScript/Node.js client

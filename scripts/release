@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "fileutils"
 require "rbconfig"
 require "rubygems"
 
@@ -9,13 +10,14 @@ root = File.expand_path("..", __dir__)
 Dir.chdir(root)
 
 abort "release metadata preflight failed" unless system(RbConfig.ruby, File.join(root, "scripts", "release_check"))
+abort "Go accelerator build failed" unless system(RbConfig.ruby, File.join(root, "scripts", "build_accelerator"))
 
 release_descriptors = [
   "rubydb.gemspec",
   "adapters/activerecord/rubydb-activerecord.gemspec",
   "packaging/homebrew/rubydb.rb"
 ]
-untracked_runtime_files = `git ls-files --others --exclude-standard -- lib exe rubydb.gemspec`.lines.map(&:chomp)
+untracked_runtime_files = `git ls-files --others --exclude-standard -- lib exe accelerator rubydb.gemspec`.lines.map(&:chomp)
 unless untracked_runtime_files.empty?
   abort "Runtime files are untracked and would be omitted from the gem: #{untracked_runtime_files.join(", ")}. Commit them before publishing."
 end
@@ -42,14 +44,42 @@ expected = File.read(checksum_path).split.first
 actual = Digest::SHA512.file(gem_path).hexdigest
 abort "Checksum verification failed" unless expected == actual
 
+# Build the ActiveRecord adapter alongside the core release. Its version is
+# intentionally independent so Rails applications can pin the adapter while
+# remaining on the RubyDB 0.1.x compatibility line.
+adapter_dir = File.join(root, "adapters", "activerecord")
+adapter_spec = Dir.chdir(adapter_dir) { Gem::Specification.load("rubydb-activerecord.gemspec") }
+abort "Unable to load ActiveRecord adapter gemspec" unless adapter_spec
+adapter_pkg_dir = File.join(adapter_dir, "pkg")
+FileUtils.mkdir_p(adapter_pkg_dir)
+adapter_gem_path = File.join(adapter_pkg_dir, "rubydb-activerecord-#{adapter_spec.version}.gem")
+abort "ActiveRecord adapter gem build failed" unless system(
+  "gem", "build", "-V", "rubydb-activerecord.gemspec", "--output", adapter_gem_path,
+  chdir: adapter_dir
+)
+adapter_checksum_dir = File.join(root, "checksums")
+FileUtils.mkdir_p(adapter_checksum_dir)
+adapter_checksum_path = File.join(adapter_checksum_dir, "#{File.basename(adapter_gem_path)}.sha512")
+adapter_expected = Digest::SHA512.file(adapter_gem_path).hexdigest
+File.write(adapter_checksum_path, "#{adapter_expected}  #{File.basename(adapter_gem_path)}\n")
+abort "ActiveRecord adapter checksum verification failed" unless
+  Digest::SHA512.file(adapter_gem_path).hexdigest == File.read(adapter_checksum_path).split.first
+puts "Adapter #{adapter_spec.name} #{adapter_spec.version} built to #{adapter_gem_path}."
+puts "Adapter checksum written to #{adapter_checksum_path}"
+
 if ENV["RUBYDB_PUBLISH"] == "1"
+  puts "RubyGems 2FA/OTP settings: https://rubygems.org/profile/edit"
+  puts "If prompted for an OTP, enter the current code from your authenticator."
   api_key = ENV.fetch("GEM_HOST_API_KEY", "")
   credentials_path = Gem.configuration.credentials_path
   credentials_available = File.file?(credentials_path) && !File.zero?(credentials_path)
   abort "Set GEM_HOST_API_KEY or configure RubyGems credentials at #{credentials_path}" if api_key.empty? && !credentials_available
-  abort "gem push failed" unless system("gem", "push", gem_path)
-  puts "Published #{gem_path}"
+  [gem_path, adapter_gem_path].each do |artifact|
+    abort "gem push failed for #{artifact}" unless system("gem", "push", artifact)
+    puts "Published #{artifact}"
+  end
 else
   puts "Release artifact verified: #{gem_path}"
-  puts "To publish: RUBYDB_PUBLISH=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release"
+  puts "Release artifact verified: #{adapter_gem_path}"
+  puts "To publish both: RUBYDB_PUBLISH=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release"
 end

@@ -35,6 +35,7 @@ Architecture and development:
 - [Current-state audit](architecture/current-state.md)
 - [Production roadmap](architecture/production-roadmap.md)
 - [Architecture overview](architecture/overview.md)
+- [Ruby + Go accelerator](architecture/go-accelerator.md)
 - [Storage engine](architecture/storage-engine.md)
 - [Transactions](architecture/transactions.md)
 - [MVCC](architecture/mvcc.md)

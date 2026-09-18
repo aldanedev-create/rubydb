@@ -339,6 +339,7 @@ module RubyDB
           @checkpoint&.stop
           @writer.shutdown(wait)
           @reader&.close
+          @archive&.close
         end
       end
 

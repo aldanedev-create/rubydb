@@ -80,6 +80,8 @@ module RubyDB
             case request[:type]
             when "query"
               process_query(request[:sql], request[:params] || [], request[:deadline_at], cancellation)
+            when "metadata"
+              process_metadata(request[:table])
             when "prepare"
               process_prepare(request[:sql])
             when "execute"
@@ -191,6 +193,49 @@ module RubyDB
           success: true,
           type: "query_result",
           result: execute_sql(sql, params, deadline_at: deadline_at, cancellation: cancellation),
+          timestamp: Time.now.iso8601
+        }
+      end
+
+      def process_metadata(table_name = nil)
+        engine = @config[:engine]
+        raise RubyDB::ServerError, "Session has no database engine" unless engine
+
+        if table_name.nil? || table_name.to_s.empty?
+          return {
+            success: true,
+            type: "metadata_result",
+            metadata: {tables: engine.list_tables.map(&:to_s)},
+            timestamp: Time.now.iso8601
+          }
+        end
+
+        table_key = table_name.to_s
+        metadata = engine.table_metadata[table_key] || engine.table_metadata[table_key.to_sym]
+        raise RubyDB::DatabaseError, "Table '#{table_name}' does not exist" unless metadata
+
+        columns = engine.table_columns(table_key).map do |column|
+          {
+            name: column.name.to_s,
+            type: column.type.to_s,
+            nullable: column.nullable?,
+            primary_key: column.primary_key?,
+            default: column.has_default? ? column.default : nil
+          }
+        end
+        indexes = engine.index_manager.get_indexes_for_table(table_key).map do |index|
+          {name: index.name.to_s, unique: index.unique, columns: index.columns.map(&:to_s)}
+        end
+
+        {
+          success: true,
+          type: "metadata_result",
+          metadata: {
+            tables: [table_key],
+            columns: columns,
+            indexes: indexes,
+            constraints: metadata[:constraints] || []
+          },
           timestamp: Time.now.iso8601
         }
       end

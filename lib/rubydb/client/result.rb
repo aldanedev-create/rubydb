@@ -5,7 +5,7 @@ module RubyDB
     # Result - Query result set
     class Result
       attr_reader :columns, :rows, :row_count, :affected_rows, :sql
-      attr_reader :command_tag, :statement_id, :transaction_id
+      attr_reader :command_tag, :statement_id, :transaction_id, :row_id, :inserted_id
       attr_reader :error
 
       def initialize(data = {})
@@ -17,6 +17,8 @@ module RubyDB
         @command_tag = data[:command_tag] || "SELECT"
         @statement_id = data[:statement_id]
         @transaction_id = data[:transaction_id]
+        @row_id = data[:row_id]
+        @inserted_id = data[:inserted_id]
         @success = data[:success] != false
         @error = data[:error]
         @warnings = data[:warnings] || []
@@ -85,6 +87,8 @@ module RubyDB
           row_count: @row_count,
           affected_rows: @affected_rows,
           command_tag: @command_tag,
+          row_id: @row_id,
+          inserted_id: @inserted_id,
           success: @success,
           error: @error,
           execution_time_ms: @execution_time_ms

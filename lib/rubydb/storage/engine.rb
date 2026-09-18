@@ -5,6 +5,7 @@ require "json"
 require "securerandom"
 require "fileutils"
 require "monitor"
+require_relative "../accelerator"
 
 # Storage components
 require_relative "database_lock"
@@ -17,6 +18,7 @@ require_relative "tuple"
 require_relative "serializer"
 require_relative "deserializer"
 require_relative "visibility_map"
+require_relative "snapshot_reader"
 require_relative "../mvcc/version_store"
 require_relative "storage_layout"
 require_relative "../indexes/index"
@@ -53,12 +55,13 @@ module RubyDB
       NULL_BITMAP_FLAG = 0x02
       VARIABLE_LENGTH_PREFIXES_FLAG = 0x04
 
-      attr_reader :storage_manager, :buffer_pool, :page_manager, :catalog, :path, :last_commit_ack
-      attr_reader :table_metadata, :transaction_manager, :wal, :crash_recovery, :version_store, :index_manager
+      attr_reader :storage_manager, :buffer_pool, :page_manager, :catalog, :path, :last_commit_ack, :config, :accelerator
+      attr_reader :table_metadata, :transaction_manager, :wal, :crash_recovery, :version_store, :index_manager, :snapshot_reader
 
       def initialize(path, config = {})
         @path = path
         @config = config
+        @accelerator = RubyDB::Accelerator::Client.new(config[:accelerator] || {})
         @database_lock = DatabaseLock.new(path)
         @database_lock.acquire!
         @catalog = config[:catalog] || Catalog::Catalog.new
@@ -117,7 +120,7 @@ module RubyDB
 
         # Initialize WAL
         wal_dir = config[:wal_dir] || "#{path}.wal"
-        @wal = WAL::WAL.new(wal_dir, recovery: false)  # Defer recovery until after metadata load
+        @wal = WAL::WAL.new(wal_dir, config.merge(recovery: false))  # Defer recovery until after metadata load
         @wal.attach_engine(self)
 
         # Initialize crash recovery
@@ -131,6 +134,7 @@ module RubyDB
 
         # Build/load indexes only after metadata and crash recovery are ready.
         @index_manager = Indexes::IndexManager.new(self)
+        @snapshot_reader = SnapshotReader.new(self)
 
         # Start cleanup thread if configured
         start_cleanup_thread if config[:auto_cleanup] != false
@@ -166,6 +170,31 @@ module RubyDB
 
       def free_page(page_number)
         @storage_manager.free_page(page_number)
+      end
+
+      # Yield a stable, immutable database snapshot to the accelerator. A
+      # transaction or an active MVCC writer makes the snapshot ineligible;
+      # callers use the normal Ruby path in that case.
+      def with_accelerator_snapshot
+        @lock.synchronize do
+          return nil unless accelerator_snapshot_eligible?
+
+          @storage_manager.flush
+          @visibility_map.flush
+          save_table_metadata
+          @snapshot_reader.with_snapshot { |snapshot| yield snapshot }
+        end
+      end
+
+      def accelerator_snapshot_hidden_row_ids
+        @visibility_map.visibility_info.each_with_object([]) do |(row_id, info), hidden|
+          state = (info[:state] || info["state"]).to_s.to_sym
+          hidden << row_id.to_i unless %i[visible committed].include?(state)
+        end
+      end
+
+      def table_pages_for_snapshot(table_name)
+        @table_pages[resolve_table_name(table_name)] || []
       end
 
       # Record operations
@@ -1483,6 +1512,14 @@ module RubyDB
         current_transaction_manager && current_transaction_manager[:active]
       end
 
+      def accelerator_snapshot_eligible?
+        return false unless @is_open
+        return false if in_transaction?
+        return false unless @visibility_map.active_transaction_count.zero?
+
+        current_transaction_id.to_i.zero?
+      end
+
       def create_savepoint(name)
         @lock.synchronize do
           tx = current_transaction_manager
@@ -1613,6 +1650,8 @@ module RubyDB
         return unless @is_open
 
         stop_cleanup_thread
+        @accelerator&.close
+        @snapshot_reader&.close
 
         # Flush WAL first (ensures all mutations are recorded)
         if @wal
@@ -1653,6 +1692,7 @@ module RubyDB
             transaction_rollback: @stats[:transaction_rollback],
             wal_writes: @stats[:wal_writes],
             crash_recoveries: @stats[:crash_recoveries],
+            accelerator: @accelerator&.stats,
             last_maintenance_error: @last_maintenance_error,
             is_open: @is_open,
             visibility_rows: @visibility_map.visibility_info.size,
@@ -2092,7 +2132,7 @@ module RubyDB
       end
 
       def validate_referential_update!(table_name, old_row, new_row)
-        return true if old_row == new_row
+        return true if referential_row_values_equal?(table_name, old_row, new_row)
 
         @table_metadata.each do |child_table, child_metadata|
           (child_metadata[:constraints] || []).each do |raw_definition|
@@ -2102,13 +2142,13 @@ module RubyDB
 
             child_columns = Array(definition[:columns]).map(&:to_sym)
             parent_columns = Array(definition[:reference_columns] || :id).map(&:to_sym)
-            next unless parent_columns.any? { |column| old_row[column] != new_row[column] }
+            next unless parent_columns.any? { |column| row_value(old_row, column) != row_value(new_row, column) }
 
             child_rows = select_rows(child_table, child_metadata[:columns], visibility_check: false)
             referenced = child_rows.any? do |child_row|
               child_columns.each_with_index.all? do |child_column, index|
-                child_value = child_row[child_column] || child_row[child_column.to_s]
-                parent_value = old_row[parent_columns[index]] || old_row[parent_columns[index].to_s]
+                child_value = row_value(child_row, child_column)
+                parent_value = row_value(old_row, parent_columns[index])
                 !child_value.nil? && child_value == parent_value
               end
             end
@@ -2134,7 +2174,7 @@ module RubyDB
       end
 
       def apply_referential_update!(table_name, old_row, new_row)
-        return true if old_row == new_row
+        return true if referential_row_values_equal?(table_name, old_row, new_row)
 
         @table_metadata.each do |child_table, child_metadata|
           (child_metadata[:constraints] || []).each do |raw_definition|
@@ -2144,12 +2184,12 @@ module RubyDB
 
             child_columns = Array(definition[:columns]).map(&:to_sym)
             parent_columns = Array(definition[:reference_columns] || :id).map(&:to_sym)
-            next unless parent_columns.any? { |column| old_row[column] != new_row[column] }
+            next unless parent_columns.any? { |column| row_value(old_row, column) != row_value(new_row, column) }
             child_rows = select_rows(child_table, child_metadata[:columns], visibility_check: false)
             matching_rows = child_rows.select do |child_row|
               child_columns.each_with_index.all? do |child_column, index|
-                child_value = child_row[child_column] || child_row[child_column.to_s]
-                parent_value = old_row[parent_columns[index]] || old_row[parent_columns[index].to_s]
+                child_value = row_value(child_row, child_column)
+                parent_value = row_value(old_row, parent_columns[index])
                 !child_value.nil? && child_value == parent_value
               end
             end
@@ -2160,7 +2200,7 @@ module RubyDB
               child_row_id = child_row[:_row_id] || child_row["_row_id"]
               updates = case action
               when "cascade"
-                child_columns.each_with_index.to_h { |column, index| [column, new_row[parent_columns[index]] || new_row[parent_columns[index].to_s]] }
+                child_columns.each_with_index.to_h { |column, index| [column, row_value(new_row, parent_columns[index])] }
               when "set_null"
                 child_columns.to_h { |column| [column, nil] }
               when "set_default"
@@ -2176,6 +2216,28 @@ module RubyDB
           end
         end
         true
+      end
+
+      # Rows can cross the storage, SQL, WAL, and recovery boundaries with
+      # symbol or string keys. Referential actions compare column values, not
+      # the Ruby key representation. Without this normalization, updating a
+      # non-key parent column could look like a primary-key change during WAL
+      # replay and incorrectly fail ON UPDATE RESTRICT.
+      def row_value(row, column)
+        return row[column] if row.key?(column)
+        return row[column.to_s] if row.key?(column.to_s)
+
+        nil
+      end
+
+      def referential_row_values_equal?(table_name, old_row, new_row)
+        columns = @table_metadata[table_name.to_s] || @table_metadata[table_name.to_sym]
+        column_definitions = columns && columns[:columns]
+        return old_row == new_row if column_definitions.nil?
+
+        column_definitions.all? do |column|
+          row_value(old_row, column.name.to_sym) == row_value(new_row, column.name.to_sym)
+        end
       end
 
       def cache_hit_rate

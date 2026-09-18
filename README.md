@@ -102,11 +102,26 @@ unsupported or unverified dialect features must not be assumed to work.
 
 ## Quick start
 
-Install the release gem:
+Install the core release gem:
 
 ```sh
-gem install rubydb 
+gem install rubydb -v 0.1.6
 ```
+
+For Rails, install the core and ActiveRecord adapter together:
+
+```ruby
+# Gemfile
+gem "rubydb", "~> 0.1.6"
+gem "rubydb-activerecord", "~> 0.1.3"
+```
+
+RubyDB ships the Go accelerator binaries inside the core gem. Developers and
+deployments do not install Go. The default `accelerator.mode: auto` starts Go
+for eligible workloads and keeps it only when the result is equivalent and
+the measured latency wins; use `RUBYDB_ACCELERATOR=required` for a readiness
+check that must exercise Go, or `RUBYDB_ACCELERATOR=off` for Ruby-only
+diagnostics.
 
 For local development from this repository:
 
@@ -114,6 +129,27 @@ For local development from this repository:
 bundle install
 bundle exec rspec
 ```
+
+### Bundled Go acceleration
+
+RubyDB keeps the Ruby engine as its correctness authority and automatically
+starts a bundled, CGO-free Go worker for proven read-only pipelines, checksums,
+and compression. The release gem contains platform binaries; end users do not
+install or configure Go. From a source checkout, build and verify the worker
+with:
+
+```sh
+ruby scripts/build_accelerator
+ruby -Ilib exe/rubydb accelerator --ping --json
+```
+
+Use `accelerator.mode: off` or `RUBYDB_ACCELERATOR=off` for Ruby-only
+diagnostics. `mode: auto` calibrates eligible scans, aggregates, and inner
+hash joins against Ruby and keeps Go only when it wins without changing the
+result. Use `required` only for differential validation and readiness checks.
+See [the accelerator architecture](docs/architecture/go-accelerator.md)
+for the protocol boundary, fallback behavior, differential testing, and
+release rules.
 
 ## Ruby usage
 
@@ -170,7 +206,7 @@ Run one RubyDB server on persistent storage and inject a TLS URL into the
 service:
 
 ```sh
-gem install rubydb -v 0.1.5
+gem install rubydb -v 0.1.6
 rubydb --config /etc/rubydb/production.yml --env production start
 ```
 

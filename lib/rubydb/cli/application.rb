@@ -74,6 +74,7 @@ module RubyDB
         @commands[:inspect] = Commands::Inspect.new(@output, @formatter).method(:execute)
         @commands[:vacuum] = Commands::Vacuum.new(@output, @formatter).method(:execute)
         @commands[:doctor] = Commands::Doctor.new(@output, @formatter).method(:execute)
+        @commands[:accelerator] = Commands::Accelerator.new(@output, @formatter).method(:execute)
       end
 
       def parse_global_options(argv)
@@ -112,7 +113,10 @@ module RubyDB
         end
 
         begin
-          parser.parse!(argv)
+          # Leave command-specific flags (for example `accelerator --ping`)
+          # for the selected command parser. Global flags remain accepted
+          # before the command name.
+          parser.order!(argv)
         rescue OptionParser::ParseError => e
           @output.error(e.message)
           print_help
@@ -155,6 +159,7 @@ module RubyDB
         @output.puts "  inspect                  Inspect database internals"
         @output.puts "  vacuum                   Vacuum the database"
         @output.puts "  doctor                   Run health checks"
+        @output.puts "  accelerator              Inspect or verify the Go accelerator"
         @output.puts
         @output.puts "Run 'rubydb <command> --help' for more information on a command."
       end

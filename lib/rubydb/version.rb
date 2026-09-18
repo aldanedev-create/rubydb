@@ -11,7 +11,7 @@ module RubyDB
   # - MAJOR: Incompatible API changes
   # - MINOR: Backwards-compatible new functionality
   # - PATCH: Backwards-compatible bug fixes
-  VERSION = "0.1.5"
+  VERSION = "0.1.6"
 
   # Version components for easy access
   module Version

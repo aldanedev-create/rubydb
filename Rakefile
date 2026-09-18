@@ -11,8 +11,13 @@ RSpec::Core::RakeTask.new(:spec)
 task default: %i[spec rubocop]
 
 namespace :build do
+  desc "Build the bundled Go accelerator for the current platform"
+  task :accelerator do
+    abort "Go accelerator build failed" unless system({"RUBYDB_ACCELERATOR_TARGETS" => "current"}, RbConfig.ruby, "scripts/build_accelerator")
+  end
+
   desc "Build the gem and write a SHA-512 checksum for the exact artifact"
-  task checksum: :build do
+  task checksum: [:accelerator, :build] do
     gem_path = Dir["pkg/rubydb-*.gem"].max_by { |path| File.mtime(path) }
     abort "No built gem found in pkg/" unless gem_path
 

@@ -1,0 +1,21 @@
+# Embedded mode is the zero-configuration local path. Set RUBYDB_EMBEDDED=false
+# and RUBYDB_URL for a multi-process Rails deployment.
+
+default: &default
+  adapter: rubydb
+  embedded: <%= ENV.fetch("RUBYDB_EMBEDDED", "true") == "true" %>
+  database: <%= ENV.fetch("RUBYDB_DATABASE", Rails.root.join("tmp/rubydb_ecommerce.rdb")) %>
+  url: <%= ENV["RUBYDB_URL"] %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", 1) %>
+  timeout: <%= ENV.fetch("RUBYDB_TIMEOUT", 30) %>
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+  database: <%= ENV.fetch("RUBYDB_TEST_DATABASE", Rails.root.join("tmp/rubydb_ecommerce_test.rdb")) %>
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("RUBYDB_DATABASE", "/var/lib/rubydb/rails_ecommerce.rdb") %>

@@ -128,16 +128,15 @@ module ActiveRecord
       def primary_key(table_name)
         return @connection.engine.table_columns(table_name).find(&:primary_key?)&.name&.to_s || "id" if embedded?
 
-        result = execute("PRAGMA table_info(#{quote_table_name(table_name)})")
-        row = result.find { |r| r["pk"] == 1 }
-        row ? row["name"] : "id"
+        remote_metadata(table_name)[:columns].find do |column|
+          column[:primary_key] || column["primary_key"]
+        end&.then { |column| (column[:name] || column["name"]).to_s } || "id"
       end
 
       def tables
         return @connection.engine.list_tables.map(&:to_s) if embedded?
 
-        result = execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        result.map { |row| row["name"] }
+        Array(remote_metadata[:tables]).map(&:to_s)
       end
 
       def table_exists?(table_name)
@@ -148,21 +147,15 @@ module ActiveRecord
       # instantiated. The embedded engine has catalog metadata already, so
       # avoid generating unsupported SQLite catalog queries.
       def data_sources
-        return tables if embedded?
-
-        super
+        tables
       end
 
       def data_source_exists?(name)
-        return table_exists?(name) if embedded?
-
-        super
+        table_exists?(name)
       end
 
       def views
-        return [] if embedded?
-
-        super
+        []
       end
 
       def indexes(table_name)
@@ -177,30 +170,35 @@ module ActiveRecord
           end
         end
 
-        result = execute("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=?", [table_name])
-        result.map do |row|
-          {
-            name: row["name"],
-            columns: parse_index_columns(row["sql"]),
-            unique: row["sql"].include?("UNIQUE")
-          }
+        Array(remote_metadata(table_name)[:indexes]).map do |index|
+          ActiveRecord::ConnectionAdapters::IndexDefinition.new(
+            table_name.to_s,
+            index[:name] || index["name"],
+            index[:unique] || index["unique"],
+            index[:columns] || index["columns"] || []
+          )
         end
       end
 
       def columns(table_name)
         return embedded_columns(table_name) if embedded?
 
-        result = execute("PRAGMA table_info(#{quote_table_name(table_name)})")
-        result.map do |row|
+        remote_columns(table_name)
+      end
+
+      def remote_columns(table_name)
+        Array(remote_metadata(table_name)[:columns]).map do |row|
+          type = row[:type] || row["type"]
+          nullable = row.key?(:nullable) ? row[:nullable] : row["nullable"]
           ActiveRecord::ConnectionAdapters::Column.new(
-            row["name"],
-            row["default"],
-            RubyDB::Rails::Type.to_rails(row["type"]),
-            {
-              null: row["notnull"] == 0,
-              primary_key: row["pk"] == 1,
-              limit: extract_limit(row["type"])
-            }
+            row[:name] || row["name"],
+            rails_default_value(row.key?(:default) ? row[:default] : row["default"]),
+            ActiveRecord::ConnectionAdapters::SqlTypeMetadata.new(
+              sql_type: type.to_s.upcase,
+              type: rails_type_for(type),
+              limit: extract_limit(type.to_s)
+            ),
+            nullable
           )
         end
       end
@@ -466,23 +464,25 @@ module ActiveRecord
       end
 
       def foreign_keys(table_name)
-        return super unless embedded?
-
-        constraints = @connection.engine.table_metadata[table_name.to_s]&.fetch(:constraints, []) || []
+        constraints = if embedded?
+          @connection.engine.table_metadata[table_name.to_s]&.fetch(:constraints, []) || []
+        else
+          Array(remote_metadata(table_name)[:constraints])
+        end
         constraints.filter_map do |constraint|
-          type = constraint[:type] || constraint["type"]
-          next unless type.to_s.upcase == "FOREIGN_KEY"
+          definition = constraint.transform_keys(&:to_sym)
+          next unless definition[:type].to_s.downcase.include?("foreign")
 
-          columns = constraint[:columns] || constraint["columns"] || []
-          reference_table = constraint[:reference_table] || constraint["reference_table"]
-          reference_columns = constraint[:reference_columns] || constraint["reference_columns"] || ["id"]
+          columns = definition[:columns] || []
+          reference_table = definition[:reference_table]
+          reference_columns = definition[:reference_columns] || ["id"]
           options = {
             column: Array(columns).first.to_s,
             primary_key: Array(reference_columns).first.to_s,
-            name: constraint[:name] || constraint["name"]
+            name: definition[:name]
           }
-          options[:on_delete] = (constraint[:on_delete] || constraint["on_delete"]).to_s if constraint[:on_delete] || constraint["on_delete"]
-          options[:on_update] = (constraint[:on_update] || constraint["on_update"]).to_s if constraint[:on_update] || constraint["on_update"]
+          options[:on_delete] = definition[:on_delete].to_s if definition[:on_delete]
+          options[:on_update] = definition[:on_update].to_s if definition[:on_update]
           ActiveRecord::ConnectionAdapters::ForeignKeyDefinition.new(table_name.to_s, reference_table.to_s, options)
         end
       end
@@ -725,6 +725,12 @@ module ActiveRecord
         !@connection.engine.nil?
       end
 
+      def remote_metadata(table_name = nil)
+        raw = @connection.client.metadata(table_name)
+        metadata = raw[:metadata] || raw["metadata"] || raw
+        metadata.transform_keys(&:to_sym)
+      end
+
       def embedded_columns(table_name)
         @connection.engine.table_columns(table_name).map do |column|
           ActiveRecord::ConnectionAdapters::Column.new(
@@ -759,6 +765,8 @@ module ActiveRecord
       # persists typed defaults, so serialize scalar defaults at this boundary
       # and let ActiveRecord cast them through the column type map.
       def rails_default_value(value)
+        return nil if value.nil?
+
         # RubyDB exposes SQL defaults as AST literals. ActiveRecord expects
         # the scalar payload when it builds its Column metadata; calling
         # `to_s` on the wrapper would leak the Ruby object inspection into

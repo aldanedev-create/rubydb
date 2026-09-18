@@ -3,6 +3,7 @@
 require "fileutils"
 require "zlib"
 require "time"
+require_relative "../accelerator"
 
 module RubyDB
   module WAL
@@ -14,6 +15,7 @@ module RubyDB
         @wal_dir = wal_dir
         @archive_dir = archive_dir || File.join(wal_dir, "archive")
         @config = config
+        @accelerator = RubyDB::Accelerator::Client.new(config[:accelerator] || {})
         @compression = config[:compression] || true
         @max_archive_size = config[:max_size] || 10 * 1024 * 1024 * 1024  # 10GB
         @retention_days = config[:retention_days] || 30
@@ -170,9 +172,19 @@ module RubyDB
         end
       end
 
+      def close
+        @accelerator&.close
+        true
+      end
+
       private
 
       def compress_file(source, destination)
+        if (compressed = @accelerator.gzip(File.binread(source), level: @config[:compression_level]))
+          File.binwrite(destination, compressed)
+          return
+        end
+
         File.open(source, "rb") do |input|
           Zlib::GzipWriter.open(destination) do |output|
             output.write(input.read)
@@ -181,6 +193,11 @@ module RubyDB
       end
 
       def decompress_file(source, destination)
+        if (decompressed = @accelerator.gunzip(File.binread(source)))
+          File.binwrite(destination, decompressed)
+          return
+        end
+
         Zlib::GzipReader.open(source) do |input|
           File.binwrite(destination, input.read)
         end

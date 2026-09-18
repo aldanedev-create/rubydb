@@ -23,6 +23,20 @@ All notable changes to RubyDB are documented here. Versions follow
   vacuum, maintenance, and release workflows.
 - Clarified the tested common SQLite-style profile and production limits.
 
+## 0.1.6 - 2026-09-18
+
+- Bundled the Go accelerator binaries and Ruby bridge for release installs;
+  developers do not need Go installed to use the packaged core gem.
+- Added lock-protected direct storage snapshots, worker lifecycle recovery,
+  multiplexed requests, cancellation, bounded execution, and adaptive Ruby/Go
+  selection with a safe Ruby fallback.
+- Added accelerator CLI diagnostics, environment-mode handling, checksums,
+  extracted-gem verification, and release packaging for the runtime binaries.
+- Added the Rails ecommerce pressure example and expanded production guidance
+  for embedded development, managed RubyDB services, PostgreSQL-backed large
+  applications, and ActiveRecord adapter deployment.
+- Prepared `rubydb-activerecord` 0.1.3 for the RubyDB 0.1.x release line.
+
 ## 0.1.5 - 2026-09-10
 
 - Applied network query and prepared-statement parameters through the server

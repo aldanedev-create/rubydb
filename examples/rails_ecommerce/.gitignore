@@ -1,0 +1,8 @@
+/log/*
+/tmp/*
+!/tmp/.keep
+*.rdb
+*.rdb.*
+*.wal
+*.pid
+transaction.log

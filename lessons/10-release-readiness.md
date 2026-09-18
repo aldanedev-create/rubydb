@@ -35,13 +35,13 @@ Review the project’s release instructions and run the preflight with a version
 that has not already been published:
 
 ```sh
-RUBYDB_RELEASE_VERSION=0.1.5 ruby scripts/release
+RUBYDB_RELEASE_VERSION=0.1.6 ruby scripts/release
 ```
 
 On PowerShell, use:
 
 ```powershell
-$env:RUBYDB_RELEASE_VERSION = "0.1.5"
+$env:RUBYDB_RELEASE_VERSION = "0.1.6"
 ruby scripts/release
 ```
 
@@ -49,8 +49,8 @@ The release script builds the gem and writes a checksum. Check the artifact
 locally before publishing:
 
 ```sh
-gem specification pkg/rubydb-0.1.5.gem
-gem install pkg/rubydb-0.1.5.gem --local
+gem specification pkg/rubydb-0.1.6.gem
+gem install pkg/rubydb-0.1.6.gem --local
 ruby -rrubydb -e 'puts RubyDB::VERSION'
 ```
 
@@ -59,7 +59,7 @@ on the release machine. The local script publishes only when both the explicit
 publish flag and secret are present; never commit the secret:
 
 ```sh
-RUBYDB_RELEASE_VERSION=0.1.5 \
+RUBYDB_RELEASE_VERSION=0.1.6 \
 RUBYDB_PUBLISH=1 \
 GEM_HOST_API_KEY="YOUR_RUBYGEMS_API_KEY" \
 ruby scripts/release
@@ -68,7 +68,7 @@ ruby scripts/release
 On Windows PowerShell:
 
 ```powershell
-$env:RUBYDB_RELEASE_VERSION = "0.1.5"
+$env:RUBYDB_RELEASE_VERSION = "0.1.6"
 $env:RUBYDB_PUBLISH = "1"
 $env:GEM_HOST_API_KEY = "YOUR_RUBYGEMS_API_KEY"
 ruby scripts/release

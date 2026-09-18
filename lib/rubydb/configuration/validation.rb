@@ -77,7 +77,14 @@ module RubyDB
         "monitoring.health_check_interval" => {type: :integer, required: true, min: 1},
         "monitoring.stats_collector" => {type: :boolean, required: true},
         "monitoring.prometheus" => {type: :boolean, required: true},
-        "monitoring.prometheus_port" => {type: :integer, required: true, min: 1, max: 65535}
+        "monitoring.prometheus_port" => {type: :integer, required: true, min: 1, max: 65535},
+
+        "accelerator.mode" => {type: :string, required: true, enum: ["auto", "off", "required"]},
+        "accelerator.timeout" => {type: :integer, required: true, min: 1},
+        "accelerator.max_frame_size" => {type: :integer, required: true, min: 1024},
+        "accelerator.min_rows" => {type: :integer, required: true, min: 0},
+        "accelerator.read_pipeline" => {type: :string, required: true, enum: ["off", "on"]},
+        "accelerator.direct_snapshot" => {type: :boolean, required: true}
       }
 
       def initialize

@@ -150,6 +150,21 @@ module RubyDB
         end
       end
 
+      # Fetch catalog metadata over the same authenticated connection used by
+      # SQL queries. Rails adapters need this for schema discovery in
+      # client/server mode; asking the server for it avoids pretending that a
+      # RubyDB catalog is SQLite's sqlite_master table.
+      def send_metadata(table_name = nil)
+        @lock.synchronize do
+          ensure_connected
+
+          payload = {}
+          payload[:table] = table_name.to_s if table_name
+          send_message(Protocol::Message.new(:metadata, payload))
+          unwrap_result(receive_message.payload)
+        end
+      end
+
       # Starts a query and returns a handle that can issue a wire-level
       # cancellation while the server is executing it. The same connection
       # must not be used for another application request until wait returns.

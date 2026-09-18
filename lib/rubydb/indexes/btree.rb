@@ -133,6 +133,27 @@ module RubyDB
         })
       end
 
+      # Return a stable, ordered copy of the in-memory B-tree entries. Indexes
+      # are rebuilt from metadata on open, so this immutable value is the
+      # correct hand-off to a storage snapshot; it is not a second persisted
+      # index format.
+      def snapshot_entries
+        @lock.synchronize do
+          return [] unless @root
+
+          leaf = @root
+          leaf = leaf.children.first until leaf.is_leaf
+          entries = []
+          while leaf
+            leaf.keys.each_with_index do |key, index|
+              entries << {key: key, value: leaf.values[index]}
+            end
+            leaf = leaf.next_leaf
+          end
+          entries
+        end
+      end
+
       private
 
       def initialize_root
@@ -151,9 +172,17 @@ module RubyDB
       def extract_key(row)
         if @columns.size == 1
           column = @columns.first
-          row.key?(column) ? row[column] : row[column.to_s]
+          return row[column] if row.key?(column)
+          return row[column.to_s] if row.key?(column.to_s)
+
+          row[column.to_sym] if column.respond_to?(:to_sym)
         else
-          @columns.map { |col| row.key?(col) ? row[col] : row[col.to_s] }
+          @columns.map do |column|
+            next row[column] if row.key?(column)
+            next row[column.to_s] if row.key?(column.to_s)
+
+            column.respond_to?(:to_sym) ? row[column.to_sym] : nil
+          end
         end
       end
 

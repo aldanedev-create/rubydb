@@ -10,6 +10,8 @@ module RubyDB
 
       def initialize(engine, cte_rows: {}, deadline_at: nil, cancellation: nil)
         @engine = engine
+        @accelerator = engine.respond_to?(:accelerator) ? engine.accelerator : nil
+        @accelerator_dispatch = AcceleratorDispatch.new(@accelerator)
         @cte_rows = cte_rows
         @deadline_at = deadline_at && (deadline_at.is_a?(Time) ? deadline_at : Time.parse(deadline_at.to_s))
         @cancellation = cancellation
@@ -21,7 +23,9 @@ module RubyDB
           index_scans: 0,
           joins: 0,
           aggregations: 0,
-          sorts: 0
+          sorts: 0,
+          accelerator_requests: 0,
+          accelerator_fallbacks: 0
         }
         @lock = Mutex.new
         @current_transaction = nil
@@ -173,21 +177,36 @@ module RubyDB
       end
 
       def execute_select(plan)
+        @accelerator_window_applied = false
         @stats[:sequential_scans] += 1 if plan.scan_type == :sequential
         @stats[:index_scans] += 1 if plan.scan_type == :index
 
         # Qualify source rows before evaluating predicates. This preserves
         # SQL's table/alias namespace while retaining unqualified keys for
         # existing single-table callers.
-        rows = qualify_rows(scan_table(plan), plan.source_reference || plan.table_name)
+        snapshot_rows = accelerate_snapshot_scan(plan)
+        rows = snapshot_rows || scan_table(plan)
+        accelerated = snapshot_rows || accelerate_scan(rows, plan)
+        aggregate_accelerated = false
+        unless accelerated
+          accelerated_rows = accelerate_aggregate(rows, plan)
+          if accelerated_rows
+            rows = accelerated_rows
+            aggregate_accelerated = true
+          end
+        end
+        if accelerated
+          rows = accelerated
+        end
+        rows = qualify_rows(rows, plan.source_reference || plan.table_name) unless aggregate_accelerated
         plan.joins.each do |join|
           check_deadline!
           right_rows = qualify_rows(scan_table(Plan::Select.new(join[:table].name, [])), join[:table])
-          rows = execute_join(rows, right_rows, join)
+          rows = accelerate_join(rows, right_rows, join) || execute_join(rows, right_rows, join)
         end
 
         # Apply filters (WHERE clause)
-        if plan.predicate
+        if plan.predicate && !accelerated && !aggregate_accelerated
           rows = rows.each_with_index.filter_map do |row, index|
             check_deadline! if (index & 255).zero?
             row if evaluate_predicate(plan.predicate, row)
@@ -199,14 +218,14 @@ module RubyDB
         # ORDER BY is evaluated against the source rows, so a column used
         # solely for ordering remains available even when it is not selected.
         aggregating = plan.aggregates && !plan.aggregates.empty?
-        if plan.order_by && !plan.order_by.empty? && !aggregating
+        if plan.order_by && !plan.order_by.empty? && !aggregating && !accelerated
           rows = sort_rows(rows, plan.order_by)
         end
 
-        if aggregating
+        if aggregating && !aggregate_accelerated
           rows = aggregate_rows(rows, plan.group_by || [], plan.projections)
           rows = rows.select { |row| evaluate_predicate(plan.having, row) } if plan.having
-        elsif plan.projections
+        elsif !aggregating && plan.projections
           # Apply projections (SELECT columns)
           rows = rows.each_with_index.map do |row, index|
             check_deadline! if (index & 255).zero?
@@ -226,7 +245,7 @@ module RubyDB
         end
 
         # Apply LIMIT and OFFSET
-        if plan.limit
+        if plan.limit && !@accelerator_window_applied
           offset = plan.offset || 0
           rows = rows[offset, plan.limit] || []
         elsif plan.offset
@@ -576,6 +595,338 @@ module RubyDB
       end
 
       # Scan operations
+      def accelerate_snapshot_scan(plan)
+        return nil unless @accelerator
+        return nil unless @accelerator.read_pipeline?
+        return nil unless @accelerator_dispatch.preferred?(:snapshot_scan)
+        return nil unless plan.table_name && plan.joins.empty?
+        return nil if @cte_rows.any?
+        return nil if plan.distinct || plan.having || (plan.aggregates && !plan.aggregates.empty?)
+        return nil if plan.estimated_rows.to_i < @accelerator.min_rows
+
+        filters = accelerator_filters(plan.predicate)
+        order_by = accelerator_order_by(plan.order_by)
+        return nil if filters.nil? || order_by.nil?
+
+        columns = @engine.table_columns(plan.table_name)
+        column_names = columns.map { |column| column.name.to_s }
+        column_types = columns.each_with_object({}) { |column, types| types[column.name.to_s] = column.type_class.to_s }
+        index_name = if plan.scan_type == :index && plan.index&.type&.to_sym == :btree
+          plan.index.name.to_s
+        end
+        storage_order = order_by.map { |order| order.merge(column: order[:column].to_s.split(".").last) }
+        windowed_projection = Array(plan.projections).any? do |projection|
+          expression = projection.respond_to?(:expression) ? projection.expression : projection
+          expression.is_a?(SQL::AST::FunctionCall) && expression.window
+        end
+        window_limit = if !windowed_projection && !plan.distinct && !(plan.aggregates && !plan.aggregates.empty?)
+          plan.limit
+        end
+        window_eligible = !windowed_projection && !plan.distinct && !(plan.aggregates && !plan.aggregates.empty?)
+        window_offset = (window_limit || window_eligible) ? (plan.offset || 0) : 0
+
+        @stats[:accelerator_requests] += 1
+        calibrating = !@accelerator.manager.performance_calibrated?(:snapshot_scan)
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        result = nil
+        @engine.with_accelerator_snapshot do |manifest|
+          result = @accelerator.snapshot_scan(
+            manifest,
+            table: plan.table_name,
+            columns: column_names,
+            column_types: column_types,
+            filters: filters,
+            order_by: storage_order,
+            index_name: index_name,
+            limit: window_limit,
+            offset: window_offset,
+            batch_size: window_limit ? [window_limit, 1024].min : 1024
+          )
+        end
+        return nil unless result
+        @accelerator_window_applied = !window_limit.nil? || window_offset.positive?
+        return result[:rows] unless calibrating
+
+        ruby_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        ruby_rows = ruby_scan_rows(@engine.select_rows(plan.table_name, columns), plan, apply_window: !window_limit.nil?)
+        go_ms = elapsed_milliseconds(started_at)
+        ruby_ms = elapsed_milliseconds(ruby_started_at)
+        unless accelerator_results_equivalent?(result[:rows], ruby_rows)
+          @stats[:accelerator_fallbacks] += 1
+          @accelerator.manager.record_performance(:snapshot_scan, ruby_ms: ruby_ms, go_ms: Float::INFINITY)
+          @accelerator.manager.record_performance(:scan, ruby_ms: ruby_ms, go_ms: Float::INFINITY)
+          raise ExecutionError, "RubyDB accelerator returned a different snapshot scan result" if @accelerator.manager.mode == "required"
+
+          return ruby_rows
+        end
+        @accelerator.manager.record_performance(:snapshot_scan, ruby_ms: ruby_ms, go_ms: go_ms)
+        @accelerator.manager.record_performance(:scan, ruby_ms: ruby_ms, go_ms: go_ms)
+        @accelerator.manager.acceleration_preferred?(:snapshot_scan) ? result[:rows] : ruby_rows
+      rescue RubyDB::Accelerator::Error, RubyDB::StorageError
+        @stats[:accelerator_fallbacks] += 1
+        raise if @accelerator.manager.mode == "required"
+
+        nil
+      end
+
+      def accelerate_scan(rows, plan)
+        return nil unless @accelerator
+        return nil unless @accelerator.read_pipeline?
+        return nil if rows.size < @accelerator.min_rows
+        return nil unless @accelerator_dispatch.preferred?(:scan)
+        return nil unless plan.joins.empty?
+        return nil if plan.distinct || (plan.aggregates && !plan.aggregates.empty?)
+
+        filters = accelerator_filters(plan.predicate)
+        order_by = accelerator_order_by(plan.order_by)
+        return nil if filters.nil? || order_by.nil?
+        return nil if filters.empty? && order_by.empty?
+
+        calibrating = !@accelerator.manager.performance_calibrated?(:scan)
+        @stats[:accelerator_requests] += 1
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        result = @accelerator.rows_pipeline(
+          rows,
+          filters: filters,
+          order_by: order_by,
+          # Ruby applies LIMIT/OFFSET after projection and aggregation. Do
+          # not apply them in Go here or the final Ruby stage would paginate
+          # the result twice.
+          limit: nil,
+          offset: 0
+        )
+        return nil unless result
+        return result[:rows] unless calibrating
+
+        ruby_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        ruby_rows = ruby_scan_rows(rows, plan)
+        go_ms = elapsed_milliseconds(started_at)
+        ruby_ms = elapsed_milliseconds(ruby_started_at)
+        if !accelerator_results_equivalent?(result[:rows], ruby_rows)
+          @stats[:accelerator_fallbacks] += 1
+          @accelerator.manager.record_performance(:scan, ruby_ms: ruby_ms, go_ms: Float::INFINITY)
+          if @accelerator.manager.mode == "required"
+            raise ExecutionError, "RubyDB accelerator returned a different scan result"
+          end
+
+          return ruby_rows
+        end
+        @accelerator.manager.record_performance(:scan, ruby_ms: ruby_ms, go_ms: go_ms)
+        @accelerator.manager.acceleration_preferred?(:scan) ? result[:rows] : ruby_rows
+      rescue RubyDB::Accelerator::Error
+        @stats[:accelerator_fallbacks] += 1
+        raise if @accelerator.manager.mode == "required"
+
+        nil
+      end
+
+      def accelerate_aggregate(rows, plan)
+        return nil unless @accelerator
+        return nil unless @accelerator.read_pipeline?
+        return nil if rows.size < @accelerator.min_rows
+        return nil unless @accelerator_dispatch.preferred?(:aggregate)
+        return nil unless plan.joins.empty?
+        return nil if plan.distinct || plan.having || plan.order_by&.any?
+        return nil unless plan.aggregates && !plan.aggregates.empty?
+
+        filters = accelerator_filters(plan.predicate)
+        group_by = Array(plan.group_by).map { |expression| accelerator_identifier(expression) }
+        return nil if filters.nil? || group_by.any?(&:nil?)
+
+        definitions = []
+        projections = Array(plan.projections)
+        projections.each do |projection|
+          expression = projection.respond_to?(:expression) ? projection.expression : projection
+          if aggregate_function?(expression)
+            return nil if expression.distinct || expression.arguments.length > 1
+
+            argument = expression.arguments.first
+            column = argument.is_a?(SQL::AST::Star) ? "*" : accelerator_identifier(argument)
+            return nil unless column
+            alias_name = projection.respond_to?(:alias_name) ? projection.alias_name : nil
+            return nil if alias_name.nil? || alias_name.to_s.empty?
+
+            definitions << {function: expression.name.to_s.upcase, column: column, alias: alias_name.to_s}
+          else
+            column = accelerator_identifier(expression)
+            return nil unless column && group_by.include?(column)
+          end
+        end
+
+        return nil if definitions.empty?
+
+        calibrating = !@accelerator.manager.performance_calibrated?(:aggregate)
+        @stats[:accelerator_requests] += 1
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        result = @accelerator.rows_pipeline(
+          rows,
+          filters: filters,
+          group_by: group_by,
+          aggregates: definitions,
+          limit: nil,
+          offset: 0
+        )
+        accelerated_aggregate_rows = result && result[:aggregates]
+        return nil unless accelerated_aggregate_rows
+
+        projected_rows = accelerated_aggregate_rows.map do |row|
+          projections.each_with_object({}) do |projection, projected|
+            name = projection_name(projection)
+            projected[name] = row[name]
+          end
+        end
+        return projected_rows unless calibrating
+
+        ruby_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        filtered_rows = plan.predicate ? rows.select { |row| evaluate_predicate(plan.predicate, row) } : rows
+        ruby_rows = aggregate_rows(filtered_rows, plan.group_by || [], projections)
+        go_ms = elapsed_milliseconds(started_at)
+        ruby_ms = elapsed_milliseconds(ruby_started_at)
+        if !accelerator_results_equivalent?(projected_rows, ruby_rows)
+          @stats[:accelerator_fallbacks] += 1
+          @accelerator.manager.record_performance(:aggregate, ruby_ms: ruby_ms, go_ms: Float::INFINITY)
+          raise ExecutionError, "RubyDB accelerator returned a different aggregate result" if @accelerator.manager.mode == "required"
+
+          return ruby_rows
+        end
+        @accelerator.manager.record_performance(:aggregate, ruby_ms: ruby_ms, go_ms: go_ms)
+        @accelerator.manager.acceleration_preferred?(:aggregate) ? projected_rows : ruby_rows
+      rescue RubyDB::Accelerator::Error
+        @stats[:accelerator_fallbacks] += 1
+        raise if @accelerator.manager.mode == "required"
+
+        nil
+      end
+
+      def ruby_scan_rows(rows, plan, apply_window: false)
+        source_rows = rows.map { |row| row.each_with_object({}) { |(key, value), copy| copy[key.to_s] = value } }
+        result = plan.predicate ? source_rows.select { |row| evaluate_predicate(plan.predicate, row) } : source_rows
+        order_by = accelerator_order_by(plan.order_by)
+        result = sort_rows(result, order_by) if order_by && !order_by.empty?
+        if apply_window
+          offset = plan.offset || 0
+          result = result[offset, plan.limit] || [] if plan.limit
+          result = result[offset..] || [] if !plan.limit && offset.positive?
+        end
+        result
+      end
+
+      def accelerate_join(left_rows, right_rows, join)
+        return nil unless @accelerator
+        return nil unless @accelerator.read_pipeline?
+        return nil if left_rows.size + right_rows.size < @accelerator.min_rows
+        return nil unless join[:type].to_sym == :inner
+
+        predicate = join[:predicate]
+        return nil unless predicate.is_a?(Predicate::Comparison) && predicate.operator.to_s.casecmp?("eq")
+
+        left_key = accelerator_identifier(predicate.left)
+        right_key = accelerator_identifier(predicate.right)
+        return nil unless left_key && right_key
+        return nil unless left_rows.first&.key?(left_key) && right_rows.first&.key?(right_key)
+        return nil unless @accelerator_dispatch.preferred?(:join)
+
+        calibrating = !@accelerator.manager.performance_calibrated?(:join)
+        @stats[:accelerator_requests] += 1
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        result = @accelerator.hash_join(left_rows, right_rows, left_key: left_key, right_key: right_key)
+        return nil unless result
+        return result[:rows] unless calibrating
+
+        ruby_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        ruby_rows = execute_join(left_rows, right_rows, join)
+        go_ms = elapsed_milliseconds(started_at)
+        ruby_ms = elapsed_milliseconds(ruby_started_at)
+        unless accelerator_results_equivalent?(result[:rows], ruby_rows)
+          @stats[:accelerator_fallbacks] += 1
+          @accelerator.manager.record_performance(:join, ruby_ms: ruby_ms, go_ms: Float::INFINITY)
+          raise ExecutionError, "RubyDB accelerator returned a different join result" if @accelerator.manager.mode == "required"
+
+          return ruby_rows
+        end
+        @accelerator.manager.record_performance(:join, ruby_ms: ruby_ms, go_ms: go_ms)
+        @accelerator.manager.acceleration_preferred?(:join) ? result[:rows] : ruby_rows
+      rescue RubyDB::Accelerator::Error
+        @stats[:accelerator_fallbacks] += 1
+        raise if @accelerator.manager.mode == "required"
+
+        nil
+      end
+
+      def elapsed_milliseconds(started_at)
+        (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000.0
+      end
+
+      def accelerator_results_equivalent?(left, right)
+        @accelerator_dispatch.equivalent?(left, right)
+      end
+
+      def accelerator_filters(predicate)
+        return [] unless predicate
+
+        case predicate
+        when Predicate::And
+          left = accelerator_filters(predicate.left)
+          right = accelerator_filters(predicate.right)
+          return nil if left.nil? || right.nil?
+
+          left + right
+        when Predicate::Comparison
+          column = accelerator_identifier(predicate.left)
+          value = accelerator_literal(predicate.right)
+          return nil if column.nil? || value.equal?(:unsupported)
+
+          [{column: column, operator: predicate.operator.to_s, value: value}]
+        when Predicate::Between
+          column = accelerator_identifier(predicate.expression)
+          low = accelerator_literal(predicate.low)
+          high = accelerator_literal(predicate.high)
+          return nil if column.nil? || low.equal?(:unsupported) || high.equal?(:unsupported)
+
+          [
+            {column: column, operator: "gte", value: low},
+            {column: column, operator: "lte", value: high}
+          ]
+        when Predicate::IsNull
+          column = accelerator_identifier(predicate.expression)
+          return nil unless column
+
+          [{column: column, operator: predicate.negated ? "is_not_null" : "is_null"}]
+        when Predicate::Like
+          column = accelerator_identifier(predicate.expression)
+          value = accelerator_literal(predicate.pattern)
+          return nil if column.nil? || value.equal?(:unsupported)
+
+          [{column: column, operator: "like", value: value}]
+        end
+      end
+
+      def accelerator_order_by(order_by)
+        order_by.map do |order|
+          expression = order.is_a?(Hash) ? order[:column] : order.expression
+          column = accelerator_identifier(expression)
+          return nil unless column
+
+          direction = order.is_a?(Hash) ? order[:direction] : order.direction
+          {column: column, direction: direction.to_s}
+        end
+      end
+
+      def accelerator_identifier(expression)
+        return expression.to_s if expression.is_a?(String) || expression.is_a?(Symbol)
+        return expression.name.to_s if expression.is_a?(Expression::Column)
+        return nil unless expression.is_a?(SQL::AST::Identifier)
+
+        expression.name.to_s
+      end
+
+      def accelerator_literal(expression)
+        return expression.value if expression.is_a?(Expression::Literal)
+        return :unsupported unless expression.is_a?(SQL::AST::Literal)
+
+        expression.value
+      end
+
       def scan_table(plan)
         table_name = plan.table_name
         return [{}] unless table_name
@@ -1112,8 +1463,8 @@ module RubyDB
           comparison = 0
           order_by.each do |order|
             col = (order.is_a?(Hash) ? order[:column] : order.column).to_s
-            val_a = a[col]
-            val_b = b[col]
+            val_a = order_value(a, col)
+            val_b = order_value(b, col)
 
             comparison = if val_a.nil? && val_b.nil?
               0
@@ -1126,11 +1477,22 @@ module RubyDB
             end
 
             direction = order.is_a?(Hash) ? order[:direction] : order.direction
-            comparison = -comparison if direction == :desc
+            comparison = -comparison if direction.to_s.casecmp?("desc")
             break unless comparison == 0
           end
           comparison
         end
+      end
+
+      def order_value(row, column)
+        return row[column] if row.key?(column)
+        return row[column.to_sym] if row.key?(column.to_sym)
+
+        short_column = column.split(".").last
+        return row[short_column] if row.key?(short_column)
+        return row[short_column.to_sym] if row.key?(short_column.to_sym)
+
+        nil
       end
 
       def get_column_names(plan)

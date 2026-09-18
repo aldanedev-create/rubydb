@@ -1,0 +1,11 @@
+source "https://rubygems.org"
+
+gem "rails", "~> 7.2.0"
+gem "irb", "~> 1.16.0"
+gem "rdoc", "< 8.0"
+gem "bigdecimal", "4.1.2"
+gem "io-console", "0.9.2"
+gem "rubydb", path: "../.."
+gem "rubydb-activerecord", path: "../../adapters/activerecord"
+gem "puma", "~> 6.0"
+gem "tzinfo-data", platforms: %i[windows jruby]

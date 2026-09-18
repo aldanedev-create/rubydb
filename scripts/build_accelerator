@@ -1,0 +1,49 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "digest"
+require "rbconfig"
+
+root = File.expand_path("..", __dir__)
+accelerator = File.join(root, "accelerator")
+output_dir = File.join(accelerator, "bin")
+FileUtils.mkdir_p(output_dir)
+
+go = ENV["GO"]
+if go.nil? || go.empty?
+  candidates = [
+    File.join(ENV.fetch("ProgramFiles", "C:/Program Files"), "Go", "bin", "go.exe"),
+    File.join(ENV.fetch("ProgramW6432", "C:/Program Files"), "Go", "bin", "go.exe"),
+    "go"
+  ]
+  go = candidates.find { |candidate| candidate == "go" || File.file?(candidate) }
+end
+
+abort "Go compiler not found. Set GO to the go executable or install Go." unless go
+
+targets = ENV.fetch("RUBYDB_ACCELERATOR_TARGETS", "windows-amd64,windows-arm64,linux-amd64,linux-arm64,darwin-amd64,darwin-arm64").split(",").map(&:strip).reject(&:empty?)
+targets = ["#{ENV.fetch("GOOS", RbConfig::CONFIG["host_os"].to_s.match?(/mswin|mingw|cygwin/i) ? "windows" : "linux")}-#{ENV.fetch("GOARCH", "amd64")}"] if ENV["RUBYDB_ACCELERATOR_TARGETS"] == "current"
+
+targets.each do |target|
+  os, arch = target.split("-", 2)
+  abort "Invalid accelerator target #{target.inspect}; use os-arch" unless os && arch
+
+  extension = (os == "windows") ? ".exe" : ""
+  output = File.join(output_dir, "rubydb-accelerator-#{os}-#{arch}#{extension}")
+  env = {"GOOS" => os, "GOARCH" => arch, "CGO_ENABLED" => "0"}
+  command = [go, "build", "-trimpath", "-ldflags=-s -w", "-o", output, "./cmd/rubydb-accelerator"]
+  puts "Building #{os}/#{arch} -> #{output}"
+  Dir.chdir(accelerator) do
+    abort "Go build failed for #{target}" unless system(env, *command)
+  end
+  FileUtils.chmod(0o755, output) unless os == "windows"
+end
+
+manifest = Dir[File.join(output_dir, "rubydb-accelerator-*")].sort.filter_map do |path|
+  next unless File.file?(path)
+
+  "#{Digest::SHA256.file(path).hexdigest}  #{File.basename(path)}"
+end
+File.write(File.join(output_dir, "SHA256SUMS"), "#{manifest.join("\n")}\n")
+puts "RubyDB accelerator binaries are ready in #{output_dir}"

@@ -9,6 +9,8 @@ module RubyDB
       def initialize(engine)
         @engine = engine
         @catalog = engine.catalog if engine.respond_to?(:catalog)
+        @cost_model = CostModel.new(engine)
+        @operator_selection = OperatorSelection.new(engine)
         @stats = {
           plans_created: 0,
           optimizations_applied: 0
@@ -327,31 +329,7 @@ module RubyDB
 
       # Scan method selection
       def choose_scan_method(plan)
-        return unless plan.type == :select
-
-        table_name = plan.table_name
-        return plan.set_scan_type(:sequential) unless table_name
-
-        # Check if there's an index that can be used
-        if @engine.respond_to?(:index_manager)
-          indexes = @engine.index_manager.get_indexes_for_table(table_name)
-
-          # Try to find a matching index for the predicate
-          if plan.predicate && indexes.any?
-            index = find_matching_index(plan.predicate, indexes)
-            if index
-              plan.set_scan_type(:index, index)
-              return
-            end
-          end
-
-          # A full index scan is not a substitute for a table scan: it can
-          # omit rows while an index is being maintained or rebuilt. Only use
-          # an index when the predicate specifically matches its columns.
-        end
-
-        # Default to sequential scan
-        plan.set_scan_type(:sequential)
+        @operator_selection.choose_scan(plan)
       end
 
       def find_matching_index(predicate, indexes)
@@ -389,28 +367,16 @@ module RubyDB
 
       # Cost estimation
       def estimate_cost(plan)
-        table_name = plan.table_name
-        row_count = begin
-          @engine.table_row_count(table_name)
-        rescue
-          0
-        end
+        @cost_model.apply(plan)
+      end
 
-        case plan.scan_type
-        when :sequential
-          plan.set_cost(row_count, row_count)
-        when :index
-          # Index scan is cheaper for large tables with selective predicates
-          if plan.predicate
-            selectivity = estimate_selectivity(plan.predicate)
-            estimated_rows = (row_count * selectivity).ceil
-            plan.set_cost(estimated_rows * 0.1, estimated_rows)
-          else
-            plan.set_cost(row_count * 0.5, row_count)
-          end
-        else
-          plan.set_cost(row_count, row_count)
-        end
+      def physical_plan(plan)
+        PhysicalPlan.from(
+          plan,
+          operator: @operator_selection.physical_operator(plan),
+          estimated_cost: plan.estimated_cost,
+          estimated_rows: plan.estimated_rows
+        )
       end
 
       def estimate_selectivity(predicate)
