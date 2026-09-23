@@ -7,7 +7,7 @@ This gem is an adapter to RubyDB's SQL engine. It is not a PostgreSQL, MySQL, or
 ## Requirements
 
 - Ruby 3.3 or newer
-- RubyDB 0.1.6 or another compatible `0.1.x` release
+- RubyDB 0.1.7 or another compatible `0.1.x` release
 - ActiveRecord 7.1, 7.2, or 8.0 (the dependency range is `>= 7.1`, `< 8.1`)
 
 ## Install
@@ -15,7 +15,7 @@ This gem is an adapter to RubyDB's SQL engine. It is not a PostgreSQL, MySQL, or
 Add both gems to the Rails application's `Gemfile`:
 
 ```ruby
-gem "rubydb", "~> 0.1.6"
+gem "rubydb", "~> 0.1.7"
 gem "rubydb-activerecord", "~> 0.1.3"
 ```
 

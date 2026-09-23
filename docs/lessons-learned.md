@@ -110,3 +110,14 @@ Rule: treat the repository security suite as a baseline and require an
 independent review before sensitive or regulated workloads.
 Validation: dependency audit, CodeQL, TLS/auth tests, deployment review, and
 credential/certificate rotation drills.
+
+## Copy/paste evidence bundle
+
+```sh
+bundle exec rspec
+RUBYDB_WORKLOAD_THREADS=8 RUBYDB_WORKLOAD_OPERATIONS=2000 ruby benchmarks/concurrent_workload.rb
+ruby scripts/restore_drill
+```
+
+Save the output with the commit SHA, Ruby version, platform, workload settings,
+and the database/backup fixture used for the run.

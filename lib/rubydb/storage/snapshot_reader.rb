@@ -31,6 +31,14 @@ module RubyDB
         end
       end
 
+      def create_detached
+        create(detached: true)
+      end
+
+      def release_snapshot(snapshot)
+        release(snapshot)
+      end
+
       def close
         @lock.synchronize do
           @active_paths.keys.each { |path| delete_file(path) }
@@ -41,7 +49,7 @@ module RubyDB
 
       private
 
-      def create
+      def create(detached: false)
         source = File.expand_path(@engine.path)
         raise StorageError, "Cannot create accelerator snapshot: database file is missing" unless File.file?(source)
 
@@ -51,7 +59,7 @@ module RubyDB
         # complete database before every read only adds latency and doubles
         # the storage I/O. Keep an opt-out copy mode for operators that need a
         # detached file, but make the lock-protected direct path the default.
-        return direct_manifest(source) if direct_snapshot?
+        return direct_manifest(source) if !detached && direct_snapshot?
 
         FileUtils.mkdir_p(@directory)
         destination = File.join(@directory, "snapshot-#{Process.pid}-#{SecureRandom.hex(12)}.db")

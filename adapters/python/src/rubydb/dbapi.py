@@ -20,10 +20,51 @@ from contextlib import contextmanager
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from ._version import __version__
 
 apilevel = "2.0"
 threadsafety = 2
 paramstyle = "qmark"
+
+
+Date = _datetime.date
+Time = _datetime.time
+Timestamp = _datetime.datetime
+Binary = bytes
+
+
+def DateFromTicks(ticks: float) -> _datetime.date:
+    return Date(*time.localtime(ticks)[:3])
+
+
+def TimeFromTicks(ticks: float) -> _datetime.time:
+    return Time(*time.localtime(ticks)[3:6])
+
+
+def TimestampFromTicks(ticks: float) -> _datetime.datetime:
+    return Timestamp(*time.localtime(ticks)[:6])
+
+
+class DBAPITypeObject:
+    """PEP 249 type object compatible with RubyDB string type codes."""
+
+    def __init__(self, *values: str):
+        self.values = frozenset(value.lower() for value in values)
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, str) and other.lower() in self.values
+
+    def __hash__(self) -> int:
+        return hash(self.values)
+
+
+STRING = DBAPITypeObject("char", "varchar", "text", "string")
+BINARY = DBAPITypeObject("binary", "blob", "bytea")
+NUMBER = DBAPITypeObject(
+    "integer", "int", "bigint", "float", "real", "decimal", "numeric"
+)
+DATETIME = DBAPITypeObject("date", "time", "datetime", "timestamp")
+ROWID = DBAPITypeObject("rowid")
 
 
 class Warning(Exception):
@@ -66,7 +107,15 @@ class NotSupportedError(DatabaseError):
     """A requested DB-API feature is not supported."""
 
 
-ErrorTuple = Tuple[str, Optional[str], Optional[int], Optional[int], Optional[str], Optional[str], Optional[str]]
+ErrorTuple = Tuple[
+    str,
+    Optional[str],
+    Optional[int],
+    Optional[int],
+    Optional[str],
+    Optional[str],
+    Optional[str],
+]
 
 
 def _truthy(value: Any, default: bool = False) -> bool:
@@ -78,7 +127,11 @@ def _truthy(value: Any, default: bool = False) -> bool:
 
 
 def _timestamp() -> str:
-    return _datetime.datetime.now(_datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    return (
+        _datetime.datetime.now(_datetime.timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def _json_value(value: Any) -> Any:
@@ -95,7 +148,9 @@ def _json_value(value: Any) -> Any:
         try:
             return bytes(value).decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise DataError("binary parameters must be UTF-8 for JSON transport") from exc
+            raise DataError(
+                "binary parameters must be UTF-8 for JSON transport"
+            ) from exc
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
     if isinstance(value, dict):
@@ -103,7 +158,11 @@ def _json_value(value: Any) -> Any:
     raise DataError("unsupported parameter type: %s" % type(value).__name__)
 
 
-def _message(message_type: str, payload: Optional[Dict[str, Any]] = None, message_id: Optional[str] = None) -> Dict[str, Any]:
+def _message(
+    message_type: str,
+    payload: Optional[Dict[str, Any]] = None,
+    message_id: Optional[str] = None,
+) -> Dict[str, Any]:
     return {
         "type": message_type,
         "id": message_id or "msg_%s" % uuid.uuid4().hex,
@@ -116,7 +175,11 @@ def _message(message_type: str, payload: Optional[Dict[str, Any]] = None, messag
 
 
 def _parse_url(url: str, options: Dict[str, Any]) -> Dict[str, Any]:
-    parsed = urlsplit(url)
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port or 7432
+    except ValueError as exc:
+        raise InterfaceError("invalid RubyDB URL: %s" % exc) from exc
     if parsed.scheme not in {"rubydb", "rubydbs"}:
         raise InterfaceError("RubyDB URLs must use rubydb:// or rubydbs://")
     if not parsed.hostname:
@@ -130,7 +193,7 @@ def _parse_url(url: str, options: Dict[str, Any]) -> Dict[str, Any]:
 
     config: Dict[str, Any] = {
         "host": parsed.hostname,
-        "port": parsed.port or 7432,
+        "port": port,
         "username": unquote(parsed.username) if parsed.username else "rubydb",
         "password": unquote(parsed.password) if parsed.password else "",
         "database": unquote(parsed.path.lstrip("/")) or "rubydb",
@@ -149,16 +212,78 @@ def _parse_url(url: str, options: Dict[str, Any]) -> Dict[str, Any]:
         if value is not None:
             config[key] = unquote(value)
     config.update(options)
-    return config
+    return _validate_config(config)
+
+
+def _validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    validated = dict(config)
+    try:
+        validated["port"] = int(validated.get("port", 7432))
+        validated["timeout"] = float(validated.get("timeout", 30))
+        validated["max_frame_size"] = int(
+            validated.get("max_frame_size", 10 * 1024 * 1024)
+        )
+    except (TypeError, ValueError) as exc:
+        raise InterfaceError(
+            "port, timeout, and max_frame_size must be numeric"
+        ) from exc
+    if not validated.get("host"):
+        raise InterfaceError("host is required")
+    if not 1 <= validated["port"] <= 65535:
+        raise InterfaceError("port must be between 1 and 65535")
+    if validated["timeout"] <= 0:
+        raise InterfaceError("timeout must be positive")
+    if validated["max_frame_size"] < 1024:
+        raise InterfaceError("max_frame_size must be at least 1024 bytes")
+    minimum = validated.get("min_version")
+    if minimum and str(minimum) not in {
+        "TLSv1.2",
+        "TLSv1_2",
+        "1.2",
+        "TLSv1.3",
+        "TLSv1_3",
+        "1.3",
+    }:
+        raise InterfaceError("min_version must be TLSv1.2 or TLSv1.3")
+    return validated
+
+
+def _connection_config(url: Optional[str], options: Dict[str, Any]) -> Dict[str, Any]:
+    if url is not None:
+        return _parse_url(url, options)
+    config = {
+        "host": "localhost",
+        "port": 7432,
+        "username": "rubydb",
+        "password": "",
+        "database": "rubydb",
+        "ssl": False,
+    }
+    config.update(options)
+    return _validate_config(config)
 
 
 def _error_for(message: str) -> DatabaseError:
     lowered = message.lower()
-    if any(word in lowered for word in ("unique", "constraint", "foreign key", "not null")):
+    if any(
+        word in lowered for word in ("unique", "constraint", "foreign key", "not null")
+    ):
         return IntegrityError(message)
-    if any(word in lowered for word in ("syntax", "parse", "statement not found", "unknown request")):
+    if any(
+        word in lowered
+        for word in ("syntax", "parse", "statement not found", "unknown request")
+    ):
         return ProgrammingError(message)
-    if any(word in lowered for word in ("timeout", "timed out", "connection", "authentication", "server closed")):
+    if any(
+        word in lowered
+        for word in (
+            "timeout",
+            "timed out",
+            "connection",
+            "authentication",
+            "server closed",
+        )
+    ):
         return OperationalError(message)
     return DatabaseError(message)
 
@@ -189,21 +314,44 @@ class _WireConnection:
                 if self.config.get("ssl"):
                     verify_peer = _truthy(self.config.get("verify_peer"), True)
                     if verify_peer:
-                        context = ssl.create_default_context(cafile=self.config.get("ca_file"))
+                        context = ssl.create_default_context(
+                            cafile=self.config.get("ca_file")
+                        )
                         context.check_hostname = True
                     else:
                         context = ssl._create_unverified_context()
+                    minimum = self.config.get("min_version")
+                    if minimum:
+                        versions = {
+                            "TLSv1.2": ssl.TLSVersion.TLSv1_2,
+                            "TLSv1_2": ssl.TLSVersion.TLSv1_2,
+                            "1.2": ssl.TLSVersion.TLSv1_2,
+                            "TLSv1.3": ssl.TLSVersion.TLSv1_3,
+                            "TLSv1_3": ssl.TLSVersion.TLSv1_3,
+                            "1.3": ssl.TLSVersion.TLSv1_3,
+                        }
+                        try:
+                            context.minimum_version = versions[str(minimum)]
+                        except KeyError as exc:
+                            raise InterfaceError(
+                                "min_version must be TLSv1.2 or TLSv1.3"
+                            ) from exc
                     if self.config.get("cert_file"):
-                        context.load_cert_chain(self.config["cert_file"], self.config.get("key_file"))
+                        context.load_cert_chain(
+                            self.config["cert_file"], self.config.get("key_file")
+                        )
                     raw = context.wrap_socket(raw, server_hostname=self.config["host"])
                 self.socket = raw
                 self.socket.settimeout(self.request_timeout)
                 self.reader = self.socket.makefile("rb")
                 self.closed = False
                 self._handshake()
-            except (OSError, ssl.SSLError, Error):
+            except Error:
                 self._close_unlocked()
                 raise
+            except (OSError, ssl.SSLError) as exc:
+                self._close_unlocked()
+                raise OperationalError("connection failed: %s" % exc) from exc
             except Exception as exc:
                 self._close_unlocked()
                 raise OperationalError("connection failed: %s" % exc) from exc
@@ -230,7 +378,9 @@ class _WireConnection:
     def _write(self, message: Dict[str, Any]) -> None:
         if self.socket is None or self.closed:
             raise InterfaceError("RubyDB connection is closed")
-        encoded = (json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
+        encoded = (
+            json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n"
+        ).encode("utf-8")
         if len(encoded) > self.max_frame_size:
             raise DataError("RubyDB request exceeds max_frame_size")
         try:
@@ -242,7 +392,9 @@ class _WireConnection:
     def _read(self, timeout: Optional[float] = None) -> Dict[str, Any]:
         if self.socket is None or self.reader is None or self.closed:
             raise InterfaceError("RubyDB connection is closed")
-        self.socket.settimeout(self.request_timeout if timeout is None else max(float(timeout), 0.001))
+        self.socket.settimeout(
+            self.request_timeout if timeout is None else max(float(timeout), 0.001)
+        )
         try:
             frame = self.reader.readline(self.max_frame_size + 1)
             if not frame:
@@ -262,47 +414,79 @@ class _WireConnection:
             raise OperationalError("receive failed: %s" % exc) from exc
 
     def _handshake(self) -> None:
-        self._write(_message("handshake", {
-            "protocol_version": self.PROTOCOL_VERSION,
-            "client_name": "rubydb-python",
-            "client_version": "0.1.0",
-            "username": self.config.get("username"),
-            "database": self.config.get("database"),
-        }))
+        self._write(
+            _message(
+                "handshake",
+                {
+                    "protocol_version": self.PROTOCOL_VERSION,
+                    "client_name": "rubydb-python",
+                    "client_version": __version__,
+                    "username": self.config.get("username"),
+                    "database": self.config.get("database"),
+                },
+            )
+        )
         response = self._read()
         payload = response.get("payload") or {}
-        if response.get("type") != "handshake_response" or payload.get("success") is False:
-            raise OperationalError("handshake failed: %s" % payload.get("error", "unexpected response"))
+        if (
+            response.get("type") != "handshake_response"
+            or payload.get("success") is False
+        ):
+            raise OperationalError(
+                "handshake failed: %s" % payload.get("error", "unexpected response")
+            )
 
-        self._write(_message("authentication_response", {
-            "username": self.config.get("username", "rubydb"),
-            "password": self.config.get("password", ""),
-            "database": self.config.get("database", "rubydb"),
-            "auth_method": "password" if self.config.get("password") else "none",
-        }))
+        self._write(
+            _message(
+                "authentication_response",
+                {
+                    "username": self.config.get("username", "rubydb"),
+                    "password": self.config.get("password", ""),
+                    "database": self.config.get("database", "rubydb"),
+                    "auth_method": "password"
+                    if self.config.get("password")
+                    else "none",
+                },
+            )
+        )
         auth = self._read()
         auth_payload = auth.get("payload") or {}
         if auth.get("type") != "authentication" or auth_payload.get("success") is False:
-            raise OperationalError("authentication failed: %s" % auth_payload.get("error", "rejected"))
+            raise OperationalError(
+                "authentication failed: %s" % auth_payload.get("error", "rejected")
+            )
 
-        self._write(_message("synchronize", {
-            "supported": 0,
-            "enabled": 0,
-            "negotiated": 0,
-            "features": {},
-            "limits": {"batch_size": 100, "timeout": 30, "max_rows": 10000},
-            "compression": False,
-            "encryption": False,
-            "pipeline": False,
-            "batch_size": 100,
-            "timeout": int(self.request_timeout),
-            "max_rows": 10000,
-        }))
+        self._write(
+            _message(
+                "synchronize",
+                {
+                    "supported": 0,
+                    "enabled": 0,
+                    "negotiated": 0,
+                    "features": {},
+                    "limits": {"batch_size": 100, "timeout": 30, "max_rows": 10000},
+                    "compression": False,
+                    "encryption": False,
+                    "pipeline": False,
+                    "batch_size": 100,
+                    "timeout": int(self.request_timeout),
+                    "max_rows": 10000,
+                },
+            )
+        )
         ready = self._read()
-        if ready.get("type") != "ready_for_query" or (ready.get("payload") or {}).get("success") is False:
+        if (
+            ready.get("type") != "ready_for_query"
+            or (ready.get("payload") or {}).get("success") is False
+        ):
             raise OperationalError("protocol synchronization failed")
 
-    def request(self, message_type: str, payload: Optional[Dict[str, Any]] = None, timeout: Optional[float] = None) -> Dict[str, Any]:
+    def request(
+        self,
+        message_type: str,
+        payload: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
         with self.lock:
             if self.closed:
                 self.connect()
@@ -312,7 +496,9 @@ class _WireConnection:
                 return self._read(timeout)
             except socket.timeout as exc:
                 self._cancel_after_timeout(request_id)
-                raise OperationalError("RubyDB request timed out and cancellation was sent") from exc
+                raise OperationalError(
+                    "RubyDB request timed out and cancellation was sent"
+                ) from exc
 
     def _cancel_after_timeout(self, request_id: str) -> None:
         """Send wire cancellation and drain the matching response if possible."""
@@ -364,7 +550,12 @@ class Connection:
         self._ensure_open()
         return Cursor(self)
 
-    def execute(self, operation: str, parameters: Optional[Sequence[Any]] = None, timeout: Optional[float] = None) -> "Cursor":
+    def execute(
+        self,
+        operation: str,
+        parameters: Optional[Sequence[Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> "Cursor":
         cursor = self.cursor()
         cursor.execute(operation, parameters, timeout=timeout)
         return cursor
@@ -379,9 +570,13 @@ class Connection:
             payload = response.get("payload") or {}
             if payload.get("success") is False:
                 raise _error_for(str(payload.get("error", "prepare failed")))
-            statement_id = payload.get("statement_id") or (payload.get("data") or {}).get("statement_id")
+            statement_id = payload.get("statement_id") or (
+                payload.get("data") or {}
+            ).get("statement_id")
             if not statement_id:
-                raise DatabaseError("RubyDB prepare response did not include statement_id")
+                raise DatabaseError(
+                    "RubyDB prepare response did not include statement_id"
+                )
             return PreparedStatement(self, operation, str(statement_id))
 
     def commit(self) -> None:
@@ -427,12 +622,16 @@ class Connection:
     def _begin_if_needed(self, operation: str) -> None:
         if self._autocommit or self._in_transaction:
             return
-        keyword = operation.lstrip().split(None, 1)[0].lower() if operation.strip() else ""
+        keyword = (
+            operation.lstrip().split(None, 1)[0].lower() if operation.strip() else ""
+        )
         if keyword not in {"begin", "commit", "rollback"}:
             self._response("begin")
             self._in_transaction = True
 
-    def _execute(self, operation: str, parameters: Sequence[Any], timeout: Optional[float]) -> Dict[str, Any]:
+    def _execute(
+        self, operation: str, parameters: Sequence[Any], timeout: Optional[float]
+    ) -> Dict[str, Any]:
         with self._lock:
             self._ensure_open()
             self._begin_if_needed(operation)
@@ -442,11 +641,21 @@ class Connection:
             }
             if timeout is not None:
                 payload["deadline_at"] = (
-                    _datetime.datetime.now(_datetime.timezone.utc) + _datetime.timedelta(seconds=float(timeout))
-                ).isoformat().replace("+00:00", "Z")
+                    (
+                        _datetime.datetime.now(_datetime.timezone.utc)
+                        + _datetime.timedelta(seconds=float(timeout))
+                    )
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                )
             return self._unwrap(self._wire.request("query", payload, timeout=timeout))
 
-    def _execute_prepared(self, statement: "PreparedStatement", parameters: Sequence[Any], timeout: Optional[float]) -> Dict[str, Any]:
+    def _execute_prepared(
+        self,
+        statement: "PreparedStatement",
+        parameters: Sequence[Any],
+        timeout: Optional[float],
+    ) -> Dict[str, Any]:
         with self._lock:
             self._ensure_open()
             self._begin_if_needed(statement.operation)
@@ -456,8 +665,13 @@ class Connection:
             }
             if timeout is not None:
                 payload["deadline_at"] = (
-                    _datetime.datetime.now(_datetime.timezone.utc) + _datetime.timedelta(seconds=float(timeout))
-                ).isoformat().replace("+00:00", "Z")
+                    (
+                        _datetime.datetime.now(_datetime.timezone.utc)
+                        + _datetime.timedelta(seconds=float(timeout))
+                    )
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                )
             return self._unwrap(self._wire.request("execute", payload, timeout=timeout))
 
     def _response(self, operation: str) -> Dict[str, Any]:
@@ -504,25 +718,34 @@ class Cursor:
         self._position = 0
         self._closed = False
 
-    def execute(self, operation: str, parameters: Optional[Sequence[Any]] = None, timeout: Optional[float] = None) -> "Cursor":
+    def execute(
+        self,
+        operation: str,
+        parameters: Optional[Sequence[Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> "Cursor":
         self._ensure_open()
         if not isinstance(operation, str) or not operation.strip():
             raise ProgrammingError("operation must be a non-empty SQL string")
+        if isinstance(parameters, (str, bytes, bytearray, memoryview, dict)):
+            raise ProgrammingError(
+                "qmark parameters must be a sequence, not a string, bytes, or mapping"
+            )
         values = [] if parameters is None else list(parameters)
         result = self.connection._execute(operation, values, timeout)
         self._load_result(result)
         return self
 
-    def executemany(self, operation: str, seq_of_parameters: Iterable[Sequence[Any]]) -> "Cursor":
+    def executemany(
+        self, operation: str, seq_of_parameters: Iterable[Sequence[Any]]
+    ) -> "Cursor":
         self._ensure_open()
         total = 0
-        last = None
         for parameters in seq_of_parameters:
-            last = self.execute(operation, parameters)
+            self.execute(operation, parameters)
             if self.rowcount >= 0:
                 total += self.rowcount
-        if last is not None:
-            self.rowcount = total
+        self.rowcount = total
         return self
 
     def fetchone(self) -> Optional[Any]:
@@ -538,13 +761,13 @@ class Cursor:
         amount = self.arraysize if size is None else int(size)
         if amount < 0:
             raise ProgrammingError("fetch size cannot be negative")
-        rows = self._rows[self._position:self._position + amount]
+        rows = self._rows[self._position : self._position + amount]
         self._position += len(rows)
         return rows
 
     def fetchall(self) -> List[Any]:
         self._ensure_open()
-        rows = self._rows[self._position:]
+        rows = self._rows[self._position :]
         self._position = len(self._rows)
         return rows
 
@@ -572,7 +795,8 @@ class Cursor:
         self._rows = list(result.get("rows") or [])
         self._position = 0
         columns = result.get("columns") or []
-        self.description = []
+        self.description = None
+        description: List[ErrorTuple] = []
         for column in columns:
             if isinstance(column, dict):
                 name = column.get("name") or column.get("column")
@@ -580,10 +804,18 @@ class Cursor:
             else:
                 name = str(column)
                 type_code = None
-            self.description.append((name, type_code, None, None, None, None, None))
-        if not self.description and self._rows and isinstance(self._rows[0], dict):
-            self.description = [(str(name), None, None, None, None, None, None) for name in self._rows[0]]
-        self.rowcount = int(result.get("affected_rows", len(self._rows)))
+            description.append((name, type_code, None, None, None, None, None))
+        if not description and self._rows and isinstance(self._rows[0], dict):
+            description = [
+                (str(name), None, None, None, None, None, None)
+                for name in self._rows[0]
+            ]
+        if description:
+            self.description = description
+        count = result.get("row_count")
+        if count is None:
+            count = result.get("affected_rows")
+        self.rowcount = int(len(self._rows) if count is None else count)
         self.lastrowid = result.get("inserted_id", result.get("row_id"))
 
     def _ensure_open(self) -> None:
@@ -607,18 +839,32 @@ class PreparedStatement:
         self.statement_id = statement_id
         self._closed = False
 
-    def execute(self, parameters: Optional[Sequence[Any]] = None, timeout: Optional[float] = None) -> Cursor:
+    def execute(
+        self,
+        parameters: Optional[Sequence[Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Cursor:
         if self._closed:
             raise InterfaceError("prepared statement is closed")
+        if isinstance(parameters, (str, bytes, bytearray, memoryview, dict)):
+            raise ProgrammingError(
+                "qmark parameters must be a sequence, not a string, bytes, or mapping"
+            )
         cursor = self.connection.cursor()
-        result = self.connection._execute_prepared(self, [] if parameters is None else list(parameters), timeout)
+        result = self.connection._execute_prepared(
+            self, [] if parameters is None else list(parameters), timeout
+        )
         cursor._load_result(result)
         return cursor
 
     def close(self) -> None:
         if not self._closed:
-            self.connection._ensure_open()
-            self.connection._unwrap(self.connection._wire.request("close", {"statement_id": self.statement_id}))
+            if not self.connection.closed:
+                self.connection._unwrap(
+                    self.connection._wire.request(
+                        "close", {"statement_id": self.statement_id}
+                    )
+                )
             self._closed = True
 
 
@@ -632,10 +878,14 @@ class _PooledLease:
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         try:
-            if exc_type:
-                self.connection.rollback()
-            else:
-                self.connection.commit()
+            if not self.connection.closed:
+                if exc_type:
+                    self.connection.rollback()
+                else:
+                    self.connection.commit()
+        except Error:
+            self.connection.close()
+            raise
         finally:
             self.pool.release(self.connection)
 
@@ -643,19 +893,32 @@ class _PooledLease:
 class ConnectionPool:
     """A bounded thread-safe pool of DB-API connections."""
 
-    def __init__(self, url: Optional[str] = None, min_size: int = 1, max_size: int = 5, **options: Any):
+    def __init__(
+        self,
+        url: Optional[str] = None,
+        min_size: int = 1,
+        max_size: int = 5,
+        **options: Any,
+    ):
         if max_size < 1 or min_size < 0 or min_size > max_size:
             raise InterfaceError("pool sizes must satisfy 0 <= min_size <= max_size")
-        self.config = _parse_url(url, options) if url else dict(options)
+        self.config = _connection_config(url, options)
         self.max_size = int(max_size)
         self._available: "queue.Queue[Connection]" = queue.Queue(maxsize=self.max_size)
         self._created = 0
         self._lock = threading.Condition()
-        for _ in range(int(min_size)):
-            self._available.put(self._new_connection())
+        self._closed = False
+        try:
+            for _ in range(int(min_size)):
+                self._available.put(self._new_connection())
+        except Exception:
+            self.close()
+            raise
 
     def _new_connection(self) -> Connection:
         with self._lock:
+            if self._closed:
+                raise InterfaceError("connection pool is closed")
             self._created += 1
         try:
             return Connection(dict(self.config))
@@ -664,56 +927,80 @@ class ConnectionPool:
                 self._created -= 1
             raise
 
+    def _checkout(self, timeout: Optional[float]) -> Connection:
+        started = time.monotonic()
+        while True:
+            with self._lock:
+                if self._closed:
+                    raise InterfaceError("connection pool is closed")
+            try:
+                connection = self._available.get_nowait()
+            except queue.Empty:
+                with self._lock:
+                    if self._closed:
+                        raise InterfaceError("connection pool is closed") from None
+                    if self._created < self.max_size:
+                        return self._new_connection()
+                if timeout is None:
+                    wait = 0.1
+                else:
+                    remaining = float(timeout) - (time.monotonic() - started)
+                    if remaining <= 0:
+                        raise OperationalError(
+                            "timed out waiting for a RubyDB connection"
+                        ) from None
+                    wait = min(remaining, 0.1)
+                try:
+                    connection = self._available.get(timeout=wait)
+                except queue.Empty:
+                    continue
+            if connection.closed:
+                with self._lock:
+                    self._created -= 1
+                    self._lock.notify_all()
+                continue
+            return connection
+
     @contextmanager
     def acquire(self, timeout: Optional[float] = None):
-        start = time.monotonic()
-        connection: Optional[Connection] = None
+        connection = self._checkout(timeout)
         try:
-            while connection is None:
-                try:
-                    connection = self._available.get_nowait()
-                except queue.Empty:
-                    with self._lock:
-                        if self._created < self.max_size:
-                            connection = self._new_connection()
-                            break
-                    remaining = None if timeout is None else max(float(timeout) - (time.monotonic() - start), 0)
-                    if remaining == 0:
-                        raise OperationalError("timed out waiting for a RubyDB connection")
-                    try:
-                        connection = self._available.get(timeout=remaining)
-                    except queue.Empty as exc:
-                        raise OperationalError("timed out waiting for a RubyDB connection") from exc
             yield connection
+        except BaseException:
+            if not connection.closed:
+                try:
+                    connection.rollback()
+                except Error:
+                    connection.close()
+            raise
+        else:
+            if not connection.closed:
+                try:
+                    connection.commit()
+                except Error:
+                    connection.close()
+                    raise
         finally:
-            if connection is not None:
-                self.release(connection)
+            self.release(connection)
 
     def connection(self, timeout: Optional[float] = None) -> _PooledLease:
-        start = time.monotonic()
-        try:
-            connection = self._available.get_nowait()
-        except queue.Empty:
-            with self._lock:
-                if self._created < self.max_size:
-                    connection = self._new_connection()
-                else:
-                    remaining = None if timeout is None else max(float(timeout) - (time.monotonic() - start), 0)
-                    try:
-                        connection = self._available.get(timeout=remaining)
-                    except queue.Empty as exc:
-                        raise OperationalError("timed out waiting for a RubyDB connection") from exc
-        return _PooledLease(self, connection)
+        return _PooledLease(self, self._checkout(timeout))
 
     def release(self, connection: Connection) -> None:
-        if connection.closed:
+        if connection.closed or self._closed:
+            connection.close()
             with self._lock:
-                self._created -= 1
+                self._created = max(0, self._created - 1)
                 self._lock.notify_all()
             return
         self._available.put(connection)
 
     def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._lock.notify_all()
         while True:
             try:
                 connection = self._available.get_nowait()
@@ -721,7 +1008,7 @@ class ConnectionPool:
                 return
             connection.close()
             with self._lock:
-                self._created -= 1
+                self._created = max(0, self._created - 1)
 
 
 def connect(url: Optional[str] = None, **options: Any) -> Connection:
@@ -729,14 +1016,4 @@ def connect(url: Optional[str] = None, **options: Any) -> Connection:
 
     Example: ``connect(os.environ["RUBYDB_URL"])``.
     """
-    if url is not None:
-        config = _parse_url(url, options)
-    else:
-        config = dict(options)
-        config.setdefault("host", "localhost")
-        config.setdefault("port", 7432)
-        config.setdefault("username", "rubydb")
-        config.setdefault("password", "")
-        config.setdefault("database", "rubydb")
-        config.setdefault("ssl", False)
-    return Connection(config)
+    return Connection(_connection_config(url, options))

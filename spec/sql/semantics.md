@@ -7,3 +7,9 @@ not implementation details that could hide a broken durable path.
 
 When adding a SQL feature, include empty input, null input, duplicate input,
 transaction rollback, and reopen coverage where applicable.
+
+## Copy/paste semantic regression run
+
+```sh
+bundle exec rspec spec/sql_*_spec.rb spec/transaction_rollback_spec.rb
+```

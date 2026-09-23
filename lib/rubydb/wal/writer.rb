@@ -27,6 +27,7 @@ module RubyDB
           syncs: 0
         }
         @lock = Mutex.new
+        @wake_condition = ConditionVariable.new
         @write_thread = nil
         @running = false
         @shutdown = false
@@ -116,6 +117,7 @@ module RubyDB
 
           @shutdown = true
           @running = false
+          @wake_condition.broadcast
           @write_thread&.kill if !wait
           flush_buffer
           _sync if @sync_on_write
@@ -215,19 +217,23 @@ module RubyDB
       def start_background_writer
         @running = true
         @write_thread = Thread.new do
-          until @shutdown
-            sleep(1)
-            begin
-              if @buffer.any?
-                flush
+          loop do
+            should_stop = false
+            @lock.synchronize do
+              @wake_condition.wait(@lock, 1) unless @shutdown
+              should_stop = @shutdown
+              unless should_stop
+                begin
+                  flush_buffer
+                  _sync if @sync_on_write
+                rescue => e
+                  @background_error ||= e
+                  @running = false
+                  should_stop = true
+                end
               end
-            rescue => e
-              @lock.synchronize do
-                @background_error ||= e
-                @running = false
-              end
-              break
             end
+            break if should_stop
           end
         end
       end

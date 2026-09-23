@@ -19,6 +19,14 @@ module RubyDB
         raise CorruptionError, "Failed to deserialize value of type #{type}: #{e.message}"
       end
 
+      def self.deserialize_with(type_obj, data, type_name)
+        return nil if data.nil? || data.empty?
+
+        type_obj.deserialize(data)
+      rescue => e
+        raise CorruptionError, "Failed to deserialize value of type #{type_name}: #{e.message}"
+      end
+
       # Deserialize a full row from binary data
       def self.deserialize_row(data, columns, options = {})
         return {} if data.nil? || data.empty?
@@ -28,11 +36,12 @@ module RubyDB
         bitmap_size = null_bitmap ? (columns.size + 7) / 8 : 0
         bitmap = null_bitmap ? data.byteslice(0, bitmap_size).bytes : []
         offset = bitmap_size
-        fixed_sizes = {integer: 4, bigint: 8, smallint: 2, float: 8, boolean: 1, date: 8, time: 8, timestamp: 8}
+        fixed_sizes = {integer: 4, bigint: 8, smallint: 2, float: 8, boolean: 1, date: 4, time: 8, timestamp: 8}
         variable_length_prefixes = options[:variable_length_prefixes]
 
         columns.each_with_index do |col, idx|
           col_type = col.type_class
+          type_obj = col.type_instance
           col_name = col.name
           has_default = col.has_default?
 
@@ -42,7 +51,7 @@ module RubyDB
             if offset + length <= data.bytesize
               value_data = data[offset, length]
               offset += length
-              row[col_name] = (bitmap[col_index = idx / 8] && (bitmap[col_index] & (1 << (idx % 8))) != 0) ? nil : deserialize(value_data, col_type)
+              row[col_name] = (bitmap[col_index = idx / 8] && (bitmap[col_index] & (1 << (idx % 8))) != 0) ? nil : deserialize_with(type_obj, value_data, col_type)
             else
               row[col_name] = has_default ? col.default : nil
             end
@@ -58,7 +67,7 @@ module RubyDB
             row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
               nil
             else
-              deserialize(value_data, col_type)
+              deserialize_with(type_obj, value_data, col_type)
             end
             row[col_name] = col.default if row[col_name].nil? && has_default
             # Legacy records did not store variable-length field sizes.
@@ -68,7 +77,7 @@ module RubyDB
             row[col_name] = if bitmap[idx / 8] && (bitmap[idx / 8] & (1 << (idx % 8))) != 0
               nil
             elsif value_data.bytesize > 0
-              deserialize(value_data, col_type)
+              deserialize_with(type_obj, value_data, col_type)
             end
             row[col_name] = col.default if row[col_name].nil? && has_default
           else

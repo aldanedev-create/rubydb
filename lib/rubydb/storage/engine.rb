@@ -5,6 +5,7 @@ require "json"
 require "securerandom"
 require "fileutils"
 require "monitor"
+require "digest"
 require_relative "../accelerator"
 
 # Storage components
@@ -82,6 +83,14 @@ module RubyDB
         @transaction_predicates = Hash.new { |hash, key| hash[key] = Set.new }
         @table_metadata = {}
         @table_pages = {}
+        @row_locations = {}
+        # A table may receive a new row before an existing on-disk row is
+        # looked up. Keep track of whether its locator map represents every
+        # physical record, rather than treating a non-empty partial map as a
+        # complete one.
+        @row_locations_complete = {}
+        @physical_row_ids = {}
+        @live_row_counts = {}
         @row_cache = {}
         @cache_size = config[:cache_size] || 1000
         @cache_ttl = config[:cache_ttl] || 300  # 5 minutes
@@ -92,6 +101,13 @@ module RubyDB
         @last_commit_ack = nil
         @metadata_write_lock = Mutex.new
         @metadata_write_sequence = 0
+        # Multi-row INSERTs can update many physical pages, but rewriting the
+        # complete JSON metadata file for every tuple is needless allocation
+        # and I/O. The depth counter is only used while this engine monitor is
+        # held; the outermost batch always publishes metadata, including when a
+        # row in the batch raises.
+        @deferred_metadata_writes = 0
+        @metadata_dirty = false
         @current_transaction_id = 0
         @recovery_in_progress = false
         # A replica must never accept an accidental local mutation. Replay uses
@@ -134,6 +150,7 @@ module RubyDB
 
         # Build/load indexes only after metadata and crash recovery are ready.
         @index_manager = Indexes::IndexManager.new(self)
+        ensure_constraint_indexes!
         @snapshot_reader = SnapshotReader.new(self)
 
         # Start cleanup thread if configured
@@ -288,12 +305,15 @@ module RubyDB
               columns: columns,
               column_count: columns.size,
               row_count: 0,
+              next_primary_key: 1,
               constraints: serialize_constraint_definitions(options[:constraints] || []),
               created_at: Time.now,
               updated_at: Time.now
             }
 
             @table_pages[table_name] = [data_page]
+            @row_locations_complete[table_name] = true
+            @live_row_counts[table_name] = 0
 
             # Add to catalog
             if @catalog&.current_database
@@ -306,6 +326,7 @@ module RubyDB
 
             # Save metadata to disk
             save_table_metadata
+            ensure_constraint_indexes_for_table(table_name)
 
             true
           end
@@ -319,6 +340,11 @@ module RubyDB
           metadata = @table_metadata[table_name]
           raise DatabaseError, "Table '#{table_name}' does not exist" unless metadata
 
+          # The table may be recreated during branch checkout or restore. Drop
+          # its in-memory and persisted indexes first so constraint lookups do
+          # not observe row IDs from the previous incarnation.
+          @index_manager&.drop_table_indexes(table_name)
+
           # Free all pages for this table
           pages = @table_pages[table_name] || []
           pages.each do |page_number|
@@ -331,6 +357,10 @@ module RubyDB
           # Remove from metadata
           @table_metadata.delete(table_name)
           @table_pages.delete(table_name)
+          @row_locations.delete(table_name)
+          @row_locations_complete.delete(table_name)
+          @physical_row_ids.delete(table_name)
+          @live_row_counts.delete(table_name)
 
           # Remove from catalog
           @catalog.drop_table(table_name) if @catalog&.current_database
@@ -430,6 +460,7 @@ module RubyDB
             metadata[:constraints] << definition
             metadata[:updated_at] = Time.now
             save_table_metadata
+            ensure_constraint_indexes_for_table(table_key)
             true
           end
         end
@@ -637,6 +668,7 @@ module RubyDB
         }
         @table_metadata = previous_metadata
         @table_pages = Marshal.load(table_pages_snapshot)
+        @live_row_counts.delete_if { |table_name, _| !@table_metadata.key?(table_name) }
         @catalog = Marshal.load(catalog_snapshot)
         raise
       end
@@ -718,7 +750,57 @@ module RubyDB
         metadata[:row_count] || 0
       end
 
+      # The copy is made while the engine lock protects page/catalog state.
+      # The caller reads the immutable copy after the lock is released.
+      def with_export_snapshot
+        snapshot = @lock.synchronize do
+          raise StorageError, "Export requires no active transaction or MVCC writer" unless accelerator_snapshot_eligible?
+
+          @storage_manager.flush
+          @visibility_map.flush
+          save_table_metadata
+          @snapshot_reader.create_detached
+        end
+        yield snapshot
+      ensure
+        @snapshot_reader&.release_snapshot(snapshot) if snapshot
+      end
+
+      def table_live_row_count(table_name)
+        table_name = resolve_table_name(table_name)
+        @lock.synchronize do
+          @live_row_counts[table_name] ||= count_live_records(table_name)
+        end
+      end
+
+      # Ruby fallback/oracle for `rubydb export --engine ruby`. It holds the
+      # engine monitor for the read so exports never mix before/after writer
+      # state. The Go exporter is preferred for large tables because it reads
+      # a detached immutable copy after this lock is released.
+      def with_export_rows(table_name, columns)
+        @lock.synchronize do
+          raise StorageError, "Export requires no active transaction or MVCC writer" unless accelerator_snapshot_eligible?
+
+          select_rows(table_name, columns, visibility_check: false).each { |row| yield row }
+        end
+      end
+
       # Row operations
+      # Insert a homogeneous collection of rows while publishing table metadata
+      # once at the end. Individual page writes and WAL records are unchanged;
+      # this is an allocation/I/O optimization, not a weaker durability mode.
+      def insert_rows(table_name, columns, rows)
+        ensure_writable!
+        values_list = rows.is_a?(Array) ? rows : [rows]
+        return [] if values_list.empty?
+
+        @lock.synchronize do
+          with_deferred_metadata_writes do
+            values_list.map { |values| insert_row(table_name, columns, values) }
+          end
+        end
+      end
+
       def insert_row(table_name, columns, values)
         ensure_writable!
         table_name = resolve_table_name(table_name)
@@ -754,15 +836,10 @@ module RubyDB
             primary_key_value = if primary_key
               values.key?(primary_key_name) ? values[primary_key_name] : values[primary_key.name.to_s]
             end
-            if primary_key && primary_key_name && %i[integer bigint smallint].include?(primary_key.type.to_sym) &&
+            if primary_key && primary_key_name && %i[integer bigint smallint].include?(primary_key.type_class.to_sym) &&
                 (!primary_key_present || primary_key_value.nil?)
-              existing_rows = select_rows(table_name, metadata[:columns])
-              current_max = existing_rows.filter_map do |row|
-                value = row[primary_key_name] || row[primary_key.name.to_s]
-                value&.to_i
-              end.max || 0
               values = values.dup
-              values[primary_key_name] = current_max + 1
+              values[primary_key_name] = next_primary_key_value(table_name, metadata, primary_key)
             end
           end
 
@@ -833,9 +910,13 @@ module RubyDB
           page.header.data_end = offset
           page.write_header
           write_page(page)
+          (@row_locations[table_name] ||= {})[row_id] = [page.page_number, page.header.data_end - record_size - 16]
+          @physical_row_ids[table_name]&.add(row_id)
 
           # Update metadata
           metadata[:row_count] += 1
+          @live_row_counts[table_name] += 1 if @live_row_counts.key?(table_name)
+          advance_primary_key_sequence!(metadata, columns, values)
           metadata[:updated_at] = Time.now
           record_transaction_change(:insert, table_name, row_id, values: values, columns: columns)
           record_mvcc_version(table_name, row_id, values, current_transaction_id)
@@ -851,8 +932,10 @@ module RubyDB
             table.row_count = metadata[:row_count] if table
           end
 
-          # Save metadata
-          save_table_metadata
+          # Save metadata immediately for a single write, or once at the end
+          # of insert_rows. This preserves a durable metadata publication even
+          # if a later tuple in the batch fails.
+          persist_table_metadata!
 
           # Invalidate cache
           invalidate_cache(table_name, row_id)
@@ -878,7 +961,22 @@ module RubyDB
           seen_row_ids = {}
           indexed_row_ids = indexed_row_ids_for(table_name, conditions)
           @stats[:index_scans] = (@stats[:index_scans] || 0) + 1 if indexed_row_ids
+          if indexed_row_ids && !@transaction_snapshots[current_transaction_id]
+            transaction_id = conditions[:transaction_id] || current_transaction_id
+            visibility_check = conditions.key?(:visibility_check) ? conditions[:visibility_check] : in_transaction?
+            rows = indexed_row_ids.filter_map do |record_id|
+              row = read_located_row(table_name, record_id, columns,
+                visibility_check: visibility_check, transaction_id: transaction_id)
+              row if row && matches_conditions?(row, conditions)
+            end
+            offset_value = conditions[:offset] || 0
+            return conditions[:limit] ? (rows[offset_value, conditions[:limit]] || []) : (rows[offset_value..] || [])
+          end
           page_numbers = pages.dup
+          target_count = if conditions[:limit] && !@transaction_snapshots[current_transaction_id]
+            (conditions[:offset] || 0) + conditions[:limit]
+          end
+          scan_complete = false
 
           page_numbers.each do |page_number|
             page = read_page(page_number)
@@ -955,8 +1053,13 @@ module RubyDB
               # Apply conditions
               if matches_conditions?(row, conditions)
                 rows << row
+                if target_count && rows.size >= target_count
+                  scan_complete = true
+                  break
+                end
               end
             end
+            break if scan_complete
           end
 
           # A physical DELETE removes the row from the normal scan, but an
@@ -1009,8 +1112,13 @@ module RubyDB
           end
           @stats[:cache_misses] += 1
 
-          rows = select_rows(table_name, columns, {row_id: row_id, limit: 1})
-          row = rows.first
+          row = read_located_row(
+            table_name,
+            row_id,
+            columns,
+            visibility_check: in_transaction?,
+            transaction_id: current_transaction_id
+          )
 
           # Cache the result
           if row
@@ -1019,6 +1127,15 @@ module RubyDB
           end
 
           row
+        end
+      end
+
+      # WAL redo must see physical tombstones, which ordinary SELECT hides.
+      def row_record_exists?(table_name, row_id)
+        table_name = resolve_table_name(table_name)
+        @lock.synchronize do
+          rebuild_row_locations!(table_name) unless @physical_row_ids.key?(table_name)
+          @physical_row_ids[table_name].include?(row_id.to_i)
         end
       end
 
@@ -1036,11 +1153,12 @@ module RubyDB
           updated = false
           old_values = nil
           updated_values = nil
-          pages = @table_pages[table_name] || []
+          location = row_location_for(table_name, row_id)
+          pages = location ? [location[0]] : (@table_pages[table_name] || [])
 
           pages.each do |page_number|
             page = read_page(page_number)
-            offset = PageHeader::SIZE
+            offset = (location && location[0] == page_number) ? location[1] : PageHeader::SIZE
 
             while offset < page.header.data_end
               record_header = page.read(offset, 16)
@@ -1048,7 +1166,7 @@ module RubyDB
 
               record_id, record_size, flags, col_count = record_header.unpack("Q>L>S>S")
 
-              if record_id == row_id
+              if record_id == row_id && (flags & 0x01).zero?
                 # Check visibility
                 if conditions[:visibility_check] != false
                   unless @visibility_map.is_visible?(row_id, transaction_id)
@@ -1073,7 +1191,7 @@ module RubyDB
                 updated_values = current_row.except(:_row_id)
 
                 validate_constraints!(table_name, metadata, columns, updated_values, exclude_row_id: row_id)
-                validate_relational_constraints!(table_name, metadata, columns, updated_values)
+                validate_relational_constraints!(table_name, metadata, columns, updated_values, exclude_row_id: row_id)
                 validate_referential_update!(table_name, old_values, updated_values)
                 @index_manager&.validate_update!(table_name, old_values.merge(_row_id: row_id), updated_values.merge(_row_id: row_id))
 
@@ -1112,17 +1230,20 @@ module RubyDB
                     # reader to ignore any unused trailing bytes.
                     page.write(offset + 16, new_row_data)
                     page.write(offset, [record_id, old_size, (flags & ~0x01) | NULL_BITMAP_FLAG | VARIABLE_LENGTH_PREFIXES_FLAG, col_count].pack("Q>L>S>S"))
+                    (@row_locations[table_name] ||= {})[row_id] = [page_number, offset]
                   else
                     # Need to move to end of page
                     new_offset = page.header.data_end
                     page.write(new_offset, [record_id, new_size, (flags & ~0x01) | NULL_BITMAP_FLAG | VARIABLE_LENGTH_PREFIXES_FLAG, col_count].pack("Q>L>S>S"))
                     page.write(new_offset + 16, new_row_data)
                     page.header.data_end = new_offset + 16 + new_size
+                    (@row_locations[table_name] ||= {})[row_id] = [page_number, new_offset]
                   end
                 else
                   # Same size - update in place
                   page.write(offset + 16, new_row_data)
                   page.write(offset, [record_id, record_size, flags | VARIABLE_LENGTH_PREFIXES_FLAG, col_count].pack("Q>L>S>S"))
+                  (@row_locations[table_name] ||= {})[row_id] = [page_number, offset]
                 end
 
                 # Mark old version as hidden
@@ -1174,11 +1295,12 @@ module RubyDB
 
           deleted = false
           old_values = nil
-          pages = @table_pages[table_name] || []
+          location = row_location_for(table_name, row_id)
+          pages = location ? [location[0]] : (@table_pages[table_name] || [])
 
           pages.each do |page_number|
             page = read_page(page_number)
-            offset = PageHeader::SIZE
+            offset = (location && location[0] == page_number) ? location[1] : PageHeader::SIZE
 
             while offset < page.header.data_end
               record_header = page.read(offset, 16)
@@ -1186,7 +1308,7 @@ module RubyDB
 
               record_id, record_size, flags, col_count = record_header.unpack("Q>L>S>S")
 
-              if record_id == row_id
+              if record_id == row_id && (flags & 0x01).zero?
                 # Check visibility
                 if conditions[:visibility_check] != false
                   unless @visibility_map.is_visible?(row_id, transaction_id)
@@ -1223,6 +1345,7 @@ module RubyDB
                 page.write(offset, [record_id, record_size, flags, col_count].pack("Q>L>S>S"))
                 page.write_header
                 write_page(page)
+                @row_locations[table_name]&.delete(row_id)
 
                 deleted = true
                 break
@@ -1235,6 +1358,7 @@ module RubyDB
           end
 
           if deleted
+            @live_row_counts[table_name] -= 1 if @live_row_counts.key?(table_name)
             # Invalidate cache
             invalidate_cache(table_name, row_id)
 
@@ -1270,6 +1394,8 @@ module RubyDB
                 page.write_header
                 write_page(page)
                 @visibility_map.mark_visible(row_id, 0)
+                @live_row_counts[table_name] += 1 if @live_row_counts.key?(table_name)
+                (@row_locations[table_name] ||= {})[row_id] = [page_number, offset]
                 invalidate_cache(table_name, row_id)
                 return true
               end
@@ -1306,6 +1432,7 @@ module RubyDB
                 page.header.data_end = new_offset + 16 + replacement.bytesize
                 page.write_header
                 write_page(page)
+                (@row_locations[table_name] ||= {})[row_id] = [page_number, new_offset]
                 invalidate_cache(table_name, row_id)
                 return true
               end
@@ -1379,7 +1506,7 @@ module RubyDB
         @lock.synchronize do
           @stats[:transaction_commit] += 1
 
-          tx = transaction || current_transaction_manager
+          tx = resolve_transaction(transaction)
           return false unless tx && tx[:active]
 
           begin
@@ -1463,7 +1590,7 @@ module RubyDB
         @lock.synchronize do
           @stats[:transaction_rollback] += 1
 
-          tx = transaction || current_transaction_manager
+          tx = resolve_transaction(transaction)
           return false unless tx && tx[:active]
 
           # Rollback transaction in visibility map
@@ -1644,6 +1771,7 @@ module RubyDB
         @storage_manager.flush
         @visibility_map.flush
         save_table_metadata
+        @metadata_dirty = false
       end
 
       def close
@@ -1727,6 +1855,11 @@ module RubyDB
             compacted_count += 1 if result[:compacted]
           end
 
+          if compacted_count.positive?
+            @row_locations.delete(table_name)
+            @row_locations_complete.delete(table_name)
+          end
+
           compacted_count > 0
         end
       end
@@ -1764,8 +1897,40 @@ module RubyDB
 
       private
 
+      def with_deferred_metadata_writes
+        @deferred_metadata_writes += 1
+        yield
+      ensure
+        @deferred_metadata_writes -= 1
+        if @deferred_metadata_writes.zero? && @metadata_dirty && !in_transaction?
+          save_table_metadata
+          @metadata_dirty = false
+        end
+      end
+
+      def persist_table_metadata!
+        if @deferred_metadata_writes.positive? || in_transaction?
+          @metadata_dirty = true
+        else
+          save_table_metadata
+        end
+      end
+
       def current_transaction_manager
         Thread.current[@transaction_context_key]
+      end
+
+      # Public callers receive the integer returned by begin_transaction,
+      # while internal callers sometimes retain the transaction hash. Accept
+      # both forms without allowing one thread to commit another thread's
+      # active transaction.
+      def resolve_transaction(transaction)
+        current = current_transaction_manager
+        return current if transaction.nil?
+        return transaction if transaction.is_a?(Hash)
+        return current if current && current[:id] == transaction
+
+        nil
       end
 
       def current_transaction_id
@@ -1835,10 +2000,11 @@ module RubyDB
       end
 
       def mark_row_deleted(table_name, row_id)
-        pages = @table_pages[table_name] || []
+        location = row_location_for(table_name, row_id)
+        pages = location ? [location[0]] : (@table_pages[table_name] || [])
         pages.each do |page_number|
           page = read_page(page_number)
-          offset = PageHeader::SIZE
+          offset = (location && location[0] == page_number) ? location[1] : PageHeader::SIZE
           while offset < page.header.data_end
             header = page.read(offset, 16)
             break if header.nil? || header.bytesize < 16
@@ -1847,12 +2013,221 @@ module RubyDB
               page.write(offset, [record_id, record_size, flags | 0x01, col_count].pack("Q>L>S>S"))
               page.write_header
               write_page(page)
+              @row_locations[table_name]&.delete(row_id)
+              @live_row_counts[table_name] -= 1 if @live_row_counts.key?(table_name)
               return true
             end
             offset += 16 + record_size
           end
         end
         false
+      end
+
+      def row_location_for(table_name, row_id)
+        locations = @row_locations[table_name]
+        return locations[row_id] if locations&.key?(row_id)
+        return nil if @row_locations_complete[table_name]
+
+        rebuild_row_locations!(table_name)
+        @row_locations.dig(table_name, row_id)
+      end
+
+      def count_live_records(table_name)
+        return 0 unless @table_metadata.key?(table_name)
+
+        count = 0
+        (@table_pages[table_name] || []).each do |page_number|
+          page = read_page(page_number)
+          offset = PageHeader::SIZE
+          while offset < page.header.data_end
+            header = page.read(offset, 16)
+            raise CorruptionError, "Truncated row header on page #{page_number}" unless header&.bytesize == 16
+
+            _record_id, record_size, flags, = header.unpack("Q>L>S>S")
+            raise CorruptionError, "Invalid row size on page #{page_number}" if record_size <= 0 || offset + 16 + record_size > page.header.data_end
+
+            count += 1 if (flags & 0x01).zero?
+            offset += 16 + record_size
+          end
+        end
+        count
+      end
+
+      def rebuild_row_locations!(table_name)
+        locations = {}
+        physical_ids = Set.new
+        (@table_pages[table_name] || []).each do |page_number|
+          page = read_page(page_number)
+          offset = PageHeader::SIZE
+          while offset < page.header.data_end
+            header = page.read(offset, 16)
+            break if header.nil? || header.bytesize < 16
+
+            record_id, record_size, flags, = header.unpack("Q>L>S>S")
+            physical_ids.add(record_id)
+            if (flags & 0x01).zero?
+              locations[record_id] = [page_number, offset]
+            elsif locations[record_id] == [page_number, offset]
+              locations.delete(record_id)
+            end
+            offset += 16 + record_size
+          end
+        end
+        @row_locations[table_name] = locations
+        @row_locations_complete[table_name] = true
+        @physical_row_ids[table_name] = physical_ids
+      end
+
+      def read_located_row(table_name, row_id, columns, visibility_check:, transaction_id:)
+        location = row_location_for(table_name, row_id)
+        return nil unless location
+
+        page = read_page(location[0])
+        header = page.read(location[1], 16)
+        return nil unless header&.bytesize == 16
+
+        record_id, record_size, flags, column_count = header.unpack("Q>L>S>S")
+        return nil unless record_id == row_id && (flags & 0x01).zero?
+
+        row = Deserializer.deserialize_row(
+          page.read(location[1] + 16, record_size),
+          columns,
+          null_bitmap: (flags & NULL_BITMAP_FLAG) != 0,
+          variable_length_prefixes: (flags & VARIABLE_LENGTH_PREFIXES_FLAG) != 0
+        )
+        if column_count < columns.size
+          columns.each_with_index do |column, index|
+            row[column.name] = column.default if index >= column_count && column.has_default?
+          end
+        end
+
+        snapshot = @transaction_snapshots[current_transaction_id]
+        if snapshot
+          @transaction_reads[current_transaction_id].add(version_key(table_name, row_id))
+          version = @version_store.get_latest_version(
+            row_id, current_transaction_id, snapshot, key: version_key(table_name, row_id)
+          )
+          return nil if version.nil? && @version_store.keys(version_key(table_name, row_id)).any?
+          if version
+            row = version.data.is_a?(Array) ?
+              columns.each_with_index.to_h { |column, index| [column.name, version.data[index]] } : version.data.dup
+          end
+        end
+        row[:_row_id] = row_id
+        return nil if visibility_check && !@visibility_map.is_visible?(row_id, transaction_id)
+
+        row
+      end
+
+      def next_primary_key_value(table_name, metadata, primary_key)
+        return metadata[:next_primary_key] if metadata[:next_primary_key]
+
+        name = primary_key.name
+        maximum = select_rows(table_name, metadata[:columns], visibility_check: false).filter_map do |row|
+          value = row.key?(name) ? row[name] : row[name.to_s]
+          value&.to_i
+        end.max || 0
+        metadata[:next_primary_key] = maximum + 1
+      end
+
+      def advance_primary_key_sequence!(metadata, columns, values)
+        primary_key = columns.find(&:primary_key?)
+        return unless primary_key && %i[integer bigint smallint].include?(primary_key.type_class.to_sym)
+
+        value = if values.is_a?(Hash)
+          if values.key?(primary_key.name)
+            values[primary_key.name]
+          elsif values.key?(primary_key.name.to_sym)
+            values[primary_key.name.to_sym]
+          else
+            values[primary_key.name.to_s]
+          end
+        else
+          values[columns.index(primary_key)]
+        end
+        return if value.nil?
+
+        metadata[:next_primary_key] = [metadata[:next_primary_key].to_i, value.to_i + 1].max
+      end
+
+      def ensure_constraint_indexes!
+        @table_metadata.each_key { |table_name| ensure_constraint_indexes_for_table(table_name) }
+      end
+
+      def ensure_constraint_indexes_for_table(table_name)
+        metadata = @table_metadata[table_name]
+        return unless metadata && @index_manager
+
+        unique_sets = metadata[:columns].filter_map do |column|
+          [column.name] if column.primary_key? || column.unique?
+        end
+        (metadata[:constraints] || []).each do |definition|
+          definition = definition.transform_keys(&:to_sym)
+          unique_sets << Array(definition[:columns]) if definition[:type].to_s.casecmp("unique").zero?
+        end
+        unique_sets.reject(&:empty?).uniq { |columns| columns.map(&:to_s) }.each do |columns|
+          next if @index_manager.find_index(table_name, columns, unique: true)
+
+          @index_manager.create_index(
+            automatic_index_name(table_name, columns, "unique"),
+            table_name,
+            columns,
+            type: :btree,
+            unique: true,
+            automatic: true
+          )
+        end
+
+        (metadata[:constraints] || []).each do |definition|
+          definition = definition.transform_keys(&:to_sym)
+          next unless %w[foreign_key foreign\ key].include?(definition[:type].to_s.downcase)
+
+          foreign_columns = Array(definition[:columns])
+          unless foreign_columns.empty? || @index_manager.find_index(table_name, foreign_columns)
+            @index_manager.create_index(
+              automatic_index_name(table_name, foreign_columns, "foreign"),
+              table_name,
+              foreign_columns,
+              type: :btree,
+              automatic: true
+            )
+          end
+
+          referenced_table = resolve_table_name(definition[:reference_table])
+          referenced_columns = Array(definition[:reference_columns] || :id)
+          next if @index_manager.find_index(referenced_table, referenced_columns)
+
+          @index_manager.create_index(
+            automatic_index_name(referenced_table, referenced_columns, "reference"),
+            referenced_table,
+            referenced_columns,
+            type: :hash,
+            automatic: true
+          )
+        end
+      end
+
+      def automatic_index_name(table_name, columns, purpose)
+        digest = Digest::SHA256.hexdigest([table_name, purpose, *columns].map(&:to_s).join("\0"))[0, 16]
+        :"__rubydb_#{purpose}_#{digest}"
+      end
+
+      def constraint_lookup_row_ids(table_name, columns, key)
+        result = @index_manager&.search_exact(table_name, columns, key)
+        return result unless result.nil?
+
+        metadata = @table_metadata[table_name]
+        select_rows(table_name, metadata[:columns], visibility_check: false).filter_map do |row|
+          row[:_row_id] if columns.each_with_index.all? do |column, index|
+            existing = row.key?(column) ? row[column] : row[column.to_s]
+            existing == key[index]
+          end
+        end
+      end
+
+      def referencing_rows(table_name, metadata, columns, referenced_values)
+        conditions = columns.each_with_index.to_h { |column, index| [column, referenced_values[index]] }
+        select_rows(table_name, metadata[:columns], conditions.merge(visibility_check: false))
       end
 
       # Enforce the column-level constraints that are persisted in table
@@ -1879,17 +2254,12 @@ module RubyDB
         end
         return true if constrained_sets.empty?
 
-        existing_rows = select_rows(table_name, schema, visibility_check: false)
         constrained_sets.each do |column_names|
           key = column_names.map { |name| candidate[name] }
           next if key.all?(&:nil?) && !schema.any? { |column| column.name.to_sym == column_names.first && column.primary_key? }
 
-          duplicate = existing_rows.any? do |existing|
-            next false if exclude_row_id && existing[:_row_id] == exclude_row_id
-            column_names.all? do |name|
-              existing_value = existing.key?(name) ? existing[name] : existing[name.to_s]
-              existing_value == candidate[name]
-            end
+          duplicate = constraint_lookup_row_ids(table_name, column_names, key).any? do |row_id|
+            !exclude_row_id || row_id != exclude_row_id
           end
           if duplicate
             raise DatabaseError, "Duplicate value for #{column_names.join(", ")} on '#{table_name}'"
@@ -1898,7 +2268,7 @@ module RubyDB
         true
       end
 
-      def validate_relational_constraints!(table_name, metadata, columns, values)
+      def validate_relational_constraints!(table_name, metadata, columns, values, exclude_row_id: nil)
         candidate = if values.is_a?(Hash)
           values.transform_keys { |key| key.respond_to?(:to_sym) ? key.to_sym : key }
         else
@@ -1914,8 +2284,8 @@ module RubyDB
             next if unique_columns.empty?
             key = unique_columns.map { |column| candidate[column] }
             next if key.all?(&:nil?)
-            duplicate = select_rows(table_name, columns, visibility_check: false).any? do |row|
-              unique_columns.all? { |column| (row[column] || row[column.to_s]) == candidate[column] }
+            duplicate = constraint_lookup_row_ids(table_name, unique_columns, key).any? do |row_id|
+              !exclude_row_id || row_id != exclude_row_id
             end
             raise DatabaseError, "Duplicate value for #{unique_columns.join(", ")} on '#{table_name}'" if duplicate
           when "check"
@@ -1933,13 +2303,8 @@ module RubyDB
             reference_metadata = @table_metadata[reference_table] || @table_metadata[reference_table.to_sym]
             raise DatabaseError, "Referenced table '#{reference_table}' does not exist" unless reference_metadata
             resolved_reference_table = @table_metadata.key?(reference_table) ? reference_table : reference_table.to_sym
-            reference_rows = select_rows(resolved_reference_table, reference_metadata[:columns], visibility_check: false)
-            found = reference_rows.any? do |reference_row|
-              foreign_columns.each_with_index.all? do |column, index|
-                reference_value = reference_row[reference_columns[index]] || reference_row[reference_columns[index].to_s]
-                reference_value == candidate[column]
-              end
-            end
+            reference_key = foreign_columns.map { |column| candidate[column] }
+            found = constraint_lookup_row_ids(resolved_reference_table, reference_columns, reference_key).any?
             unless found
               raise DatabaseError, "Referenced row does not exist for '#{table_name}'"
             end
@@ -2043,7 +2408,7 @@ module RubyDB
           result.reject! { |row_id| row_id.nil? }
         else
           key = (index.columns.size == 1) ? condition : index.columns.map { |column| conditions[column] }
-          result = index.search(key)
+          result = index.respond_to?(:search_all) ? index.search_all(key) : index.search(key)
         end
         result.is_a?(Array) ? result.to_set : Set.new([result].compact)
       end
@@ -2082,24 +2447,12 @@ module RubyDB
 
             child_columns = Array(definition[:columns]).map(&:to_sym)
             parent_columns = Array(definition[:reference_columns] || :id).map(&:to_sym)
-            child_rows = select_rows(child_table, child_metadata[:columns], visibility_check: false)
-            referenced = child_rows.any? do |child_row|
-              child_columns.each_with_index.all? do |child_column, index|
-                child_value = child_row[child_column] || child_row[child_column.to_s]
-                parent_value = deleted_row[parent_columns[index]] || deleted_row[parent_columns[index].to_s]
-                !child_value.nil? && child_value == parent_value
-              end
-            end
-            next unless referenced
+            parent_values = parent_columns.map { |column| row_value(deleted_row, column) }
+            child_rows = referencing_rows(child_table, child_metadata, child_columns, parent_values)
+            next if child_rows.empty?
 
             action = (definition[:on_delete] || :restrict).to_s.downcase.tr("- ", "__")
-            matching_rows = child_rows.select do |child_row|
-              child_columns.each_with_index.all? do |child_column, index|
-                child_value = child_row[child_column] || child_row[child_column.to_s]
-                parent_value = deleted_row[parent_columns[index]] || deleted_row[parent_columns[index].to_s]
-                !child_value.nil? && child_value == parent_value
-              end
-            end
+            matching_rows = child_rows
 
             case action
             when "cascade"
@@ -2144,15 +2497,9 @@ module RubyDB
             parent_columns = Array(definition[:reference_columns] || :id).map(&:to_sym)
             next unless parent_columns.any? { |column| row_value(old_row, column) != row_value(new_row, column) }
 
-            child_rows = select_rows(child_table, child_metadata[:columns], visibility_check: false)
-            referenced = child_rows.any? do |child_row|
-              child_columns.each_with_index.all? do |child_column, index|
-                child_value = row_value(child_row, child_column)
-                parent_value = row_value(old_row, parent_columns[index])
-                !child_value.nil? && child_value == parent_value
-              end
-            end
-            next unless referenced
+            parent_values = parent_columns.map { |column| row_value(old_row, column) }
+            child_rows = referencing_rows(child_table, child_metadata, child_columns, parent_values)
+            next if child_rows.empty?
 
             action = (definition[:on_update] || :restrict).to_s.downcase.tr("- ", "__")
             case action
@@ -2185,14 +2532,8 @@ module RubyDB
             child_columns = Array(definition[:columns]).map(&:to_sym)
             parent_columns = Array(definition[:reference_columns] || :id).map(&:to_sym)
             next unless parent_columns.any? { |column| row_value(old_row, column) != row_value(new_row, column) }
-            child_rows = select_rows(child_table, child_metadata[:columns], visibility_check: false)
-            matching_rows = child_rows.select do |child_row|
-              child_columns.each_with_index.all? do |child_column, index|
-                child_value = row_value(child_row, child_column)
-                parent_value = row_value(old_row, parent_columns[index])
-                !child_value.nil? && child_value == parent_value
-              end
-            end
+            parent_values = parent_columns.map { |column| row_value(old_row, column) }
+            matching_rows = referencing_rows(child_table, child_metadata, child_columns, parent_values)
             next if matching_rows.empty?
 
             action = (definition[:on_update] || :restrict).to_s.downcase.tr("- ", "__")
@@ -2299,6 +2640,7 @@ module RubyDB
             end,
             column_count: table_data[:column_count] || 0,
             row_count: table_data[:row_count] || 0,
+            next_primary_key: table_data[:next_primary_key],
             constraints: table_data[:constraints] || [],
             created_at: Time.at(table_data[:created_at]),
             updated_at: Time.at(table_data[:updated_at])
@@ -2359,6 +2701,7 @@ module RubyDB
             constraints: metadata[:constraints] || [],
             column_count: metadata[:column_count],
             row_count: metadata[:row_count],
+            next_primary_key: metadata[:next_primary_key],
             created_at: metadata[:created_at].to_i,
             updated_at: metadata[:updated_at].to_i,
             pages: @table_pages[table_name] || []

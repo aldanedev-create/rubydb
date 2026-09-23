@@ -14,3 +14,12 @@ For the complete change workflow, read the [developer guide](../developer-guide.
 bug fix should include a regression test and an explanation of its invariant.
 Run fault, concurrency, or recovery tests when the change crosses a durable
 boundary; a unit test alone is not sufficient evidence.
+
+## Copy/paste local loop
+
+```sh
+bundle install
+bundle exec rspec spec/your_regression_spec.rb
+bundle exec rubocop
+git diff --check
+```

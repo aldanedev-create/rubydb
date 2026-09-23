@@ -9,7 +9,7 @@ topology you will deploy.
 
 ```ruby
 # Gemfile
-gem "rubydb", "0.1.6"
+gem "rubydb", "0.1.7"
 gem "rubydb-activerecord", "0.1.3"
 ```
 

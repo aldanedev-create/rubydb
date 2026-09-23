@@ -178,6 +178,9 @@ module RubyDB
 
       def execute_select(plan)
         @accelerator_window_applied = false
+        if (count_result = metadata_count_result(plan))
+          return count_result
+        end
         @stats[:sequential_scans] += 1 if plan.scan_type == :sequential
         @stats[:index_scans] += 1 if plan.scan_type == :index
 
@@ -267,7 +270,11 @@ module RubyDB
         @engine.begin_transaction if implicit_transaction
 
         begin
-          inserted = rows.map { |values| execute_single_insert(plan, table_name, columns, values) }
+          inserted = if rows.size > 1 && plan.on_conflict.nil?
+            execute_simple_insert_batch(table_name, columns, rows)
+          else
+            rows.map { |values| execute_single_insert(plan, table_name, columns, values) }
+          end
           unless !implicit_transaction || @engine.commit_transaction
             raise ExecutionError, "Implicit multi-row INSERT transaction could not commit"
           end
@@ -291,11 +298,7 @@ module RubyDB
       end
 
       def execute_single_insert(plan, table_name, columns, values)
-        # Build row data
-        row_data = {}
-        columns.each_with_index do |col, idx|
-          row_data[col] = evaluate_expression(values[idx])
-        end
+        row_data = build_insert_row(columns, values)
 
         # Insert into engine
         table_columns = @engine.table_columns(table_name)
@@ -328,7 +331,10 @@ module RubyDB
             .select(&:unique?).min_by { |index| index.columns.size }&.columns || []
         end
         raise ExecutionError, "ON CONFLICT DO UPDATE requires a conflict target or primary key" if target.empty?
-        existing = @engine.select_rows(table_name, @engine.table_columns(table_name)).find do |row|
+        target_conditions = target.each_with_object({}) do |column, conditions|
+          conditions[column] = row_value(row_data, column, column.to_s)
+        end
+        existing = @engine.select_rows(table_name, @engine.table_columns(table_name), target_conditions).find do |row|
           target.all? do |column|
             row_value(row, column, column.to_s) == row_value(row_data, column, column.to_s)
           end
@@ -345,13 +351,37 @@ module RubyDB
         {row_count: 1, affected_rows: 1, row_id: row_id, inserted_id: inserted_id, message: "INSERT 0 UPDATE 1"}
       end
 
+      # The engine still validates and WAL-logs every tuple. This path removes
+      # repeated metadata publication and avoids recreating table metadata for
+      # each VALUES tuple in an otherwise ordinary multi-row INSERT.
+      def execute_simple_insert_batch(table_name, columns, value_rows)
+        table_columns = @engine.table_columns(table_name)
+        row_data = value_rows.map { |values| build_insert_row(columns, values) }
+        row_ids = @engine.insert_rows(table_name, table_columns, row_data)
+        primary_key = table_columns.find(&:primary_key?)
+
+        row_ids.map do |row_id|
+          inserted_row = primary_key && @engine.select_row(table_name, row_id, table_columns)
+          inserted_id = if primary_key && inserted_row
+            inserted_row[primary_key.name] || inserted_row[primary_key.name.to_sym]
+          end
+          {row_count: 1, affected_rows: 1, row_id: row_id, inserted_id: inserted_id, message: "INSERT 1"}
+        end
+      end
+
+      def build_insert_row(columns, values)
+        columns.each_with_index.each_with_object({}) do |(column, index), row|
+          row[column] = evaluate_expression(values[index])
+        end
+      end
+
       def execute_update(plan)
         table_name = plan.table_name
         assignments = plan.assignments
         predicate = plan.predicate
 
         # Get rows to update
-        rows = scan_table(Plan::Select.new(table_name, []))
+        rows = scan_table(Plan::Select.new(table_name, []), predicate: predicate)
         rows = rows.select { |row| evaluate_predicate(predicate, row) } if predicate
 
         updated_count = 0
@@ -382,7 +412,7 @@ module RubyDB
         predicate = plan.predicate
 
         # Get rows to delete
-        rows = scan_table(Plan::Select.new(table_name, []))
+        rows = scan_table(Plan::Select.new(table_name, []), predicate: predicate)
         rows = rows.select { |row| evaluate_predicate(predicate, row) } if predicate
 
         deleted_count = 0
@@ -598,11 +628,14 @@ module RubyDB
       def accelerate_snapshot_scan(plan)
         return nil unless @accelerator
         return nil unless @accelerator.read_pipeline?
-        return nil unless @accelerator_dispatch.preferred?(:snapshot_scan)
         return nil unless plan.table_name && plan.joins.empty?
+        min_rows = @accelerator.min_rows_for(:snapshot_scan)
+        return nil if plan.limit && plan.order_by.empty? &&
+          plan.limit + (plan.offset || 0) < min_rows
         return nil if @cte_rows.any?
         return nil if plan.distinct || plan.having || (plan.aggregates && !plan.aggregates.empty?)
-        return nil if plan.estimated_rows.to_i < @accelerator.min_rows
+        estimated_rows = plan.estimated_rows || @engine.table_live_row_count(plan.table_name)
+        return nil unless @accelerator.preferred_for?(:snapshot_scan, input_rows: estimated_rows)
 
         filters = accelerator_filters(plan.predicate)
         order_by = accelerator_order_by(plan.order_by)
@@ -672,8 +705,7 @@ module RubyDB
       def accelerate_scan(rows, plan)
         return nil unless @accelerator
         return nil unless @accelerator.read_pipeline?
-        return nil if rows.size < @accelerator.min_rows
-        return nil unless @accelerator_dispatch.preferred?(:scan)
+        return nil unless @accelerator.preferred_for?(:scan, input_rows: rows.size)
         return nil unless plan.joins.empty?
         return nil if plan.distinct || (plan.aggregates && !plan.aggregates.empty?)
 
@@ -723,8 +755,7 @@ module RubyDB
       def accelerate_aggregate(rows, plan)
         return nil unless @accelerator
         return nil unless @accelerator.read_pipeline?
-        return nil if rows.size < @accelerator.min_rows
-        return nil unless @accelerator_dispatch.preferred?(:aggregate)
+        return nil unless @accelerator.preferred_for?(:aggregate, input_rows: rows.size)
         return nil unless plan.joins.empty?
         return nil if plan.distinct || plan.having || plan.order_by&.any?
         return nil unless plan.aggregates && !plan.aggregates.empty?
@@ -814,7 +845,8 @@ module RubyDB
       def accelerate_join(left_rows, right_rows, join)
         return nil unless @accelerator
         return nil unless @accelerator.read_pipeline?
-        return nil if left_rows.size + right_rows.size < @accelerator.min_rows
+        input_rows = left_rows.size + right_rows.size
+        return nil unless @accelerator.preferred_for?(:join, input_rows: input_rows)
         return nil unless join[:type].to_sym == :inner
 
         predicate = join[:predicate]
@@ -824,8 +856,6 @@ module RubyDB
         right_key = accelerator_identifier(predicate.right)
         return nil unless left_key && right_key
         return nil unless left_rows.first&.key?(left_key) && right_rows.first&.key?(right_key)
-        return nil unless @accelerator_dispatch.preferred?(:join)
-
         calibrating = !@accelerator.manager.performance_calibrated?(:join)
         @stats[:accelerator_requests] += 1
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -927,7 +957,7 @@ module RubyDB
         expression.value
       end
 
-      def scan_table(plan)
+      def scan_table(plan, predicate: plan.predicate)
         table_name = plan.table_name
         return [{}] unless table_name
         return @cte_rows.fetch(table_name.to_s) if @cte_rows.key?(table_name.to_s)
@@ -937,22 +967,72 @@ module RubyDB
         end
         columns = @engine.table_columns(table_name)
 
-        if plan.scan_type == :index && plan.index
-          # Use index scan
-          scan = Indexes::IndexScan.new(plan.index, :full)
-          results = scan.execute
-          row_ids = results.map { |r| r[:row_id] }
+        # Only exact-key conditions are pushed down here. A full index walk
+        # followed by one row fetch per entry is slower than a page scan and
+        # can accidentally change row order for LIMIT without ORDER BY.
+        conditions = exact_index_conditions(table_name, predicate)
+        return @engine.select_rows(table_name, columns, conditions) if conditions
 
-          # Fetch rows by row_id
-          rows = []
-          row_ids.each do |row_id|
-            row = @engine.select_row(table_name, row_id, columns)
-            rows << row if row
-          end
-          rows
-        else
-          # Sequential scan
-          @engine.select_rows(table_name, columns)
+        if predicate.nil? && plan.limit && plan.joins.empty? && plan.order_by.empty? &&
+            !plan.distinct && plan.group_by.empty? && (plan.aggregates.nil? || plan.aggregates.empty?) &&
+            Array(plan.projections).none? { |projection|
+              expression = projection.respond_to?(:expression) ? projection.expression : projection
+              expression.is_a?(SQL::AST::FunctionCall) && expression.window
+            }
+          return @engine.select_rows(table_name, columns, limit: plan.limit + (plan.offset || 0))
+        end
+
+        @engine.select_rows(table_name, columns)
+      end
+
+      def metadata_count_result(plan)
+        return nil unless plan.table_name && plan.predicate.nil? && plan.joins.empty?
+        return nil unless plan.group_by.empty? && plan.having.nil? && !plan.distinct
+        return nil unless plan.order_by.empty? && !@engine.in_transaction?
+        return nil unless Array(plan.projections).size == 1
+
+        projection = plan.projections.first
+        expression = projection.respond_to?(:expression) ? projection.expression : projection
+        return nil unless expression.is_a?(SQL::AST::FunctionCall) &&
+          expression.name.to_s.casecmp?("COUNT") && !expression.distinct && !expression.window &&
+          expression.arguments.size == 1 && expression.arguments.first.is_a?(SQL::AST::Star)
+
+        rows = [{projection_name(projection) => @engine.table_live_row_count(plan.table_name)}]
+        rows = rows[(plan.offset || 0), plan.limit] || [] if plan.limit
+        rows = rows[(plan.offset || 0)..] || [] if !plan.limit && plan.offset
+        {rows: rows, row_count: rows.size, column_names: get_column_names(plan)}
+      end
+
+      def exact_index_conditions(table_name, predicate)
+        return nil unless predicate
+
+        equalities = {}
+        collect_equalities(predicate, equalities)
+        return nil if equalities.empty?
+
+        index = @engine.index_manager.get_indexes_for_table(table_name).find do |candidate|
+          candidate.columns.all? { |column| equalities.key?(column.to_s) }
+        end
+        return nil unless index
+
+        index.columns.each_with_object({}) do |column, conditions|
+          conditions[column] = equalities.fetch(column.to_s)
+        end
+      end
+
+      def collect_equalities(predicate, equalities)
+        case predicate
+        when Predicate::And
+          collect_equalities(predicate.left, equalities)
+          collect_equalities(predicate.right, equalities)
+        when Predicate::Comparison
+          return unless predicate.operator == :eq
+
+          left, right = predicate.left, predicate.right
+          left, right = right, left if left.is_a?(Expression::Literal)
+          return unless left.is_a?(Expression::Column) && right.is_a?(Expression::Literal)
+
+          equalities[left.name.to_s] = right.value
         end
       end
 
@@ -1536,7 +1616,11 @@ module RubyDB
         end
 
         if plan.order_by&.any?
-          order_str = plan.order_by.map { |o| "#{o.column} #{o.direction}" }.join(", ")
+          order_str = plan.order_by.map do |order|
+            column = order.is_a?(Hash) ? order[:column] : order.column
+            direction = order.is_a?(Hash) ? order[:direction] : order.direction
+            "#{column} #{direction}"
+          end.join(", ")
           lines << "  Order By: #{order_str}"
         end
 

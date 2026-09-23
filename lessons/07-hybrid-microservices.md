@@ -136,7 +136,7 @@ Use `ConnectionPool` for concurrent workers, keep the pool bounded per process,
 and use `rubydbs://` with peer verification in production. The package is
 TypeScript-first, supports prepared statements, transactions, timeouts with
 wire cancellation, and does not access embedded database files. See
-`adapters/rubydb/README.md` for the full Node release and operations boundary.
+`adapters/node/README.md` for the full Node release and operations boundary.
 
 ## A small Rails service
 

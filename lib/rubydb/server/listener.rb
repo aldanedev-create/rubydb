@@ -7,7 +7,7 @@ module RubyDB
   module Server
     # Listener - Accepts incoming connections
     class Listener
-      attr_reader :stats
+      attr_reader :stats, :port
 
       def initialize(config, connection_pool, worker_pool)
         @config = config
@@ -33,6 +33,7 @@ module RubyDB
 
           begin
             tcp_socket = TCPServer.new(@config[:host], @config[:port])
+            @port = tcp_socket.local_address.ip_port
             tcp_socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
 
             ssl = @config[:ssl] || {}

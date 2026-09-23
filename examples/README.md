@@ -24,7 +24,7 @@ tree. Run commands from the repository root with `ruby path/to/example.rb`.
   transactions, deterministic seed data, and direct/HTTP pressure scripts.
 - `python_flask/` is a real Flask JSON API using `rubydb-python`.
 - `python_flaxon/` is a real async Flaxon JSON API using `rubydb-python`.
-- The repository's `adapters/rubydb/` contains the TypeScript/Node.js client
+- The repository's `adapters/node/` contains the TypeScript/Node.js client
   package and protocol tests for `rubydb-node`.
 
 The Python examples require a running RubyDB server and use `RUBYDB_URL`; see
@@ -35,3 +35,17 @@ after successful runs. The server example stores data under
 `examples/server/tmp/server_data`; that path is ignored by Git. Do not open the
 same embedded database path from multiple application processes; use the
 server/client example for that topology.
+
+## Copy/paste first run
+
+```sh
+bundle exec ruby examples/basic/create_database.rb tmp/examples.rdb
+bundle exec ruby examples/basic/queries.rb
+```
+
+For a real client/server path:
+
+```sh
+ruby examples/server/server.rb
+ruby examples/server/client.rb
+```

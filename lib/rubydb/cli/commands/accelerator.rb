@@ -44,6 +44,7 @@ module RubyDB
           details = client.stats
           if options[:ping] && details[:available]
             details[:ping] = client.ping
+            details[:worker_metrics] = client.worker_metrics
           end
           details[:healthy] = if details[:mode] == "off"
             true

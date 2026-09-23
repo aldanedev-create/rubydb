@@ -19,3 +19,20 @@ virtual tables, FTS, recursive query edge cases, extension APIs, file-format
 compatibility, and every SQLite function/error behavior remain unsupported or
 unverified. An existing SQLite application must run its own migration and
 query suite before migration.
+
+## Copy-and-paste compatible CRUD
+
+```sql
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  done BOOLEAN NOT NULL DEFAULT false
+);
+INSERT INTO tasks (title) VALUES ('Ship the release');
+INSERT INTO tasks (title, done) VALUES ('Write restore drill', true);
+SELECT id, title FROM tasks WHERE done = false ORDER BY id LIMIT 50;
+```
+
+This is a portable starting point for a new application, not proof that an
+existing SQLite application will run unchanged. Run its migrations and query
+suite against RubyDB before migration.

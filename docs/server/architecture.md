@@ -8,3 +8,13 @@ Lifecycle shutdown stops acceptance, closes connections, joins workers, flushes
 the engine, and removes the PID file. Multiple application processes should
 share the server, not the embedded path. Use health/readiness and Prometheus
 metrics to decide whether to route traffic.
+
+## Copy/paste server smoke test
+
+```sh
+rubydb status --json
+rubydb doctor --quick --json
+```
+
+From an application host, run the client smoke query through `RUBYDB_URL`; do
+not open the server's `.rdb` file from the application process.

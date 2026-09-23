@@ -12,3 +12,21 @@ the exact error. Include workload and recovery evidence for data-safety issues.
 For corruption, checksum, replication divergence, or fencing anomalies, stop
 writes and preserve the database, WAL, logs, and timestamps before attempting
 repair. Report unpatched security issues privately through `SECURITY.md`.
+
+## Copy/paste minimal reproduction
+
+```ruby
+require "rubydb"
+
+db = RubyDB.open("tmp/support-repro.rdb")
+begin
+  db.execute("CREATE TABLE IF NOT EXISTS checks (id INTEGER PRIMARY KEY, value TEXT)")
+  db.execute("INSERT INTO checks (id, value) VALUES (1, 'support')")
+  p db.query("SELECT * FROM checks")
+ensure
+  db.close
+end
+```
+
+Attach the command, sanitized error, RubyDB version, Ruby version, OS, and
+topology. Replace the example path with a disposable copy, never production.

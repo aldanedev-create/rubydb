@@ -21,7 +21,7 @@ module RubyDB
         end
         columns.each do |col|
           value = row[col.name]
-          serialized = serialize(value, col.type_class)
+          serialized = col.type_instance.serialize(value)
           if variable_length_type?(col.type_class)
             data << [serialized.bytesize].pack("N")
           end

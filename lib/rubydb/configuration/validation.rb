@@ -83,6 +83,7 @@ module RubyDB
         "accelerator.timeout" => {type: :integer, required: true, min: 1},
         "accelerator.max_frame_size" => {type: :integer, required: true, min: 1024},
         "accelerator.min_rows" => {type: :integer, required: true, min: 0},
+        "accelerator.min_rows_by_workload" => {type: :hash, required: true},
         "accelerator.read_pipeline" => {type: :string, required: true, enum: ["off", "on"]},
         "accelerator.direct_snapshot" => {type: :boolean, required: true}
       }
@@ -158,6 +159,11 @@ module RubyDB
         when :boolean
           unless [true, false].include?(value)
             @errors << "#{path} must be a boolean"
+            return
+          end
+        when :hash
+          unless value.is_a?(Hash)
+            @errors << "#{path} must be a hash"
             return
           end
         end

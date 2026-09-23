@@ -114,6 +114,29 @@ module RubyDB
         end
       end
 
+      # Remove every index owned by a table before the table is recreated.
+      # Branch checkout and restore can replace a table with the same name;
+      # retaining the old index would make a fresh table appear to contain
+      # stale unique keys.
+      def drop_table_indexes(table_name)
+        @lock.synchronize do
+          names = @indexes.filter_map do |name, index|
+            name if index.table_name.to_s == table_name.to_s
+          end
+          return 0 if names.empty?
+
+          names.each do |name|
+            index = @indexes.delete(name)
+            index&.clear
+            @cache.delete(name)
+            @stats[:index_drops] += 1
+          end
+          @table_indexes.delete_if { |key, _| key.to_s == table_name.to_s }
+          save_indexes
+          names.length
+        end
+      end
+
       def get_index(name)
         @lock.synchronize do
           @indexes[name]
@@ -122,7 +145,28 @@ module RubyDB
 
       def get_indexes_for_table(table_name)
         @lock.synchronize do
-          (@table_indexes[table_name] || []).map { |name| @indexes[name] }.compact
+          names = @table_indexes[table_name]
+          names ||= @table_indexes.find { |key, _| key.to_s == table_name.to_s }&.last
+          (names || []).map { |name| @indexes[name] }.compact
+        end
+      end
+
+      def find_index(table_name, columns, unique: nil)
+        wanted = Array(columns).map(&:to_s)
+        get_indexes_for_table(table_name).find do |index|
+          index.columns.map(&:to_s) == wanted && (unique.nil? || index.unique == unique)
+        end
+      end
+
+      def search_exact(table_name, columns, key)
+        index = find_index(table_name, columns)
+        return nil unless index
+
+        @lock.synchronize do
+          @stats[:index_searches] += 1
+          lookup_key = (index.columns.size == 1) ? Array(key).first : Array(key)
+          result = index.respond_to?(:search_all) ? index.search_all(lookup_key) : index.search(lookup_key)
+          Array(result).compact
         end
       end
 
@@ -194,8 +238,9 @@ module RubyDB
           indexes.each do |index|
             next unless index.unique
             key = extract_key(row, index.columns)
-            existing = index.search(key)
-            if !existing.nil? && existing != row_id
+            next if null_unique_key?(key)
+            existing = Array(index.respond_to?(:search_all) ? index.search_all(key) : index.search(key)).compact
+            if existing.any? { |existing_row_id| existing_row_id != row_id }
               raise DatabaseError, "Duplicate value for unique index '#{index.name}'"
             end
           end
@@ -247,8 +292,9 @@ module RubyDB
             old_key = extract_key(old_row, index.columns)
             new_key = extract_key(new_row, index.columns)
             next if old_key == new_key
-            existing = index.search(new_key)
-            if !existing.nil? && existing != row_id
+            next if null_unique_key?(new_key)
+            existing = Array(index.respond_to?(:search_all) ? index.search_all(new_key) : index.search(new_key)).compact
+            if existing.any? { |existing_row_id| existing_row_id != row_id }
               raise DatabaseError, "Duplicate value for unique index '#{index.name}'"
             end
           end
@@ -325,6 +371,11 @@ module RubyDB
         else
           columns.map { |col| row.key?(col) ? row[col] : row[col.to_s] }
         end
+      end
+
+      def null_unique_key?(key)
+        values = key.is_a?(Array) ? key : [key]
+        values.all?(&:nil?)
       end
 
       def index_count_by_type

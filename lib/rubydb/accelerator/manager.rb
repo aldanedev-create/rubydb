@@ -23,7 +23,7 @@ module RubyDB
       BINARY_JOIN_TYPE = 2
       BINARY_SNAPSHOT_SCAN_TYPE = 3
 
-      attr_reader :mode, :binary_path, :min_rows, :read_pipeline, :capabilities, :max_rows, :max_result_bytes
+      attr_reader :mode, :binary_path, :min_rows, :min_rows_by_workload, :read_pipeline, :capabilities, :max_rows, :max_result_bytes
 
       def initialize(config = {})
         config = config.transform_keys(&:to_sym)
@@ -35,6 +35,7 @@ module RubyDB
         @max_rows = Integer(config[:max_rows] || ENV.fetch("RUBYDB_ACCELERATOR_MAX_ROWS", "1000000"))
         @max_result_bytes = Integer(config[:max_result_bytes] || ENV.fetch("RUBYDB_ACCELERATOR_MAX_RESULT_BYTES", @max_frame_size))
         @min_rows = Integer(config[:min_rows] || ENV.fetch("RUBYDB_ACCELERATOR_MIN_ROWS", 256))
+        @min_rows_by_workload = normalize_min_rows_by_workload(config[:min_rows_by_workload])
         @read_pipeline = (config[:read_pipeline] || ENV.fetch("RUBYDB_ACCELERATOR_READ_PIPELINE", "on")).to_s.downcase
         raise ArgumentError, "read_pipeline must be off or on" unless %w[off on].include?(@read_pipeline)
         raise ArgumentError, "min_rows must be non-negative" if @min_rows.negative?
@@ -73,6 +74,18 @@ module RubyDB
         !@binary_path.nil? && File.file?(@binary_path)
       end
 
+      def verified_tool_binary
+        return nil unless @binary_path
+
+        filename = "rubydb-tools-#{platform_name}"
+        filename += ".exe" if windows?
+        path = File.join(File.dirname(@binary_path), filename)
+        return nil unless File.file?(path)
+
+        verify_binary_integrity!(path)
+        path
+      end
+
       def enabled?
         @mode != "off" && available?
       end
@@ -93,6 +106,7 @@ module RubyDB
             performance_decisions: @performance_decisions.dup,
             performance_samples: @performance_samples.transform_values(&:dup),
             min_rows: @min_rows,
+            min_rows_by_workload: @min_rows_by_workload.dup,
             max_rows: @max_rows,
             max_result_bytes: @max_result_bytes,
             read_pipeline: @read_pipeline,
@@ -195,6 +209,10 @@ module RubyDB
         @mutex.synchronize { @performance_decisions.fetch(workload.to_sym, true) }
       end
 
+      def min_rows_for(workload)
+        @min_rows_by_workload.fetch(workload.to_sym, @min_rows)
+      end
+
       def record_performance(workload, ruby_ms:, go_ms:)
         return true if @mode == "required"
 
@@ -215,10 +233,15 @@ module RubyDB
 
       def accelerator_policy(workload, input_rows:, estimated_bytes: 0, deadline_at: nil)
         return false if @mode == "off"
-        return false unless supports?(workload_capability(workload))
+        return false unless @mode == "required" || available?
+        return false if input_rows && input_rows.to_i < min_rows_for(workload)
         return false if input_rows && input_rows.to_i > @max_rows
         return false if estimated_bytes.to_i > @max_result_bytes
         return false if deadline_at && Time.now >= deadline_at
+        # Before the first request there is no handshake capability list yet.
+        # Let the verified worker prove its capability on that request; after
+        # startup, a missing capability keeps the workload on Ruby.
+        return false if @capabilities.any? && !supports?(workload_capability(workload))
 
         acceleration_preferred?(workload)
       end
@@ -238,6 +261,18 @@ module RubyDB
       end
 
       private
+
+      def normalize_min_rows_by_workload(value)
+        return {} if value.nil?
+        raise ArgumentError, "min_rows_by_workload must be a Hash" unless value.is_a?(Hash)
+
+        value.each_with_object({}) do |(workload, threshold), normalized|
+          integer = Integer(threshold)
+          raise ArgumentError, "minimum rows for #{workload} must be non-negative" if integer.negative?
+
+          normalized[workload.to_sym] = integer
+        end
+      end
 
       def prepare_transport!
         return nil if @mode == "off"
@@ -283,7 +318,10 @@ module RubyDB
         end
         verify_binary_integrity!
 
-        @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(@binary_path)
+        # Pass argv form so a valid bundled path containing spaces is executed
+        # as one program. The one-string form is parsed as a command line on
+        # Windows and fails for extracted runtime caches such as "RubyDB data".
+        @stdin, @stdout, @stderr, @wait_thread = Open3.popen3([@binary_path, File.basename(@binary_path)])
         # The worker protocol carries both newline-delimited JSON and binary
         # frames. Ruby's Windows pipes default to text/UTF-8 behavior, which
         # rejects binary bytes such as a snapshot page header. Put every pipe
@@ -564,18 +602,18 @@ module RubyDB
         candidates.find { |path| File.file?(path) }
       end
 
-      def verify_binary_integrity!
-        manifest = File.join(File.dirname(@binary_path), "SHA256SUMS")
+      def verify_binary_integrity!(binary_path = @binary_path)
+        manifest = File.join(File.dirname(binary_path), "SHA256SUMS")
         return unless File.file?(manifest)
 
         entry = File.readlines(manifest, chomp: true).find do |line|
           digest, name = line.split(/\s+/, 2)
-          name == File.basename(@binary_path) && digest && digest.match?(/\A[0-9a-f]{64}\z/i)
+          name == File.basename(binary_path) && digest && digest.match?(/\A[0-9a-f]{64}\z/i)
         end
         raise UnavailableError.new("RubyDB accelerator binary is not listed in SHA256SUMS", code: "binary_checksum_missing") unless entry
 
         expected = entry.split(/\s+/, 2).first.downcase
-        actual = Digest::SHA256.file(@binary_path).hexdigest
+        actual = Digest::SHA256.file(binary_path).hexdigest
         return if expected == actual
 
         raise UnavailableError.new("RubyDB accelerator binary checksum mismatch", code: "binary_checksum_mismatch")

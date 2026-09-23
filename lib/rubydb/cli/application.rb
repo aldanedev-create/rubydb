@@ -75,6 +75,7 @@ module RubyDB
         @commands[:vacuum] = Commands::Vacuum.new(@output, @formatter).method(:execute)
         @commands[:doctor] = Commands::Doctor.new(@output, @formatter).method(:execute)
         @commands[:accelerator] = Commands::Accelerator.new(@output, @formatter).method(:execute)
+        @commands[:export] = Commands::Export.new(@output, @formatter).method(:execute)
       end
 
       def parse_global_options(argv)
@@ -160,6 +161,7 @@ module RubyDB
         @output.puts "  vacuum                   Vacuum the database"
         @output.puts "  doctor                   Run health checks"
         @output.puts "  accelerator              Inspect or verify the Go accelerator"
+        @output.puts "  export                   Export a stable table snapshot as JSONL or CSV"
         @output.puts
         @output.puts "Run 'rubydb <command> --help' for more information on a command."
       end

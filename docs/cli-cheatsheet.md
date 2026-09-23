@@ -2,6 +2,31 @@
 
 Replace paths and names before running. Put global options before the command.
 
+## Immutable export
+
+```sh
+# JSONL, all columns, automatic Go-or-Ruby engine selection
+rubydb export --database data/app.rdb --table events --out exports/events.jsonl
+
+# Filtered CSV projection. Values are JSON literals when possible.
+rubydb export --database data/app.rdb --table events \
+  --columns id,kind,created_at \
+  --where 'active eq true' \
+  --where 'kind like "payment%"' \
+  --format csv --out exports/payments.csv
+
+# Explicit engines for a parity check. Output paths must be different/new.
+rubydb export --engine ruby --database data/app.rdb --table events --out exports/events-ruby.jsonl
+rubydb export --engine go --database data/app.rdb --table events --out exports/events-go.jsonl
+
+# Refuse exports larger than the operationally approved cap.
+rubydb export --database data/app.rdb --table audit_events --max-rows 500000 --out exports/audit-events.jsonl
+```
+
+An export is a one-table stable snapshot, not a backup. It requires enough
+temporary local disk for a copy of the database and refuses an active
+transaction. See [the export guide](export.md) for safe operation.
+
 ## Global
 
 ```sh

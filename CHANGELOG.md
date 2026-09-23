@@ -5,6 +5,32 @@ All notable changes to RubyDB are documented here. Versions follow
 
 ## Unreleased
 
+- Removed full-table constraint probes from normal primary-key, unique, and
+  foreign-key validation by maintaining automatic constraint indexes and a
+  direct row locator. Generated integer keys and live `COUNT(*)` metadata now
+  persist across reopen instead of repeatedly scanning a table.
+- Added bounded microservice hot-path and insert-scaling specifications plus
+  JSON benchmark scripts for point reads, limits, counts, keyed writes, and
+  immutable export A/B measurements.
+- Added immediate asynchronous WAL shutdown notification so normal process
+  close no longer waits for a fixed polling interval.
+- Added `rubydb export`: checksum-verified, detached immutable snapshot
+  streaming to JSONL or CSV with atomic output, Ruby reference fallback,
+  Go/Ruby parity coverage, filter-only fields, and production documentation.
+- Corrected Go snapshot decoding for RubyDB's little-endian float storage and
+  variable-length UUID values, and added streaming page/boolean filter tests.
+
+## 0.1.7 - 2026-09-20
+
+- Added the Python local-runtime package and `rubydb-python` 0.1.1 extras:
+  platform-specific Ruby/Go bundles, local lifecycle commands, authenticated
+  loopback connections, integrity checks, installed-wheel tests and packaging CI.
+- Exposed the listener's actual bound port for race-free local port allocation.
+- Added a Python local-development and production lesson. Distribution of the
+  new runtime wheels is a separate release step.
+- Fixed Go accelerator startup when its bundled executable path contains
+  spaces, including Python runtime cache directories on Windows.
+
 - Added full developer, troubleshooting, debugging, production operations,
   Rails compatibility, and SQL compatibility guides with repository maps,
   incident evidence procedures, safe recovery guidance, and deployment

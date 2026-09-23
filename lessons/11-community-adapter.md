@@ -43,7 +43,7 @@ features your adapter supports.
 Use the repository's adapters as working references:
 
 - [`adapters/python`](../adapters/python) demonstrates a DB-API 2.0 client.
-- [`adapters/rubydb`](../adapters/rubydb) demonstrates a TypeScript client,
+- [`adapters/node`](../adapters/node) demonstrates a TypeScript client,
   promises, TLS, pooling, prepared statements, and timeout cancellation.
 - [`adapters/activerecord`](../adapters/activerecord) demonstrates a Ruby ORM
   integration and Rails schema behavior.

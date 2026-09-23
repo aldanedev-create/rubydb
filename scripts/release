@@ -74,12 +74,17 @@ if ENV["RUBYDB_PUBLISH"] == "1"
   credentials_path = Gem.configuration.credentials_path
   credentials_available = File.file?(credentials_path) && !File.zero?(credentials_path)
   abort "Set GEM_HOST_API_KEY or configure RubyGems credentials at #{credentials_path}" if api_key.empty? && !credentials_available
-  [gem_path, adapter_gem_path].each do |artifact|
-    abort "gem push failed for #{artifact}" unless system("gem", "push", artifact)
-    puts "Published #{artifact}"
+  abort "gem push failed for #{gem_path}" unless system("gem", "push", gem_path)
+  puts "Published #{gem_path}"
+  if ENV["RUBYDB_PUBLISH_ADAPTER"] == "1"
+    abort "gem push failed for #{adapter_gem_path}" unless system("gem", "push", adapter_gem_path)
+    puts "Published #{adapter_gem_path}"
+  else
+    puts "Adapter built but not published. Set RUBYDB_PUBLISH_ADAPTER=1 only for a new adapter version."
   end
 else
   puts "Release artifact verified: #{gem_path}"
   puts "Release artifact verified: #{adapter_gem_path}"
-  puts "To publish both: RUBYDB_PUBLISH=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release"
+  puts "To publish core: RUBYDB_PUBLISH=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release"
+  puts "To publish a new adapter version too: RUBYDB_PUBLISH=1 RUBYDB_PUBLISH_ADAPTER=1 GEM_HOST_API_KEY=<RubyGems API key> ruby scripts/release"
 end

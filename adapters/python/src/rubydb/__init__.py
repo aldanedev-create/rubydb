@@ -1,33 +1,54 @@
 """Python client adapter for the RubyDB server."""
 
+from ._version import __version__
 from .dbapi import (
+    BINARY,
+    DATETIME,
+    NUMBER,
+    ROWID,
+    STRING,
+    Binary,
     Connection,
     ConnectionPool,
     Cursor,
-    DataError,
     DatabaseError,
+    DataError,
+    Date,
+    DateFromTicks,
     Error,
     IntegrityError,
     InterfaceError,
     InternalError,
     NotSupportedError,
     OperationalError,
-    ProgrammingError,
     PreparedStatement,
+    ProgrammingError,
+    Time,
+    TimeFromTicks,
+    Timestamp,
+    TimestampFromTicks,
     Warning,
     connect,
 )
 
-__version__ = "0.1.0"
 apilevel = "2.0"
 threadsafety = 2
 paramstyle = "qmark"
 
 __all__ = [
+    "__version__",
+    "BINARY",
+    "DATETIME",
+    "NUMBER",
+    "ROWID",
+    "STRING",
+    "Binary",
     "Connection",
     "ConnectionPool",
     "Cursor",
     "DataError",
+    "Date",
+    "DateFromTicks",
     "DatabaseError",
     "Error",
     "IntegrityError",
@@ -37,6 +58,10 @@ __all__ = [
     "OperationalError",
     "ProgrammingError",
     "PreparedStatement",
+    "Time",
+    "TimeFromTicks",
+    "Timestamp",
+    "TimestampFromTicks",
     "Warning",
     "connect",
 ]

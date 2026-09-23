@@ -29,3 +29,12 @@ position, row counts, and any gaps against RTO/RPO.
 
 Do not remove WAL, run vacuum, force promotion, or overwrite the source during
 an active corruption investigation.
+
+## Copy/paste staging drill
+
+```sh
+ruby scripts/restore_drill
+```
+
+Record the restore duration, recovered row counts, checksum result, and the
+RubyDB/Ruby versions with the incident evidence.

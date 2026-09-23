@@ -37,3 +37,24 @@ Unsupported syntax must fail with a parser or execution error. RubyDB does not
 promise arbitrary SQL extensions, PostgreSQL wire-level compatibility, or
 feature parity with another database engine. The executable contract is the
 integration coverage under `spec/`.
+
+## Copy-and-paste compatibility check
+
+Before adopting a query shape, run it in a disposable database and retain the
+result as an application test:
+
+```sh
+rubydb shell --database tmp/compatibility-check.rdb
+```
+
+```sql
+CREATE TABLE events (id INTEGER PRIMARY KEY, account_id INTEGER, kind TEXT);
+INSERT INTO events (id, account_id, kind) VALUES (1, 10, 'login'), (2, 10, 'purchase');
+SELECT account_id, COUNT(*) AS event_count
+FROM events
+GROUP BY account_id
+HAVING COUNT(*) > 1;
+```
+
+For a feature outside this page, treat a parser/execution error as unsupported
+until a documented, tested implementation exists.

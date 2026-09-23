@@ -1,9 +1,9 @@
+import datetime
 import json
 import socket
+import sys
 import threading
 import unittest
-
-import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
@@ -70,44 +70,77 @@ class FakeRubyDBServer:
             connection, _ = self.server.accept()
             with connection:
                 reader = connection.makefile("rb")
-                handshake = self.receive(reader)
-                self.send(connection, "handshake_response", {"success": True, "default_auth": "none"})
-                auth = self.receive(reader)
+                self.receive(reader)
+                self.send(
+                    connection,
+                    "handshake_response",
+                    {"success": True, "default_auth": "none"},
+                )
+                self.receive(reader)
                 self.send(connection, "authentication", {"success": True})
-                sync = self.receive(reader)
+                self.receive(reader)
                 self.send(connection, "ready_for_query", {"success": True})
                 while True:
                     request = self.receive(reader)
-                    payload = request.get("payload", {})
                     request_type = request.get("type")
                     if request_type == "terminate":
                         return
                     if request_type == "query":
-                        self.send(connection, "query_response", {
-                            "success": True,
-                            "result": self.query_result,
-                            "request_id": request.get("id"),
-                        })
+                        self.send(
+                            connection,
+                            "query_response",
+                            {
+                                "success": True,
+                                "result": self.query_result,
+                                "request_id": request.get("id"),
+                            },
+                        )
                     elif request_type == "begin":
-                        self.send(connection, "begin_response", {"success": True, "transaction_id": "txn-1"})
+                        self.send(
+                            connection,
+                            "begin_response",
+                            {"success": True, "transaction_id": "txn-1"},
+                        )
                     elif request_type == "commit":
-                        self.send(connection, "commit_response", {"success": True, "committed": True})
+                        self.send(
+                            connection,
+                            "commit_response",
+                            {"success": True, "committed": True},
+                        )
                     elif request_type == "rollback":
-                        self.send(connection, "rollback_response", {"success": True, "rolled_back": True})
+                        self.send(
+                            connection,
+                            "rollback_response",
+                            {"success": True, "rolled_back": True},
+                        )
                     elif request_type == "ping":
-                        self.send(connection, "ping_response", {"success": True, "pong": True})
+                        self.send(
+                            connection, "ping_response", {"success": True, "pong": True}
+                        )
                     elif request_type == "prepare":
-                        self.send(connection, "prepare_response", {"success": True, "statement_id": "stmt-1"})
+                        self.send(
+                            connection,
+                            "prepare_response",
+                            {"success": True, "statement_id": "stmt-1"},
+                        )
                     elif request_type == "execute":
-                        self.send(connection, "execute_response", {
-                            "success": True,
-                            "result": self.query_result,
-                            "request_id": request.get("id"),
-                        })
+                        self.send(
+                            connection,
+                            "execute_response",
+                            {
+                                "success": True,
+                                "result": self.query_result,
+                                "request_id": request.get("id"),
+                            },
+                        )
                     elif request_type == "close":
                         self.send(connection, "close_response", {"success": True})
                     else:
-                        self.send(connection, request_type + "_response", {"success": True, "result": {}})
+                        self.send(
+                            connection,
+                            request_type + "_response",
+                            {"success": True, "result": {}},
+                        )
         except (OSError, EOFError):
             pass
         finally:
@@ -124,15 +157,24 @@ class RubyDBApiTests(unittest.TestCase):
                     cursor.execute("SELECT id FROM users WHERE active = ?", [True])
                     self.assertEqual(cursor.fetchone(), {"id": 1})
                     self.assertEqual(cursor.description[0][0], "id")
+                    self.assertEqual(cursor.rowcount, 1)
             query = next(item for item in server.received if item["type"] == "query")
             self.assertEqual(query["payload"]["params"], [True])
+            handshake = next(
+                item for item in server.received if item["type"] == "handshake"
+            )
+            self.assertEqual(handshake["payload"]["client_version"], rubydb.__version__)
         finally:
             server.stop()
 
     def test_context_commits_lazy_transaction(self):
-        server = FakeRubyDBServer({"rows": [], "row_count": 0, "affected_rows": 1}).start()
+        server = FakeRubyDBServer(
+            {"rows": [], "row_count": 0, "affected_rows": 1}
+        ).start()
         try:
-            with rubydb.connect("rubydb://127.0.0.1:%d/app" % server.port) as connection:
+            with rubydb.connect(
+                "rubydb://127.0.0.1:%d/app" % server.port
+            ) as connection:
                 connection.execute("INSERT INTO events (name) VALUES (?)", ["boot"])
             request_types = [item["type"] for item in server.received]
             self.assertIn("begin", request_types)
@@ -144,7 +186,9 @@ class RubyDBApiTests(unittest.TestCase):
     def test_prepared_statement_round_trip(self):
         server = FakeRubyDBServer().start()
         try:
-            with rubydb.connect("rubydb://127.0.0.1:%d/app" % server.port) as connection:
+            with rubydb.connect(
+                "rubydb://127.0.0.1:%d/app" % server.port
+            ) as connection:
                 statement = connection.prepare("SELECT id FROM users WHERE id = ?")
                 with statement.execute([1]) as cursor:
                     self.assertEqual(cursor.fetchall(), [{"id": 1}])
@@ -159,6 +203,54 @@ class RubyDBApiTests(unittest.TestCase):
     def test_pool_rejects_invalid_limits(self):
         with self.assertRaises(rubydb.InterfaceError):
             rubydb.ConnectionPool("rubydb://127.0.0.1:7432/app", min_size=2, max_size=1)
+
+    def test_exception_rolls_back_transaction(self):
+        server = FakeRubyDBServer(
+            {"rows": [], "row_count": 1, "affected_rows": 1}
+        ).start()
+        try:
+            with self.assertRaisesRegex(RuntimeError, "abort"):
+                with rubydb.connect(
+                    "rubydb://127.0.0.1:%d/app" % server.port
+                ) as connection:
+                    connection.execute(
+                        "INSERT INTO events (name) VALUES (?)", ["rollback"]
+                    )
+                    raise RuntimeError("abort")
+            request_types = [item["type"] for item in server.received]
+            self.assertIn("rollback", request_types)
+            self.assertNotIn("commit", request_types)
+        finally:
+            server.stop()
+
+    def test_dbapi_constructors_types_and_parameter_validation(self):
+        self.assertEqual(rubydb.Date(2026, 9, 23), datetime.date(2026, 9, 23))
+        self.assertEqual(rubydb.Time(12, 30, 0), datetime.time(12, 30, 0))
+        self.assertEqual(rubydb.Timestamp(2026, 9, 23), datetime.datetime(2026, 9, 23))
+        self.assertEqual(rubydb.Binary(b"rubydb"), b"rubydb")
+        self.assertTrue(rubydb.STRING == "TEXT")
+        self.assertTrue(rubydb.NUMBER == "integer")
+
+        server = FakeRubyDBServer().start()
+        try:
+            connection = rubydb.connect("rubydb://127.0.0.1:%d/app" % server.port)
+            with self.assertRaises(rubydb.ProgrammingError):
+                connection.execute("SELECT ?", "not-a-parameter-sequence")
+            connection.close()
+        finally:
+            server.stop()
+
+    def test_invalid_configuration_and_closed_pool_fail_cleanly(self):
+        for url in ("http://127.0.0.1/db", "rubydb://127.0.0.1:99999/db"):
+            with self.subTest(url=url), self.assertRaises(rubydb.InterfaceError):
+                rubydb.connect(url)
+        with self.assertRaises(rubydb.InterfaceError):
+            rubydb.connect("rubydb://127.0.0.1:7432/db", timeout=0)
+
+        pool = rubydb.ConnectionPool("rubydb://127.0.0.1:7432/db", min_size=0)
+        pool.close()
+        with self.assertRaises(rubydb.InterfaceError):
+            pool.connection()
 
 
 if __name__ == "__main__":

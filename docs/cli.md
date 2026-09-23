@@ -132,6 +132,26 @@ tests and readiness validation. See the [Go accelerator
 architecture](architecture/go-accelerator.md) for modes, checksums, fallback,
 and package behavior.
 
+## Immutable table export
+
+Export a stable committed table snapshot as JSONL or CSV. The destination must
+be a new file; RubyDB writes a private `.partial` file, syncs it, then renames
+it only on success.
+
+```sh
+rubydb export --database data/app.rdb --table events --format jsonl --out exports/events.jsonl
+rubydb export --database data/app.rdb --table events --columns id,kind --where 'active eq true' --format csv --out exports/active-events.csv
+rubydb export --database data/app.rdb --table audit_events --max-rows 500000 --out exports/audit-events.jsonl
+```
+
+`--engine auto` uses the bundled Go page-streaming tool when it is verified;
+`--engine ruby` is the reference path and `--engine go` requires acceleration
+instead of silently falling back. An export refuses an active transaction and
+creates a short-lived immutable copy before releasing writers. It is a table
+extract, not a replacement for a full backup. See [immutable table
+export](export.md) for filter rules, type formats, disk-space planning, and
+benchmarking.
+
 ## SQL shell
 
 Open the configured local database shell:

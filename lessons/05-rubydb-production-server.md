@@ -11,7 +11,7 @@ Use a dedicated service account and persistent storage. The commands below
 assume a Unix-like host; adapt ownership commands to your platform:
 
 ```sh
-gem install rubydb -v 0.1.6
+gem install rubydb -v 0.1.7
 install -d -o rubydb -g rubydb -m 0700 /var/lib/rubydb/data
 install -d -o rubydb -g rubydb -m 0750 /var/log/rubydb
 install -d -o rubydb -g rubydb -m 0700 /etc/rubydb
@@ -62,7 +62,7 @@ and a private network route from the application. Run these commands as an
 administrator and replace paths only after verifying the target host:
 
 ```sh
-gem install rubydb -v 0.1.6
+gem install rubydb -v 0.1.7
 useradd --system --home-dir /var/lib/rubydb --shell /usr/sbin/nologin rubydb
 install -d -o rubydb -g rubydb -m 0700 /var/lib/rubydb/data
 install -d -o rubydb -g rubydb -m 0750 /var/log/rubydb

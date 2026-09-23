@@ -11,7 +11,9 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aldanedev-create/rubydb/accelerator/internal/execution"
@@ -83,6 +85,100 @@ type SnapshotScanRequest struct {
 	DistinctColumns []string           `json:"distinct_columns,omitempty"`
 	BatchSize       int                `json:"batch_size,omitempty"`
 	MaxRows         int                `json:"max_rows,omitempty"`
+	Workers         int                `json:"workers,omitempty"`
+}
+
+// StreamSnapshotScan emits bounded page batches in manifest page order.
+// The existing materializing scan remains unchanged for worker requests.
+// ReadAt permits concurrent reads of one immutable file; only Ruby creates
+// the snapshot and decides visibility before this function is called.
+func StreamSnapshotScan(ctx context.Context, request SnapshotScanRequest,
+	emit func(rows []map[string]interface{}) error) error {
+	if len(request.OrderBy) != 0 || request.Distinct || request.Limit != nil || request.Offset != 0 || request.IndexName != "" {
+		return fmt.Errorf("streaming scan supports only unordered, unwindowed page scans")
+	}
+	if err := validateManifest(request.Snapshot); err != nil {
+		return err
+	}
+	file, err := os.Open(request.Snapshot.SnapshotPath)
+	if err != nil {
+		return fmt.Errorf("open snapshot: %w", err)
+	}
+	defer file.Close()
+	if err := validateSnapshotFile(file, request.Snapshot); err != nil {
+		return err
+	}
+	table, ok := findTable(request.Snapshot.Tables, request.Table)
+	if !ok || len(table.Columns) == 0 {
+		return fmt.Errorf("%w: table %q", ErrSnapshotSchema, request.Table)
+	}
+	columns, err := selectedColumns(table.Columns, request.Columns)
+	if err != nil {
+		return err
+	}
+	hidden := make(map[uint64]struct{}, len(request.Snapshot.HiddenRowIDs))
+	for _, rowID := range request.Snapshot.HiddenRowIDs {
+		hidden[rowID] = struct{}{}
+	}
+	workers := request.Workers
+	if workers <= 0 {
+		workers = runtime.GOMAXPROCS(0)
+	}
+	if workers > 8 {
+		workers = 8
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	rowCount := 0
+	for start := 0; start < len(table.Pages); start += workers {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		end := start + workers
+		if end > len(table.Pages) {
+			end = len(table.Pages)
+		}
+		type pageResult struct {
+			rows []map[string]interface{}
+			err  error
+		}
+		results := make([]pageResult, end-start)
+		var group sync.WaitGroup
+		for index, pageNumber := range table.Pages[start:end] {
+			group.Add(1)
+			go func(index int, pageNumber uint64) {
+				defer group.Done()
+				if err := ctx.Err(); err != nil {
+					results[index].err = err
+					return
+				}
+				page, err := readSnapshotPage(file, request.Snapshot, pageNumber)
+				if err != nil {
+					results[index].err = err
+					return
+				}
+				results[index].rows, results[index].err = scanPage(page, table.Columns, columns, hidden, nil, false, request.Filters)
+			}(index, pageNumber)
+		}
+		group.Wait()
+		for index, result := range results {
+			if result.err != nil {
+				return fmt.Errorf("scan page %d: %w", table.Pages[start+index], result.err)
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			rowCount += len(result.rows)
+			if request.MaxRows > 0 && rowCount > request.MaxRows {
+				return fmt.Errorf("snapshot scan exceeds configured row limit")
+			}
+			if err := emit(result.rows); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type SnapshotScanResult struct {
@@ -395,8 +491,6 @@ func fixedSize(typeName string) int {
 		return 8
 	case "boolean":
 		return 1
-	case "uuid":
-		return 16
 	default:
 		return 0
 	}
@@ -411,7 +505,11 @@ func decodeFixed(raw []byte, typeName string) interface{} {
 	case "bigint":
 		return int64(binary.BigEndian.Uint64(raw))
 	case "float":
-		return math.Float64frombits(binary.BigEndian.Uint64(raw))
+		// RubyDB's long-standing Float serializer uses Array#pack("E"),
+		// which is a little-endian IEEE-754 double. The rest of the storage
+		// record is big-endian, so this exceptional field order must remain
+		// explicit for compatibility with existing database files.
+		return math.Float64frombits(binary.LittleEndian.Uint64(raw))
 	case "boolean":
 		return raw[0] == 1
 	case "date":
@@ -420,12 +518,9 @@ func decodeFixed(raw []byte, typeName string) interface{} {
 		total := int64(binary.BigEndian.Uint64(raw))
 		seconds, micros := total/1_000_000, total%1_000_000
 		value := time.Unix(0, 0).UTC().Add(time.Duration(seconds)*time.Second + time.Duration(micros)*time.Microsecond)
-		return value.Format(time.RFC3339Nano)
+		return value.Format("2006-01-02T15:04:05.000000Z07:00")
 	case "timestamp":
-		return time.Unix(int64(binary.BigEndian.Uint64(raw)), 0).UTC().Format(time.RFC3339Nano)
-	case "uuid":
-		encoded := hex.EncodeToString(raw)
-		return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32]
+		return time.Unix(int64(binary.BigEndian.Uint64(raw)), 0).UTC().Format(time.RFC3339)
 	default:
 		return string(raw)
 	}
@@ -434,6 +529,10 @@ func decodeFixed(raw []byte, typeName string) interface{} {
 func decodeVariable(raw []byte, typeName string) interface{} {
 	if typeName == "blob" {
 		return append([]byte(nil), raw...)
+	}
+	if typeName == "uuid" && len(raw) == 16 {
+		encoded := hex.EncodeToString(raw)
+		return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32]
 	}
 	if typeName == "json" {
 		var value interface{}

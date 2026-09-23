@@ -80,3 +80,14 @@ The repository must prefer correctness over feature breadth. A smaller well-test
 ## Long-term target
 
 The final target is not a fake "PostgreSQL clone" or a marketing demo. The target is a Ruby-first, SQLite-like development experience paired with durable, crash-safe relational database semantics that can be validated under real workloads.
+
+## Copy/paste release gate
+
+Use the same gate locally and in CI. A green unit suite is necessary but does
+not replace deployment-specific restore, filesystem, or multi-host testing.
+
+```sh
+bundle exec rspec
+bundle exec rubocop
+ruby scripts/restore_drill
+```

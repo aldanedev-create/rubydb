@@ -221,12 +221,9 @@ module RubyDB
           table_name = data[:table_name] || data[:table]
           table_name = table_name.to_sym if table_name.respond_to?(:to_sym)
           columns = @engine.table_columns(table_name) || []
-          # JSON-backed WAL payloads may deserialize row_id as a string while
-          # physical row scans expose an integer. Compare the stable numeric
-          # identity so replay remains idempotent across process restarts.
-          existing = @engine.select_rows(table_name, columns).any? do |row|
-            row[:_row_id].to_i == data[:row_id].to_i
-          end
+          # A tombstoned row is still an already-applied INSERT. Checking only
+          # visible rows would resurrect it before a later DELETE is replayed.
+          existing = @engine.row_record_exists?(table_name, data[:row_id])
           return if existing
           begin
             @engine.insert_row(table_name, columns, data[:values] || {})

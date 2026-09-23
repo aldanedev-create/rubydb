@@ -31,3 +31,13 @@ On a network partition, assume the old primary may still be reachable until it
 is fenced. Do not promote a lagging replica and do not run two writable primaries
 without a verified fencing lease. Re-bootstrap a divergent replica rather than
 guessing which WAL records are safe to apply.
+
+## Copy/paste validation
+
+Run the process and network drills in staging before enabling a replica for
+reads or promotion:
+
+```sh
+ruby scripts/replication_failover_drill
+ruby scripts/replication_network_failover_drill
+```

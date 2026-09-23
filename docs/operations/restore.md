@@ -4,3 +4,10 @@ Before treating a backup as recoverable, run the verification path that extracts
 it into an isolated temporary directory, opens the database with RubyDB, and
 compares the restored catalog and table row counts with the manifest. The
 verification removes its temporary database after the check.
+
+## Copy/paste restore check
+
+```sh
+rubydb restore --dir tmp/backups --latest --dry-run
+ruby scripts/restore_drill
+```

@@ -52,3 +52,13 @@ safe disclosure timeline. Do not include production secrets or customer data.
 Security scans run in GitHub Actions, but scan results do not replace review of
 deployment configuration, network policy, secret storage, certificate
 lifecycle, or the host filesystem.
+
+## Copy/paste security baseline
+
+```sh
+gem install bundler-audit --no-document
+ruby scripts/security
+```
+
+Run this in CI and on a clean checkout. It is a baseline dependency/secret
+check, not an independent penetration test or deployment review.

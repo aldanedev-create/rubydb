@@ -144,7 +144,7 @@ func encodeValue(output *bytes.Buffer, value interface{}) error {
 		writeBytes(output, typed)
 	case string:
 		output.WriteByte(4)
-		writeBytes(output, []byte(typed))
+		writeString(output, typed)
 	default:
 		encoded, err := json.Marshal(value)
 		if err != nil {
@@ -247,17 +247,27 @@ func (reader *valueReader) value() (interface{}, error) {
 }
 
 func writeUint16(output *bytes.Buffer, value uint16) {
-	_ = binary.Write(output, binary.LittleEndian, value)
+	var encoded [2]byte
+	binary.LittleEndian.PutUint16(encoded[:], value)
+	_, _ = output.Write(encoded[:])
 }
 func writeUint32(output *bytes.Buffer, value uint32) {
-	_ = binary.Write(output, binary.LittleEndian, value)
+	var encoded [4]byte
+	binary.LittleEndian.PutUint32(encoded[:], value)
+	_, _ = output.Write(encoded[:])
 }
 func writeBytes(output *bytes.Buffer, value []byte) {
 	writeUint32(output, uint32(len(value)))
-	output.Write(value)
+	_, _ = output.Write(value)
+}
+func writeString(output *bytes.Buffer, value string) {
+	writeUint32(output, uint32(len(value)))
+	_, _ = output.WriteString(value)
 }
 func writeInt64(output *bytes.Buffer, value int64)     { writeUint64(output, uint64(value)) }
 func writeFloat64(output *bytes.Buffer, value float64) { writeUint64(output, math.Float64bits(value)) }
 func writeUint64(output *bytes.Buffer, value uint64) {
-	_ = binary.Write(output, binary.LittleEndian, value)
+	var encoded [8]byte
+	binary.LittleEndian.PutUint64(encoded[:], value)
+	_, _ = output.Write(encoded[:])
 }

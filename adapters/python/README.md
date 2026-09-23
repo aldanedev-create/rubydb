@@ -9,6 +9,32 @@ bounded connection pool.
 It does not open RubyDB embedded `.rdb` files. An embedded file must have one
 Ruby process owner; Python applications use a RubyDB server.
 
+## Optional local server (new in 0.1.1)
+
+The `local` extra adds `rubydb-server`, a platform wheel containing RubyDB,
+a Ruby interpreter and its runtime dependencies, and the Go accelerator.
+After the updated client and your platform's runtime wheel are published:
+
+```sh
+python -m pip install "rubydb-python[local]==0.1.1"
+rubydb-python start --data-dir .rubydb
+rubydb-python status --data-dir .rubydb
+rubydb-python doctor --data-dir .rubydb
+```
+
+Get the generated credential-bearing URL with `rubydb-python url --data-dir
+.rubydb` and set it as `RUBYDB_URL`. Stop with `rubydb-python stop --data-dir
+.rubydb`. The default port is selected by the OS; use `--port 7432` to request
+a fixed port. `python -m rubydb.server` also works. Users of a validated runtime
+wheel need no Ruby, RubyGems, or Go installation.
+
+The `server` extra is an alias for `local`. This feature requires 0.1.1 and
+the separate runtime wheel; the published 0.1.0 client alone does not contain
+a server. For local wheel installation before publishing and a complete
+development-to-production walkthrough, see
+[Lesson 13](../../lessons/13-python-local-runtime.md) and the
+[runtime packaging guide](../../packaging/python-server/README.md).
+
 ## Install
 
 From PyPI after release:

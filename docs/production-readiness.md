@@ -116,3 +116,15 @@ Main remaining work is to complete the sequence laid out in the repository desig
 RubyDB has a validated production-oriented foundation, but it does not yet meet
 the bar for unrestricted production use with real data outside its documented
 feature set and deployment-specific validation.
+
+## Copy/paste local audit
+
+```sh
+bundle exec rspec
+bundle exec rubocop
+ruby scripts/restore_drill
+RUBYDB_WORKLOAD_THREADS=8 RUBYDB_WORKLOAD_OPERATIONS=2000 ruby benchmarks/concurrent_workload.rb
+```
+
+Attach the output to the release record and replace the workload settings with
+values measured on the target deployment.

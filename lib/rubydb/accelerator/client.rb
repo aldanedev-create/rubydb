@@ -30,6 +30,19 @@ module RubyDB
         @manager.min_rows
       end
 
+      def min_rows_for(workload)
+        @manager.min_rows_for(workload)
+      end
+
+      def preferred_for?(workload, input_rows:, estimated_bytes: 0, deadline_at: nil)
+        @manager.accelerator_policy(
+          workload,
+          input_rows: input_rows,
+          estimated_bytes: estimated_bytes,
+          deadline_at: deadline_at
+        )
+      end
+
       def read_pipeline?
         return false if @manager.mode == "off"
         return true if @manager.mode == "required"
@@ -47,6 +60,13 @@ module RubyDB
 
       def ping
         @manager.request("ping")
+      end
+
+      # Runtime timings are collected by the long-lived Go process. Exposing
+      # them makes the metrics package operational rather than dead code and
+      # lets deployments verify the worker is serving real requests.
+      def worker_metrics
+        @manager.request("stats") || {}
       end
 
       def sha256(data)

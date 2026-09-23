@@ -14,3 +14,14 @@ The test layers are complementary:
 Run `bundle exec rspec` for the complete local gate. Preserve the random seed
 when reproducing failures. A passing local suite does not replace hosted
 multi-host, physical-filesystem, or independent security validation.
+
+## Copy/paste test gate
+
+```sh
+bundle exec rspec
+bundle exec rubocop
+go test ./...
+```
+
+Run `go test ./...` from `accelerator` when the Go worker or its protocol
+changes. Archive the output and benchmark JSON with the release evidence.

@@ -23,3 +23,24 @@ WAL path as the Ruby API; a server response must never bypass durable commit.
 When diagnosing a result, compare parser output, bound parameters, selected
 plan, row visibility, and final serialization. See the [developer guide](../developer-guide.md)
 and [debugging playbook](../debugging.md).
+
+## Copy/paste query check
+
+This exercises the public parser, planner, executor, and storage path with a
+real order-style query:
+
+```ruby
+require "rubydb"
+
+db = RubyDB.open("tmp/execution-example.rdb")
+begin
+  db.execute("CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, status TEXT, total_cents INTEGER)")
+  db.insert_many("orders", [
+    { id: 1, status: "paid", total_cents: 2500 },
+    { id: 2, status: "pending", total_cents: 900 }
+  ])
+  p db.query("SELECT status, SUM(total_cents) AS revenue FROM orders GROUP BY status ORDER BY revenue DESC")
+ensure
+  db.close
+end
+```

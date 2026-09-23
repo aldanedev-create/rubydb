@@ -17,6 +17,21 @@ RSpec.describe "RubyDB entrypoint" do
     end
   end
 
+  it "runs the local URL quick start without a database server" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "quick-start.rdb")
+      database = RubyDB.connect("rubydb://local/#{path}")
+
+      expect(database.connection).to be_nil
+      expect(database.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)")[:message]).to match(/CREATE TABLE/)
+      database.execute("INSERT INTO notes (id, body) VALUES (1, 'local')")
+      expect(database.query("SELECT body FROM notes WHERE id = 1").first.values).to include("local")
+      database.close
+    ensure
+      database&.close
+    end
+  end
+
   it "keeps the storage page header round-trippable" do
     header = RubyDB::Storage::PageHeader.new
     round_tripped = RubyDB::Storage::PageHeader.deserialize(header.serialize)

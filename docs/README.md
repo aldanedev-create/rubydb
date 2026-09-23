@@ -2,6 +2,7 @@
 
 Start here:
 
+- [Real-world copy-and-paste cookbook](real-world-examples.md)
 - [Developer guide](developer-guide.md)
 - [Troubleshooting](troubleshooting.md)
 - [Debugging playbook](debugging.md)
@@ -22,6 +23,7 @@ Start here:
 - [Production runbook](operations/production-runbook.md)
 - [CLI guide](cli.md)
 - [CLI cheat sheet](cli-cheatsheet.md)
+- [Immutable table export](export.md)
 - [Disaster recovery](operations/disaster-recovery.md)
 - [Monitoring and alerting](operations/monitoring.md)
 - [Workload testing](operations/workload-testing.md)
@@ -29,6 +31,7 @@ Start here:
 - [Lessons learned](lessons-learned.md)
 - [Production journey](../lessons/01-foundations.md)
 - [Build a community adapter](../lessons/11-community-adapter.md)
+- [Python local runtime and production](../lessons/13-python-local-runtime.md)
 
 Architecture and development:
 
@@ -75,3 +78,18 @@ reference:
 If a topic page and an implementation disagree, treat executable tests and the
 documented compatibility contract as the source of truth, then open an issue
 to reconcile the documentation.
+
+## Fast path for a new application
+
+Choose the topology before copying an example:
+
+```text
+one Ruby process + local file      -> RubyDB.open("tmp/app.rdb")
+web/workers/multiple processes    -> RubyDB server + RUBYDB_URL
+large Rails application/unknown SQL -> PostgreSQL in production
+```
+
+The [real-world cookbook](real-world-examples.md) includes a runnable order
+service, Rails configuration, server/TLS URL, backup drill, and workload
+commands. It also states the operating boundaries of each topology so a local
+development shortcut is not mistaken for a production deployment.

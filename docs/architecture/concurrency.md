@@ -12,3 +12,15 @@ request deadline, while wire cancellation actively marks an in-flight request.
 
 Validate concurrency with the production soak, multi-process workload, latency
 percentiles, deadlock checks, resource limits, and durable reopen verification.
+
+## Copy/paste workload
+
+Run this against a disposable database before changing pool sizes or worker
+limits. For multiple processes, use server mode; an embedded file has one owner.
+
+```sh
+RUBYDB_WORKLOAD_PATH=tmp/concurrency.rdb \
+RUBYDB_WORKLOAD_THREADS=8 \
+RUBYDB_WORKLOAD_OPERATIONS=2000 \
+ruby benchmarks/concurrent_workload.rb
+```

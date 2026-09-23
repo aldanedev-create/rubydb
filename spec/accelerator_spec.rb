@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "tmpdir"
+require "fileutils"
 
 RSpec.describe RubyDB::Accelerator do
   let(:binary) do
@@ -18,6 +19,7 @@ RSpec.describe RubyDB::Accelerator do
 
     accelerator = client
     expect(accelerator.ping.fetch("protocol_version")).to eq(1)
+    expect(accelerator.worker_metrics).to be_a(Hash)
     expect(accelerator.sha256("abc")).to eq("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
 
     source = "rubydb-accelerator" * 100
@@ -25,6 +27,19 @@ RSpec.describe RubyDB::Accelerator do
     expect(accelerator.gunzip(compressed)).to eq(source)
   ensure
     accelerator&.close
+  end
+
+  it "starts a bundled worker from an executable path containing spaces" do
+    skip "build the accelerator first with ruby scripts/build_accelerator" unless binary && File.file?(binary)
+
+    Dir.mktmpdir("rubydb accelerator path ") do |dir|
+      copied = File.join(dir, File.basename(binary))
+      FileUtils.cp(binary, copied)
+      accelerator = described_class::Client.new(mode: "required", binary: copied, timeout: 10, min_rows: 0)
+      expect(accelerator.ping.fetch("protocol_version")).to eq(1)
+    ensure
+      accelerator&.close
+    end
   end
 
   it "keeps the worker alive across requests and restarts it cleanly" do

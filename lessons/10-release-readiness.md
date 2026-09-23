@@ -35,22 +35,24 @@ Review the project’s release instructions and run the preflight with a version
 that has not already been published:
 
 ```sh
-RUBYDB_RELEASE_VERSION=0.1.6 ruby scripts/release
+RUBYDB_RELEASE_VERSION=0.1.7 ruby scripts/release
 ```
 
 On PowerShell, use:
 
 ```powershell
-$env:RUBYDB_RELEASE_VERSION = "0.1.6"
+$env:RUBYDB_RELEASE_VERSION = "0.1.7"
 ruby scripts/release
 ```
 
-The release script builds the gem and writes a checksum. Check the artifact
-locally before publishing:
+The release script builds the core gem and adapter artifact and writes checksums.
+By default it publishes only the core gem, so a later core release cannot fail
+by trying to publish the same adapter version twice. Check the artifact locally
+before publishing:
 
 ```sh
-gem specification pkg/rubydb-0.1.6.gem
-gem install pkg/rubydb-0.1.6.gem --local
+gem specification pkg/rubydb-0.1.7.gem
+gem install pkg/rubydb-0.1.7.gem --local
 ruby -rrubydb -e 'puts RubyDB::VERSION'
 ```
 
@@ -59,7 +61,7 @@ on the release machine. The local script publishes only when both the explicit
 publish flag and secret are present; never commit the secret:
 
 ```sh
-RUBYDB_RELEASE_VERSION=0.1.6 \
+RUBYDB_RELEASE_VERSION=0.1.7 \
 RUBYDB_PUBLISH=1 \
 GEM_HOST_API_KEY="YOUR_RUBYGEMS_API_KEY" \
 ruby scripts/release
@@ -68,7 +70,7 @@ ruby scripts/release
 On Windows PowerShell:
 
 ```powershell
-$env:RUBYDB_RELEASE_VERSION = "0.1.6"
+$env:RUBYDB_RELEASE_VERSION = "0.1.7"
 $env:RUBYDB_PUBLISH = "1"
 $env:GEM_HOST_API_KEY = "YOUR_RUBYGEMS_API_KEY"
 ruby scripts/release
@@ -80,6 +82,7 @@ storage; do not put them in the repository or a checked-in `.env` file.
 
 Release the adapter separately when its version changes, update the changelog,
 tag the source commit, and publish the checksums and supported-version notes.
+Set `RUBYDB_PUBLISH_ADAPTER=1` only when the adapter gemspec has a new version.
 
 ## Publish the Python adapter to PyPI
 
@@ -128,7 +131,7 @@ literal `node/rubydb` is not a valid npm name because npm reserves `/` for
 scoped packages such as `@scope/package`.
 
 ```powershell
-cd adapters/rubydb
+cd adapters/node
 npm ci
 npm test
 npm run publish:check

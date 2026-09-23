@@ -114,7 +114,7 @@ module RubyDB
       private
 
       def hash_key(key)
-        key_hash = key.hash
+        key_hash = normalize_exact_key(key).hash
         key_hash.abs % @bucket_count
       end
 

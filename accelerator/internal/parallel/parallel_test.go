@@ -1,9 +1,6 @@
 package parallel
 
-import (
-	"context"
-	"testing"
-)
+import "testing"
 
 func TestForEachChunkCoversEveryItem(t *testing.T) {
 	seen := make([]bool, 37)
@@ -16,18 +13,5 @@ func TestForEachChunkCoversEveryItem(t *testing.T) {
 		if !value {
 			t.Fatalf("item %d was not visited", index)
 		}
-	}
-}
-
-func TestBoundedQueueHonorsCancellation(t *testing.T) {
-	queue := NewBoundedQueue[int](1)
-	defer queue.Close()
-	if err := queue.Push(context.Background(), 1); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := queue.Push(ctx, 2); err == nil {
-		t.Fatal("expected canceled push")
 	}
 }

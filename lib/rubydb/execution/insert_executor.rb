@@ -45,19 +45,11 @@ module RubyDB
             conflict_handled = true
           end
 
-          # Insert rows
-          inserted_rows = []
-          rows_to_insert.each do |row_data|
-            row_id = @engine.insert_row(table_name, table_columns, row_data)
-
-            # Update indexes
-            if @engine.respond_to?(:index_manager)
-              row = row_data.merge("_row_id" => row_id)
-              @engine.index_manager.insert_row(table_name, row)
-            end
-
-            inserted_rows << {row_id: row_id, row: row_data}
-          end
+          # Engine owns index maintenance. Inserting through insert_rows also
+          # publishes metadata once for a multi-row statement instead of once
+          # per tuple.
+          row_ids = @engine.insert_rows(table_name, table_columns, rows_to_insert)
+          inserted_rows = rows_to_insert.zip(row_ids).map { |row_data, row_id| {row_id: row_id, row: row_data} }
 
           elapsed_ms = ((Time.now - start_time) * 1000).round(2)
           @stats[:rows_inserted] += inserted_rows.size
@@ -86,18 +78,8 @@ module RubyDB
             prepare_single_row(plan.columns, row, table_columns)
           end
 
-          # Bulk insert
-          inserted_rows = []
-          prepared_rows.each do |row_data|
-            row_id = @engine.insert_row(table_name, table_columns, row_data)
-
-            if @engine.respond_to?(:index_manager)
-              row = row_data.merge("_row_id" => row_id)
-              @engine.index_manager.insert_row(table_name, row)
-            end
-
-            inserted_rows << {row_id: row_id, row: row_data}
-          end
+          row_ids = @engine.insert_rows(table_name, table_columns, prepared_rows)
+          inserted_rows = prepared_rows.zip(row_ids).map { |row_data, row_id| {row_id: row_id, row: row_data} }
 
           elapsed_ms = ((Time.now - start_time) * 1000).round(2)
           @stats[:rows_inserted] += inserted_rows.size

@@ -91,3 +91,17 @@ from these hardening changes are collected in
 [`docs/lessons-learned.md`](lessons-learned.md). These artifacts improve
 repeatability but do not replace hosted multi-host, physical-filesystem, or
 independent security validation.
+
+## Copy/paste hardening baseline
+
+Run the deterministic local checks before treating a checkpoint as complete:
+
+```sh
+bundle exec rspec
+ruby scripts/durability_drill
+ruby scripts/restore_drill
+ruby scripts/security
+```
+
+The security script requires `bundler-audit`; physical quota, power-loss,
+multi-host fencing, and independent review still require deployment evidence.

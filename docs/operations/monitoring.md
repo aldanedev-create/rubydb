@@ -23,3 +23,14 @@ Dashboards must show rates and percentiles over time, not only current gauges.
 Set thresholds from staging workload measurements and review them after every
 capacity or schema change. A green liveness check alone is not evidence that
 the database can accept traffic.
+
+## Copy/paste health evidence
+
+```sh
+rubydb status --json
+rubydb doctor --quick --json > tmp/rubydb-doctor.json
+rubydb accelerator --ping --json > tmp/rubydb-accelerator.json
+```
+
+Ship the JSON output to the protected release or incident evidence store; do
+not include passwords, URLs with credentials, or private keys.

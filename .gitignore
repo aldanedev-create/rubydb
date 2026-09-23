@@ -36,6 +36,14 @@
 /adapters/python/build/
 /adapters/python/dist/
 /adapters/python/src/*.egg-info/
+/packaging/python-server/build/
+/packaging/python-server/dist/
+/packaging/python-server/src/*.egg-info/
+/packaging/python-server/src/rubydb_server/bundle.zip
+/packaging/python-server/src/rubydb_server/bundle.json
+.rubydb/
+/adapters/node/dist/
+/adapters/node/node_modules/
 /adapters/rubydb/dist/
 /adapters/rubydb/node_modules/
 /examples/sveltekit_app/node_modules/

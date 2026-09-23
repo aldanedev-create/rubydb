@@ -19,7 +19,7 @@ ruby -Ilib examples/server/server.rb
 Build the checked-out Node adapter first:
 
 ```powershell
-cd adapters/rubydb
+cd adapters/node
 npm ci
 npm run build
 cd ../../examples/sveltekit_app
@@ -31,7 +31,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. The page can list and create notes.
 
-The example uses `file:../../adapters/rubydb` while developing in this
+The example uses `file:../../adapters/node` while developing in this
 repository. A deployed application should depend on the published package:
 
 ```json

@@ -18,3 +18,16 @@ grouping, limits, and repeated execution with bound parameters. Measure plan
 selection, execution, lock wait, and I/O separately. A plan that is faster but
 changes cardinality or ordering is incorrect; add the minimized query as a
 regression spec before merging.
+
+## Copy/paste plan review
+
+Inspect a representative indexed lookup from the SQL shell, then measure it in
+the workload harness instead of assuming `EXPLAIN` is a capacity guarantee.
+
+```sh
+rubydb shell --database tmp/orders.rdb
+```
+
+```sql
+EXPLAIN SELECT id, status FROM orders WHERE status = 'paid' ORDER BY id;
+```

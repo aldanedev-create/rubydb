@@ -19,3 +19,16 @@ then read [current state](docs/architecture/current-state.md) and the
 The embedded engine requires exclusive ownership. Server mode is the boundary
 for multiple application processes. Automatic election is disabled until an
 independent multi-host fencing authority is validated.
+
+## Copy/paste topology smoke test
+
+Use embedded mode for one local owner, and use the server/client example when
+web workers or another language must share the database:
+
+```sh
+ruby examples/embedded/application.rb
+ruby examples/server/server.rb
+```
+
+Run `ruby examples/server/client.rb` from a second terminal after the server
+is listening.

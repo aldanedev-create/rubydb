@@ -42,6 +42,14 @@ Official integration surfaces include:
 - `rubydb-node` for Node.js and TypeScript applications
 - Sequel and other Ruby integrations documented under `adapters/`
 
+Python local development now has an optional portable-server package under
+[`packaging/python-server`](packaging/python-server/README.md). It bundles Ruby,
+the engine dependencies, and Go so consuming machines need only Python. Build
+and install the local wheels using [Lesson 13](lessons/13-python-local-runtime.md).
+The new `rubydb-python[local]==0.1.1` install becomes available from PyPI after
+the client and matching platform runtime wheels are published. The existing
+client-only installation continues to connect to a separately managed server.
+
 Community developers can create adapters for another language, framework,
 ORM, query builder, migration tool, observability system, or job framework.
 Every adapter should begin with the [server protocol](docs/server/protocol.md)
@@ -105,14 +113,14 @@ unsupported or unverified dialect features must not be assumed to work.
 Install the core release gem:
 
 ```sh
-gem install rubydb -v 0.1.6
+gem install rubydb -v 0.1.7
 ```
 
 For Rails, install the core and ActiveRecord adapter together:
 
 ```ruby
 # Gemfile
-gem "rubydb", "~> 0.1.6"
+gem "rubydb", "~> 0.1.7"
 gem "rubydb-activerecord", "~> 0.1.3"
 ```
 
@@ -151,6 +159,23 @@ See [the accelerator architecture](docs/architecture/go-accelerator.md)
 for the protocol boundary, fallback behavior, differential testing, and
 release rules.
 
+### Stable table exports
+
+The bundled Go tool can stream a verified immutable table snapshot to JSONL or
+CSV without holding application writers for the full export. RubyDB falls back
+to the Ruby reference exporter when the platform tool is unavailable. It never
+overwrites the destination:
+
+```sh
+rubydb export --database data/app.rdb --table events --format jsonl --out exports/events.jsonl
+rubydb export --database data/app.rdb --table events --columns id,kind --where 'active eq true' --format csv --out exports/active-events.csv
+```
+
+An export is not a full backup. It is rejected during active transactions and
+needs temporary free disk roughly equal to the database file. See the
+[export guide](docs/export.md) for consistency, security, type formats, and
+benchmarking.
+
 ## Ruby usage
 
 RubyDB can run embedded in a single owning process:
@@ -158,11 +183,11 @@ RubyDB can run embedded in a single owning process:
 ```ruby
 require "rubydb"
 
-engine = RubyDB::Storage::Engine.new("tmp/example.rdb")
-engine.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
-engine.execute("INSERT INTO users (name) VALUES ('Aldane')")
-puts engine.execute("SELECT * FROM users").inspect
-engine.close
+db = RubyDB.open("tmp/example.rdb")
+db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+db.insert_many(:users, [{id: 1, name: "Aldane"}, {id: 2, name: "Ada"}])
+puts db.query("SELECT * FROM users ORDER BY id").inspect
+db.close
 ```
 
 For multiple application processes, use RubyDB's server/client mode and point
@@ -188,13 +213,13 @@ This creates a durable local database in one owning Ruby process:
 ```ruby
 require "rubydb"
 
-engine = RubyDB::Storage::Engine.new("tmp/development.rdb")
+db = RubyDB.open("tmp/development.rdb")
 begin
-  engine.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)")
-  engine.execute("INSERT INTO notes (body) VALUES ('First note')")
-  puts engine.execute("SELECT id, body FROM notes ORDER BY id").inspect
+  db.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)")
+  db.execute("INSERT INTO notes (body) VALUES ('First note')")
+  puts db.query("SELECT id, body FROM notes ORDER BY id").inspect
 ensure
-  engine.close
+  db.close
 end
 ```
 
@@ -206,7 +231,7 @@ Run one RubyDB server on persistent storage and inject a TLS URL into the
 service:
 
 ```sh
-gem install rubydb -v 0.1.6
+gem install rubydb -v 0.1.7
 rubydb --config /etc/rubydb/production.yml --env production start
 ```
 

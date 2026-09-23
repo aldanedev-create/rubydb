@@ -7,3 +7,9 @@ window, and SQLite profile specs.
 
 A feature is compatible only when parsing, planning, execution, null/type
 semantics, errors, transactions, and persistence behavior are validated.
+
+## Copy/paste compatibility check
+
+```sh
+bundle exec rspec spec/sql_compatibility_spec.rb spec/sql_*_spec.rb
+```

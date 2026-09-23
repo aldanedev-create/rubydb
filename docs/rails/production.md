@@ -80,3 +80,11 @@ Deploy the RubyDB server separately with its own persistent volume and
 readiness, migration status, and a read/write smoke query from the same network
 path as the Rails application. Use a secret manager for credentials and never
 commit or print them.
+
+## Copy/paste release smoke test
+
+```sh
+RAILS_ENV=production bundle exec rails db:migrate
+RAILS_ENV=production bundle exec rails runner 'puts Order.limit(1).pluck(:id).inspect'
+RUBYDB_URL="$RUBYDB_URL" bundle exec rails runner 'puts ActiveRecord::Base.connection.select_value("SELECT 1")'
+```

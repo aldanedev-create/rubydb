@@ -30,17 +30,19 @@ targets.each do |target|
   abort "Invalid accelerator target #{target.inspect}; use os-arch" unless os && arch
 
   extension = (os == "windows") ? ".exe" : ""
-  output = File.join(output_dir, "rubydb-accelerator-#{os}-#{arch}#{extension}")
   env = {"GOOS" => os, "GOARCH" => arch, "CGO_ENABLED" => "0"}
-  command = [go, "build", "-trimpath", "-ldflags=-s -w", "-o", output, "./cmd/rubydb-accelerator"]
-  puts "Building #{os}/#{arch} -> #{output}"
-  Dir.chdir(accelerator) do
-    abort "Go build failed for #{target}" unless system(env, *command)
+  %w[rubydb-accelerator rubydb-tools].each do |name|
+    output = File.join(output_dir, "#{name}-#{os}-#{arch}#{extension}")
+    command = [go, "build", "-trimpath", "-ldflags=-s -w", "-o", output, "./cmd/#{name}"]
+    puts "Building #{os}/#{arch} -> #{output}"
+    Dir.chdir(accelerator) do
+      abort "Go build failed for #{target}/#{name}" unless system(env, *command)
+    end
+    FileUtils.chmod(0o755, output) unless os == "windows"
   end
-  FileUtils.chmod(0o755, output) unless os == "windows"
 end
 
-manifest = Dir[File.join(output_dir, "rubydb-accelerator-*")].sort.filter_map do |path|
+manifest = Dir[File.join(output_dir, "rubydb-{accelerator,tools}-*")].sort.filter_map do |path|
   next unless File.file?(path)
 
   "#{Digest::SHA256.file(path).hexdigest}  #{File.basename(path)}"

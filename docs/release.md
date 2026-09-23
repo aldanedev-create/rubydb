@@ -21,14 +21,16 @@ ruby scripts/release_check
 ruby scripts/release
 ```
 
-The local command does not publish unless `RUBYDB_PUBLISH=1` and
+The local command does not publish the core unless `RUBYDB_PUBLISH=1` and
 `GEM_HOST_API_KEY` are explicitly set. Publishing also requires the release
 version to be supplied when you are not running from a matching Git tag.
+The ActiveRecord adapter is built for verification but is pushed only when
+`RUBYDB_PUBLISH_ADAPTER=1`; use that flag only for a new adapter version.
 
 On Windows PowerShell, run this from the repository root:
 
 ```powershell
-$env:RUBYDB_RELEASE_VERSION = "0.1.6"
+$env:RUBYDB_RELEASE_VERSION = "0.1.7"
 $env:RUBYDB_PUBLISH = "1"
 $env:GEM_HOST_API_KEY = "YOUR_RUBYGEMS_API_KEY"
 ruby scripts/release
@@ -49,7 +51,7 @@ file automatically. Keep the file private and never commit it.
 On macOS/Linux, use:
 
 ```sh
-RUBYDB_RELEASE_VERSION=0.1.6 \
+RUBYDB_RELEASE_VERSION=0.1.7 \
 RUBYDB_PUBLISH=1 \
 GEM_HOST_API_KEY="YOUR_RUBYGEMS_API_KEY" \
 ruby scripts/release

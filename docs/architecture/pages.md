@@ -9,3 +9,14 @@ headers, and checksum failures fail closed during open or recovery. Keep the
 database, WAL, catalog metadata, and lock files together when copying or
 restoring a database. See [storage format](../../spec/storage/format.md) and
 [upgrade guidance](../operations/upgrades.md).
+
+## Copy/paste integrity check
+
+Run the read-only doctor check before opening a restored database for traffic:
+
+```sh
+rubydb doctor --quick --json
+```
+
+Keep the original directory unchanged if the check reports a checksum or page
+failure; investigate a copied restore instead.

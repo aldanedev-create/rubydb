@@ -128,6 +128,10 @@ module RubyDB
           timeout: 30,
           max_frame_size: 16 * 1024 * 1024,
           min_rows: 256,
+          # Optional per-workload break-even points, for example
+          # {scan: 1_000, aggregate: 2_000, join: 5_000}. An empty map uses
+          # min_rows for every workload.
+          min_rows_by_workload: {},
           read_pipeline: "on",
           direct_snapshot: true,
           binary: nil

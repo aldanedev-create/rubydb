@@ -29,7 +29,7 @@ you can test the code currently checked out without publishing a new gem.
 When using released gems in your own application, use pinned versions instead:
 
 ```ruby
-gem "rubydb", "0.1.6"
+gem "rubydb", "0.1.7"
 gem "rubydb-activerecord", "0.1.3"
 ```
 

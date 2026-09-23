@@ -6,3 +6,9 @@ transactions, joins, subqueries, CTEs, set operations, upserts, and windows.
 
 Parser acceptance alone is not a production guarantee. Pair syntax changes with
 planner, executor, persistence, and compatibility tests.
+
+## Copy/paste SQL suite
+
+```sh
+bundle exec rspec spec/sql_compatibility_spec.rb spec/sql_*_spec.rb
+```

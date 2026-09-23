@@ -14,6 +14,7 @@ module RubyDB
         @height = 0
         @root = nil
         @node_pages = {}
+        @exact_rows = Hash.new { |hash, key| hash[key] = [] }
         @next_page = 1000
         @lock = Monitor.new
 
@@ -45,6 +46,7 @@ module RubyDB
           end
 
           @entries_count += 1
+          @exact_rows[normalize_exact_key(key)] << row_id
           @modified_at = Time.now
           true
         end
@@ -53,6 +55,25 @@ module RubyDB
       def delete(key, row_id)
         @lock.synchronize do
           return false if @root.nil?
+          exact_key = normalize_exact_key(key)
+          matching_ids = @exact_rows.fetch(exact_key, nil)
+          return false unless matching_ids&.include?(row_id)
+
+          # The node-level delete takes a key, not a row ID. Rebuild only
+          # when duplicate keys exist, so a nonunique index never removes a
+          # different row's entry from ordered/range scans.
+          if matching_ids.size > 1
+            entries = snapshot_entries
+            removed = false
+            entries.reject! do |entry|
+              match = !removed && entry[:value] == row_id && normalize_exact_key(entry[:key]) == exact_key
+              removed = true if match
+              match
+            end
+            clear
+            entries.each { |entry| insert(entry[:key], entry[:value]) }
+            return true
+          end
 
           result = @root.delete(key)
 
@@ -68,7 +89,11 @@ module RubyDB
             end
           end
 
-          @entries_count -= 1 if result
+          if result
+            @exact_rows.fetch(exact_key, nil)&.delete(row_id)
+            @exact_rows.delete(exact_key) if @exact_rows.fetch(exact_key, nil)&.empty?
+            @entries_count -= 1
+          end
           @modified_at = Time.now
           result
         end
@@ -76,9 +101,12 @@ module RubyDB
 
       def search(key)
         @lock.synchronize do
-          return nil if @root.nil?
-          @root.search(key)
+          @exact_rows.fetch(normalize_exact_key(key), nil)&.first
         end
+      end
+
+      def search_all(key)
+        @lock.synchronize { @exact_rows.fetch(normalize_exact_key(key), []).dup }
       end
 
       def range_search(start_key, end_key)
@@ -110,6 +138,7 @@ module RubyDB
           @node_pages.clear
           @height = 0
           @entries_count = 0
+          @exact_rows.clear
           initialize_root
           true
         end

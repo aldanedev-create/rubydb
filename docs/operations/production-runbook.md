@@ -43,3 +43,12 @@ Run the upgrade-compatibility suite against a copy of production backups.
 Preserve the database, WAL, replication state, logs, metrics, and timestamps
 before repair, vacuum, restore, or promotion. If checksums, fencing, or
 replication diverge, stop writes and escalate; do not guess at a repair.
+
+## Copy/paste preflight
+
+```sh
+bundle exec rspec
+ruby scripts/restore_drill
+ruby scripts/replication_failover_drill
+rubydb status --json
+```

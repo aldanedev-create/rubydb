@@ -50,6 +50,19 @@ module RubyDB
         end
       end
 
+      # Storage reads touch this object for every value. Type instances are
+      # immutable, so resolving one once per schema column avoids repeated
+      # registry lookups and allocations during scans.
+      def type_instance
+        @type_instance ||= begin
+          params = type_params
+          params = params.merge(limit: @limit) if @limit
+          params = params.merge(precision: @precision) if @precision
+          params = params.merge(scale: @scale) if @scale
+          Types::TypeRegistry.lookup(type_class, **params)
+        end
+      end
+
       def type_params
         case @type
         when Hash

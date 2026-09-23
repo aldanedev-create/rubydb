@@ -16,3 +16,13 @@ WAL or overwrite the original directory.
 Capture the RubyDB version, Rails/Ruby versions, generated SQL without secrets,
 and a minimal schema/query reproduction. Check the documented SQL and adapter
 compatibility surface before changing application behavior.
+
+## Copy/paste evidence capture
+
+```sh
+bundle exec rails about
+RAILS_ENV=production bundle exec rails db:migrate:status
+rubydb doctor --quick --json > tmp/rubydb-doctor.json
+```
+
+Remove credentials and customer data before attaching logs to an issue.

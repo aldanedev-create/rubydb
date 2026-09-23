@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rubydb-python"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Python DB-API client for the RubyDB server"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,5 +26,15 @@ Homepage = "https://github.com/aldanedev-create/rubydb"
 Repository = "https://github.com/aldanedev-create/rubydb"
 Documentation = "https://github.com/aldanedev-create/rubydb/tree/main/adapters/python"
 
+[project.optional-dependencies]
+local = ["rubydb-server==0.1.0"]
+server = ["rubydb-server==0.1.0"]
+
+[project.scripts]
+rubydb-python = "rubydb.local_cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "rubydb._version.__version__"}

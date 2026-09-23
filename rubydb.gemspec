@@ -45,15 +45,16 @@ Gem::Specification.new do |spec|
     tracked_files = `git ls-files -z`.split("\x0")
     accelerator_files = Dir[
       "accelerator/bin/rubydb-accelerator-*",
+      "accelerator/bin/rubydb-tools-*",
       "accelerator/bin/SHA256SUMS",
       "accelerator/cmd/**/*.go",
       "accelerator/internal/**/*.go",
       "accelerator/go.mod"
     ]
-    runtime_files = Dir["lib/rubydb/accelerator.rb", "lib/rubydb/accelerator/**/*.rb", "lib/rubydb/cli/commands/accelerator.rb", "lib/rubydb/storage/snapshot_reader.rb"]
+    runtime_files = Dir["lib/rubydb/accelerator.rb", "lib/rubydb/accelerator/**/*.rb", "lib/rubydb/cli/commands/{accelerator,export}.rb", "lib/rubydb/storage/snapshot_reader.rb"]
     physical_execution_files = Dir["lib/rubydb/execution/physical_plan.rb", "lib/rubydb/execution/cost_model.rb", "lib/rubydb/execution/operator_selection.rb", "lib/rubydb/execution/accelerator_dispatch.rb"]
     (tracked_files + accelerator_files + runtime_files + physical_execution_files).uniq.select { |f| File.file?(f) }.reject do |f|
-      f.match?(%r{^(test|spec|features|benchmarks|fuzz|chaos|examples|adapters/python)/}) || f.end_with?("_test.go")
+      f.match?(%r{^(\.github|test|spec|features|benchmarks|fuzz|chaos|examples|adapters|packaging)/}) || f.end_with?("_test.go")
     end
   end
   spec.bindir = "exe"
@@ -67,4 +68,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency "bigdecimal", ">= 3.1"
   spec.add_dependency "concurrent-ruby", ">= 1.2"
   spec.add_dependency "base64", ">= 0.2"
+  # CSV became a bundled rather than default gem in Ruby 3.4. The export CLI
+  # is part of the public executable, so declare it explicitly instead of
+  # relying on a workstation's default-gem set.
+  spec.add_dependency "csv", "~> 3.3"
 end

@@ -308,6 +308,7 @@ require_relative "cli/commands/inspect"
 require_relative "cli/commands/vacuum"
 require_relative "cli/commands/doctor"
 require_relative "cli/commands/accelerator"
+require_relative "cli/commands/export"
 
 module RubyDB
   # Main database class
@@ -330,18 +331,24 @@ module RubyDB
         # Initialize storage engine
         @engine = Storage::Engine.new(@path, @config)
 
-        # Initialize client connection
-        @connection = Client::Client.new(
-          database: @path,
-          host: @config[:host] || "localhost",
-          port: @config[:port] || 7432,
-          username: @config[:username] || "rubydb",
-          password: @config[:password] || "",
-          timeout: @config[:timeout] || 30,
-          pool_size: @config[:pool_size] || 1,
-          auto_connect: @config.fetch(:auto_connect, true)
-        )
-        @connection.connect if @config[:auto_connect] != false
+        # A path (including rubydb://local/) is an embedded database. Embedded
+        # callers execute directly against the engine and must never pay for,
+        # or depend on, a TCP server. A host explicitly selects client/server
+        # mode for backward compatibility with existing connection URLs.
+        embedded = @config.fetch(:embedded, !@config.key?(:host))
+        unless embedded
+          @connection = Client::Client.new(
+            database: @path,
+            host: @config[:host] || "localhost",
+            port: @config[:port] || 7432,
+            username: @config[:username] || "rubydb",
+            password: @config[:password] || "",
+            timeout: @config[:timeout] || 30,
+            pool_size: @config[:pool_size] || 1,
+            auto_connect: @config.fetch(:auto_connect, true)
+          )
+          @connection.connect if @config[:auto_connect] != false
+        end
 
         @is_open = true
         self
@@ -446,9 +453,20 @@ module RubyDB
 
     def insert(table, data)
       ensure_connected
-      columns = data.keys
-      values = data.values
-      @engine.insert_row(table, columns, values)
+      raise ArgumentError, "insert data must be a Hash" unless data.is_a?(Hash)
+
+      @engine.insert_row(table, @engine.table_columns(table), data)
+    end
+
+    # SQLite-style embedded applications often seed or ingest a collection at
+    # once. Keep validation and WAL records per row, while letting the engine
+    # publish metadata once for the complete batch.
+    def insert_many(table, rows)
+      ensure_connected
+      rows = rows.to_a
+      raise ArgumentError, "insert_many rows must all be Hash values" unless rows.all?(Hash)
+
+      @engine.insert_rows(table, @engine.table_columns(table), rows)
     end
 
     def select(table, conditions = {})
@@ -481,7 +499,7 @@ module RubyDB
     #         rubydb://user:pass@host:7432/database
     if url.start_with?("rubydb://local/")
       path = url.sub("rubydb://local/", "")
-      Database.new(path).connect
+      Database.new(path, embedded: true).connect
     elsif url.start_with?("rubydb://")
       # Server mode
       uri = URI.parse(url)

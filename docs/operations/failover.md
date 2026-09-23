@@ -28,3 +28,12 @@ clean recovery validation.
 
 Record the old and new fencing epochs, replica LSNs, promotion time, observed
 lag, and application error rate in the incident record.
+
+## Copy/paste failover drill
+
+Run this only in an isolated staging environment with disposable data:
+
+```sh
+ruby scripts/replication_failover_drill
+ruby scripts/replication_network_failover_drill
+```

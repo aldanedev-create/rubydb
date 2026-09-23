@@ -63,6 +63,18 @@ module RubyDB
         "#{@type.to_s.upcase} INDEX #{@name} ON #{@table_name}(#{@columns.join(", ")})"
       end
 
+      # Ruby's `==` considers 1 and 1.0 equal whereas Hash#eql? does not.
+      # Normalize finite numeric keys for exact lookups without conflating
+      # strings with symbols or changing the B-tree's ordered representation.
+      def normalize_exact_key(key)
+        case key
+        when Array then key.map { |value| normalize_exact_key(value) }
+        when Numeric
+          key.respond_to?(:finite?) && !key.finite? ? key : key.to_r
+        else key
+        end
+      end
+
       def inspect
         to_s
       end

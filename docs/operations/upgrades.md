@@ -12,3 +12,11 @@ Before upgrading:
 The current storage format is version 1. RubyDB refuses to open an unknown page format or a database whose page size differs from the configured page size. There is no automatic on-disk format conversion yet; a future incompatible format must provide an explicit export/import migration.
 
 After upgrading, reopen the restored or migrated database, run the migration status command, verify application queries, and retain the pre-upgrade backup until the rollback window closes. Never delete the original data directory as part of an upgrade.
+
+## Copy/paste upgrade rehearsal
+
+```sh
+rubydb backup --database tmp/app.rdb --dir tmp/pre-upgrade-backup --type full --compress
+rubydb restore --dir tmp/pre-upgrade-backup --latest --dry-run
+bundle exec rspec
+```

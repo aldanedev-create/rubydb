@@ -15,3 +15,12 @@ Before production migration:
 RubyDB fails closed when an applied migration changes or disappears. Unsupported
 table rebuilds, generated columns, polymorphic references, and dialect-specific
 extensions require explicit validation.
+
+## Copy/paste populated-table rehearsal
+
+```sh
+bin/rails db:migrate
+RAILS_ENV=test bin/rails db:schema:dump
+RAILS_ENV=test bin/rails db:schema:load
+RAILS_ENV=test bundle exec rails runner 'puts Order.count'
+```

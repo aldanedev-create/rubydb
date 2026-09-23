@@ -25,3 +25,11 @@ Expand the documented SQLite-style profile and only then consider broader
 PostgreSQL/MySQL compatibility where implementation and semantic validation can
 be maintained. Add automatic election only with an independently tested fencing
 authority. Preserve correctness and explicit unsupported errors as hard gates.
+
+## Copy/paste next-gate check
+
+```sh
+bundle exec rspec
+ruby scripts/restore_drill
+ruby scripts/replication_network_failover_drill
+```

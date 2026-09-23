@@ -16,3 +16,12 @@ frames, invalid checksums, impossible LSNs, and incomplete metadata must stop
 startup with an actionable error. Preserve the original directory and WAL;
 repair or compaction experiments belong on a copy. The [debugging playbook](../debugging.md)
 lists the evidence to collect.
+
+## Copy/paste restore drill
+
+Run the drill against staging or a disposable copy. Never use the only
+production directory as the restore destination.
+
+```sh
+ruby scripts/restore_drill
+```

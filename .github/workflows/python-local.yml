@@ -1,0 +1,65 @@
+name: Python local runtime
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "adapters/python/**"
+      - "packaging/python-server/**"
+      - "scripts/*python*"
+      - "lib/rubydb/server/listener.rb"
+      - ".github/workflows/python-local.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-wheel:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: accelerator/go.mod
+          cache: false
+      - name: Install runtime dependencies on builder
+        shell: pwsh
+        run: |
+          ruby -rrubygems -e 's = Gem::Specification.load("rubydb.gemspec"); s.runtime_dependencies.each { |d| system(Gem.ruby, "-S", "gem", "install", d.name, "--version", d.requirement.to_s, "--no-document", exception: true) }'
+          python -m pip install build twine
+      - name: Build target Go binary and portable runtime
+        shell: pwsh
+        run: |
+          $env:RUBYDB_ACCELERATOR_TARGETS = "current"
+          ruby scripts/build_accelerator
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -u scripts/build_python_server.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m build --wheel adapters/python
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m build --wheel packaging/python-server
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate metadata and install without the package index
+        shell: pwsh
+        run: |
+          python -m twine check adapters/python/dist/*.whl packaging/python-server/dist/*.whl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m venv tmp/python-local-check
+          tmp/python-local-check/Scripts/python -m pip install --no-index --find-links adapters/python/dist --find-links packaging/python-server/dist 'rubydb-python[local]==0.1.1'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test installed wheels with Ruby and Go absent from PATH
+        run: tmp/python-local-check/Scripts/python scripts/verify_python_local.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-local-windows-x64
+          path: |
+            adapters/python/dist/*.whl
+            packaging/python-server/dist/*.whl
+            packaging/python-server/src/rubydb_server/bundle.json
