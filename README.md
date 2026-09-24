@@ -3,6 +3,8 @@
 RubyDB is a Ruby-native relational database with an embedded engine, a
 client/server mode, a Ruby client, and an ActiveRecord adapter.
 
+check our Doc Site : [https://aldanedev-create.github.io/rubydb-docs/] [https://aldanedev-create.github.io/rubydb-docs/]
+
 **Author:** Aldane Hutchinson
 
 > **Status: alpha.** RubyDB is suitable for experimentation, development,
